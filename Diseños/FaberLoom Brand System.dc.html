@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <rect width="100" height="100" fill="#F4F1ED"/>
+    <g transform="translate(30,30)" stroke="#C96442" stroke-width="2.9" stroke-linecap="round" fill="none">
+      <path d="M11.7 5.8 V15.8"/><path d="M11.7 24.2 V34.2"/>
+      <path d="M20 5.8 V7.5"/><path d="M20 15.8 V24.2"/><path d="M20 32.5 V34.2"/>
+      <path d="M28.3 5.8 V15.8"/><path d="M28.3 24.2 V34.2"/>
+      <path d="M5.8 11.7 H7.5"/><path d="M15.8 11.7 H24.2"/><path d="M32.5 11.7 H34.2"/>
+      <path d="M5.8 20 H15.8"/><path d="M24.2 20 H34.2"/>
+      <path d="M5.8 28.3 H7.5"/><path d="M15.8 28.3 H24.2"/><path d="M32.5 28.3 H34.2"/>
+    </g>
+  </svg>
+</template>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  ::selection{background:#C96442;color:#F4F1ED;}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#F4F1ED;color:#1F1E1C;font-family:Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:72px 32px 96px;">
+  <div style="max-width:1040px;margin:0 auto;">
+
+    <!-- HEADER -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.22em;color:#C96442;text-transform:uppercase;margin-bottom:22px;">FaberLoom · Brand System</div>
+    <h1 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:64px;line-height:1.0;letter-spacing:-0.01em;margin:0 0 22px;">The complete marque.</h1>
+    <p style="max-width:660px;font-size:17px;line-height:1.6;color:#5A544C;margin:0;">A 3×3 woven knot and a two-tone EB&nbsp;Garamond italic wordmark — <strong style="font-weight:600;color:#C96442;">Faber</strong> holds the coral, <strong style="font-weight:600;color:#1F1E1C;">Loom</strong> takes the ink of whatever ground it sits on. Shown in every approved configuration across light and dark. One accent, one secondary; nothing else.</p>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ LOGO VARIANTS ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">01 — 09</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 28px;letter-spacing:-0.01em;">The variants</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+      <!-- 01 wordmark horizontal primary -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;min-height:150px;display:flex;align-items:center;justify-content:center;padding:32px;">
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:38px;letter-spacing:-0.005em;line-height:1;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">01 · Wordmark horizontal — primary</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">Faber coral · Loom ink · on cream · 220×44</div>
+        </figcaption>
+      </figure>
+
+      <!-- 02 wordmark horizontal dark -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#1F1E1C;min-height:150px;display:flex;align-items:center;justify-content:center;padding:32px;">
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:38px;letter-spacing:-0.005em;line-height:1;"><span style="color:#C96442;">Faber</span><span style="color:#F4F1ED;">Loom</span></span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">02 · Wordmark horizontal — dark</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">Faber coral · Loom cream · on warm-dark</div>
+        </figcaption>
+      </figure>
+
+      <!-- 05 combined lockup -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;min-height:150px;display:flex;align-items:center;justify-content:center;gap:16px;padding:32px;">
+          <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:38px;letter-spacing:-0.005em;line-height:1;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">05 · Combined lockup</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">symbol + wordmark · optical spacing · 300×64</div>
+        </figcaption>
+      </figure>
+
+      <!-- 06 lockup mono ink -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#FFFFFF;min-height:150px;display:flex;align-items:center;justify-content:center;gap:16px;padding:32px;">
+          <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#1F1E1C" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:38px;color:#1F1E1C;letter-spacing:-0.005em;line-height:1;">FaberLoom</span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">06 · Lockup monochrome</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">1-ink · ink #1F1E1C on white</div>
+        </figcaption>
+      </figure>
+
+      <!-- 07 lockup mono inverse -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#C96442;min-height:150px;display:flex;align-items:center;justify-content:center;gap:16px;padding:32px;">
+          <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#F4F1ED" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:38px;color:#F4F1ED;letter-spacing:-0.005em;line-height:1;">FaberLoom</span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">07 · Lockup monochrome — inverse</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">cream on coral / warm-dark · single ink</div>
+        </figcaption>
+      </figure>
+
+      <!-- 03 wordmark vertical stacked -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px;">
+          <svg viewBox="0 0 48 48" width="68" height="68" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+          <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:34px;letter-spacing:-0.005em;line-height:1;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">03 · Wordmark vertical — stacked</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">isotipo above wordmark · 200×240</div>
+        </figcaption>
+      </figure>
+
+      <!-- 04 isotipo scale ramp (full width) -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;grid-column:1 / -1;">
+        <div style="background:#F4F1ED;min-height:150px;display:flex;align-items:flex-end;justify-content:center;gap:44px;padding:32px;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <svg viewBox="0 0 48 48" width="96" height="96" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">96</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">48</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <svg viewBox="0 0 48 48" width="32" height="32" fill="none" stroke="#C96442" stroke-width="4" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">32</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <svg viewBox="0 0 48 48" width="16" height="16" fill="none" stroke="#C96442" stroke-width="6" stroke-linecap="round"><path d="M24 9 V39"/><path d="M9 24 H17"/><path d="M31 24 H39"/></svg>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">16 ·&nbsp;simplified</span>
+          </div>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">04 · Isotipo standalone — scale ramp</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">square-safe 512→16 · the 3×3 weave collapses to a single woven cross at 16px</div>
+        </figcaption>
+      </figure>
+
+      <!-- 08 favicons -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#FFFFFF;min-height:150px;display:flex;align-items:center;justify-content:center;gap:40px;padding:32px;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="width:64px;height:64px;border:1px solid #EDE8DF;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+              <svg viewBox="0 0 48 48" width="32" height="32" fill="none" stroke="#C96442" stroke-width="4" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            </div>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">32</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="width:64px;height:64px;border:1px solid #EDE8DF;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+              <svg viewBox="0 0 48 48" width="16" height="16" fill="none" stroke="#C96442" stroke-width="6" stroke-linecap="round"><path d="M24 9 V39"/><path d="M9 24 H17"/><path d="M31 24 H39"/></svg>
+            </div>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">16</span>
+          </div>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">08 · Favicon 32 + 16</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">16px drops to a single woven cross for clarity</div>
+        </figcaption>
+      </figure>
+
+      <!-- 09 app icon -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;min-height:150px;display:flex;align-items:center;justify-content:center;gap:28px;padding:32px;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="width:104px;height:104px;border-radius:22.88px;background:#C96442;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(31,30,28,0.12);">
+              <svg viewBox="0 0 48 48" width="58" height="58" fill="none" stroke="#F4F1ED" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            </div>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">coral</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="width:104px;height:104px;border-radius:22.88px;background:#1F1E1C;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(31,30,28,0.12);">
+              <svg viewBox="0 0 48 48" width="58" height="58" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            </div>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">warm-dark alt</span>
+          </div>
+        </div>
+        <figcaption style="padding:14px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;">09 · App icon 512</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:3px;">solid coral or warm-dark · 22% corner radius</div>
+        </figcaption>
+      </figure>
+
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ LOOM ADAPTIVE ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#C96442;margin-bottom:8px;">ADAPTIVE · OPCIONAL</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 6px;letter-spacing:-0.01em;">Loom — el tejido que cambia</h2>
+    <p style="font-size:14px;line-height:1.6;color:#5A544C;margin:0 0 22px;max-width:640px;">Faber siempre sostiene el coral; <strong style="font-weight:600;">Loom</strong> puede tomar cualquier tono tranquilo de la paleta para señalar contexto — un producto, un estado, una superficie. La regla de disciplina: <strong style="font-weight:600;">un tono por superficie, nunca un arcoíris</strong>, y nunca fuera de paleta.</p>
+
+    <!-- tweakable hero -->
+    <div style="background:#F4F1ED;border:1px solid #D8D0C0;border-radius:8px;padding:48px 44px;display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:26px;">
+      <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:66px;line-height:1;letter-spacing:-0.005em;"><span style="color:#C96442;">Faber</span><span style="color:{{ loomColor }};">Loom</span></span>
+      <span style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.08em;color:#8A8278;">↑ tono de Loom — ajustable en Tweaks</span>
+    </div>
+
+    <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#8A8278;margin-bottom:12px;">Sobre crema</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:30px;">
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">ink · por defecto</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">1F1E1C</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#5A544C;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">warm</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">5A544C</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#5A6B7C;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">slate</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">5A6B7C</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#A84F33;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">duotono</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">A84F33</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#8A8278;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">quiet</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">8A8278</div></div>
+      </div>
+    </div>
+
+    <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#8A8278;margin-bottom:12px;">Sobre oscuro</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#1F1E1C;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#F4F1ED;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">cream · por defecto</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">F4F1ED</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#1F1E1C;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#B8B0A4;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">warm</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">B8B0A4</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#1F1E1C;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#5A6B7C;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">slate</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">5A6B7C</div></div>
+      </div>
+      <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#1F1E1C;padding:22px;min-height:78px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:26px;"><span style="color:#C96442;">Faber</span><span style="color:#D97757;">Loom</span></span></div>
+        <div style="padding:9px 12px;border-top:1px solid #EDE8DF;"><div style="font-size:11px;font-weight:600;">duotono</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">D97757</div></div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ COLOUR ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">10</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 6px;letter-spacing:-0.01em;">The palette</h2>
+    <p style="font-size:14px;color:#5A544C;margin:0 0 24px;">Fixed. One accent (coral), one secondary (slate). Never coral on white, never ink on coral, never any blue or purple.</p>
+
+    <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#8A8278;margin-bottom:12px;">Light</div>
+    <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:10px;margin-bottom:32px;">
+      <div><div style="height:64px;border-radius:6px;background:#F4F1ED;border:1px solid #D8D0C0;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">bg</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">F4F1ED</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#FFFFFF;border:1px solid #D8D0C0;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">surface</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">FFFFFF</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#EDE8DF;border:1px solid #D8D0C0;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">subtle</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">EDE8DF</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#1F1E1C;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">text</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">1F1E1C</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#5A544C;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">text-2</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">5A544C</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#8A8278;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">muted</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">8A8278</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#D8D0C0;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">border</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">D8D0C0</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#C96442;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">coral</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">C96442</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#A84F33;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">coral-hover</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">A84F33</div></div>
+    </div>
+
+    <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#8A8278;margin-bottom:12px;">Dark + secondary</div>
+    <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:10px;">
+      <div><div style="height:64px;border-radius:6px;background:#1F1E1C;border:1px solid #3D3A34;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">bg</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">1F1E1C</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#2A2824;border:1px solid #3D3A34;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">surface</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">2A2824</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#F4F1ED;border:1px solid #D8D0C0;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">text</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">F4F1ED</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#B8B0A4;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">text-2</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">B8B0A4</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#3D3A34;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">border</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">3D3A34</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#C96442;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">coral</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">C96442</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#D97757;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">coral-hover</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">D97757</div></div>
+      <div><div style="height:64px;border-radius:6px;background:#5A6B7C;"></div><div style="font-size:11px;font-weight:600;margin-top:8px;">slate</div><div style="font-family:'Geist Mono',monospace;font-size:10px;color:#8A8278;">5A6B7C</div></div>
+      <div></div>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ CONSTRUCTION ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">11</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 28px;letter-spacing:-0.01em;">Construction &amp; clearspace</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <!-- grid construction -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;display:flex;align-items:center;justify-content:center;padding:36px;">
+          <svg viewBox="0 0 48 48" width="180" height="180" fill="none">
+            <g stroke="#D8D0C0" stroke-width="0.5">
+              <path d="M14 0V48M24 0V48M34 0V48"/>
+              <path d="M0 14H48M0 24H48M0 34H48"/>
+            </g>
+            <rect x="7" y="7" width="34" height="34" fill="none" stroke="#C96442" stroke-width="0.5" stroke-dasharray="2 2"/>
+            <g stroke="#1F1E1C" stroke-width="3.5" stroke-linecap="round">
+              <path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/>
+            </g>
+          </svg>
+        </div>
+        <figcaption style="padding:16px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;">8px grid · square field</div>
+          <div style="font-size:13px;line-height:1.5;color:#5A544C;">Three warp + three weft strokes on the 8px grid. Each thread passes over and under in turn — a true plain weave. Stroke 3.5u (≥1.5px at 32px), round caps; thread-ends at each edge midpoint.</div>
+        </figcaption>
+      </figure>
+
+      <!-- clearspace -->
+      <figure style="margin:0;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+        <div style="background:#F4F1ED;display:flex;align-items:center;justify-content:center;padding:36px;">
+          <div style="position:relative;display:inline-flex;align-items:center;gap:14px;padding:30px;outline:1px dashed #C96442;outline-offset:0;">
+            <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="#C96442" stroke-width="3.5" stroke-linecap="round"><path d="M14 7 V19"/><path d="M14 29 V41"/><path d="M24 7 V9"/><path d="M24 19 V29"/><path d="M24 39 V41"/><path d="M34 7 V19"/><path d="M34 29 V41"/><path d="M7 14 H9"/><path d="M19 14 H29"/><path d="M39 14 H41"/><path d="M7 24 H19"/><path d="M29 24 H41"/><path d="M7 34 H9"/><path d="M19 34 H29"/><path d="M39 34 H41"/></svg>
+            <span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;line-height:1;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span>
+            <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-family:'EB Garamond',serif;font-style:italic;font-size:22px;color:#8A8278;">a</span>
+          </div>
+        </div>
+        <figcaption style="padding:16px 18px;border-top:1px solid #EDE8DF;">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Clearspace ≥ x-height of “a”</div>
+          <div style="font-size:13px;line-height:1.5;color:#5A544C;">Keep at least the wordmark “a” x-height clear on every side. Minimums: wordmark 96px wide, isotipo 16px. Balance optical weight — the italic slants right.</div>
+        </figcaption>
+      </figure>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ DO / DON'T ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">12</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 28px;letter-spacing:-0.01em;">Do &amp; don’t</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;">
+
+      <!-- DO column -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#C96442;color:#F4F1ED;font-size:12px;font-weight:700;">✓</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#5A544C;">Do</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+            <div style="background:#F4F1ED;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span></div>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Faber coral, Loom in the surface ink.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+            <div style="background:#1F1E1C;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;"><span style="color:#C96442;">Faber</span><span style="color:#F4F1ED;">Loom</span></span></div>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">On warm-dark, Loom flexes to cream.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+            <div style="background:#FFFFFF;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;color:#1F1E1C;">FaberLoom</span></div>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">One ink on flat backgrounds for print.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;">
+            <div style="background:#F4F1ED;padding:22px;display:flex;align-items:center;justify-content:center;gap:30px;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span></div>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Give the mark generous clearspace.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DON'T column -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#C0392B;color:#fff;font-size:12px;font-weight:700;">✕</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#5A544C;">Don’t</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;position:relative;">
+            <div style="background:#FFFFFF;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;color:#C96442;">FaberLoom</span></div>
+            <span style="position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#C0392B;color:#fff;font-size:13px;font-weight:700;">✕</span>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Never set all-coral on white — it vibrates.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;position:relative;">
+            <div style="background:#F4F1ED;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;"><span style="color:#C96442;">Faber</span><span style="color:#3A5BD0;">Loom</span></span></div>
+            <span style="position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#C0392B;color:#fff;font-size:13px;font-weight:700;">✕</span>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Never flex Loom off-palette — no blue, no purple.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;position:relative;">
+            <div style="background:#F4F1ED;padding:22px;display:flex;align-items:center;justify-content:center;overflow:hidden;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;display:inline-block;transform:scaleX(1.75);"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span></div>
+            <span style="position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#C0392B;color:#fff;font-size:13px;font-weight:700;">✕</span>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Never stretch, condense or rotate.</div>
+          </div>
+          <div style="border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;background:#fff;position:relative;">
+            <div style="background:#F4F1ED;padding:22px;display:flex;align-items:center;justify-content:center;"><span style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:30px;text-shadow:2px 3px 4px rgba(31,30,28,0.45);"><span style="color:#C96442;">Faber</span><span style="color:#1F1E1C;">Loom</span></span></div>
+            <span style="position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#C0392B;color:#fff;font-size:13px;font-weight:700;">✕</span>
+            <div style="padding:11px 16px;font-size:13px;color:#5A544C;border-top:1px solid #EDE8DF;">Never add shadows, outlines or a tagline.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.1em;color:#8A8278;margin:56px 0 0;text-align:center;">FABERLOOM · LA IA PREPARA, VOS TEJES</p>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;loomTone&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;ink&quot;, &quot;options&quot;: [&quot;ink&quot;, &quot;warm&quot;, &quot;slate&quot;, &quot;duotone&quot;, &quot;quiet&quot;], &quot;tsType&quot;: &quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const map = { ink: '#1F1E1C', warm: '#5A544C', slate: '#5A6B7C', duotone: '#A84F33', quiet: '#8A8278' };
+    const tone = this.props.loomTone || 'ink';
+    return { loomColor: map[tone] || '#1F1E1C' };
+  }
+}
+</script>
+</body>
+</html>

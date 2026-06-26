@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  ::selection{background:#C96442;color:#F4F1ED;}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#F4F1ED;color:#1F1E1C;font-family:Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:72px 32px 96px;">
+  <div style="max-width:980px;margin:0 auto;">
+
+    <!-- HEADER -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.22em;color:#C96442;text-transform:uppercase;margin-bottom:22px;">FaberLoom · Typography</div>
+    <h1 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:62px;line-height:1.0;letter-spacing:-0.01em;margin:0 0 22px;">The type system.</h1>
+    <p style="max-width:640px;font-size:17px;line-height:1.6;color:#5A544C;margin:0;">Three families, one job each. <strong style="font-weight:600;">EB&nbsp;Garamond</strong> speaks — titles and editorial voice. <strong style="font-weight:600;">Geist</strong> works — every interface surface. <strong style="font-weight:600;">Geist&nbsp;Mono</strong> records — data, timestamps and the audit trail. The serif is the only voice; never set body copy or UI in it.</p>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ THE THREE FAMILIES ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">01</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 28px;letter-spacing:-0.01em;">The three families</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:18px;">
+      <!-- Garamond -->
+      <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;">
+        <div style="padding:30px 26px 24px;border-bottom:1px solid #EDE8DF;">
+          <div style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:72px;line-height:0.9;color:#C96442;">Aa</div>
+        </div>
+        <div style="padding:20px 26px 26px;">
+          <div style="font-size:16px;font-weight:600;margin-bottom:2px;">EB Garamond</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-bottom:14px;">serif · display + voice</div>
+          <div style="font-size:13px;line-height:1.55;color:#5A544C;">A true book face with a humanist axis. Italic for the wordmark, titles and pull-quotes. Open-licensed (SIL OFL).</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:14px;">Regular 400 · Medium 500 · SemiBold 600 · + italics</div>
+        </div>
+      </div>
+      <!-- Geist -->
+      <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;">
+        <div style="padding:30px 26px 24px;border-bottom:1px solid #EDE8DF;">
+          <div style="font-family:Geist,sans-serif;font-weight:600;font-size:72px;line-height:0.9;color:#1F1E1C;">Aa</div>
+        </div>
+        <div style="padding:20px 26px 26px;">
+          <div style="font-size:16px;font-weight:600;margin-bottom:2px;">Geist</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-bottom:14px;">grotesk · interface + body</div>
+          <div style="font-size:13px;line-height:1.55;color:#5A544C;">A neutral, calm grotesk — the lineage of Linear, Vercel, Plain. Every button, label, paragraph and menu. Open-licensed.</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:14px;">Light 300 · Regular 400 · Medium 500 · SemiBold 600</div>
+        </div>
+      </div>
+      <!-- Geist Mono -->
+      <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;">
+        <div style="padding:30px 26px 24px;border-bottom:1px solid #EDE8DF;">
+          <div style="font-family:'Geist Mono',monospace;font-weight:500;font-size:72px;line-height:0.9;color:#5A6B7C;">Aa</div>
+        </div>
+        <div style="padding:20px 26px 26px;">
+          <div style="font-size:16px;font-weight:600;margin-bottom:2px;">Geist Mono</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-bottom:14px;">mono · data + audit</div>
+          <div style="font-size:13px;line-height:1.55;color:#5A544C;">Fixed-width for timestamps, diffs, IDs, code and the draft-first audit trail — where exactness must be visible.</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#8A8278;margin-top:14px;">Regular 400 · Medium 500</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- fallback stacks -->
+    <div style="background:#1F1E1C;border-radius:8px;padding:22px 26px;">
+      <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#C96442;margin-bottom:14px;">CSS font stacks — copy/paste</div>
+      <div style="display:flex;flex-direction:column;gap:9px;font-family:'Geist Mono',monospace;font-size:12.5px;line-height:1.5;color:#F4F1ED;">
+        <div><span style="color:#8A8278;">--font-serif:</span> "EB Garamond", Georgia, "Times New Roman", serif;</div>
+        <div><span style="color:#8A8278;">--font-sans:&nbsp;</span> "Geist", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;</div>
+        <div><span style="color:#8A8278;">--font-mono:&nbsp;</span> "Geist Mono", "SF Mono", "JetBrains Mono", ui-monospace, monospace;</div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ SITE TYPE SCALE ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">02 · SITE</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 6px;letter-spacing:-0.01em;">The site scale</h2>
+    <p style="font-size:14px;line-height:1.6;color:#5A544C;margin:0 0 28px;max-width:600px;">Editorial, generous, web-first. Display set in Garamond italic; everything readable in Geist. A 1.25 (major-third) ramp on a 1rem = 16px base.</p>
+
+    <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;">
+      <!-- row -->
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:64px;line-height:1.02;letter-spacing:-0.01em;color:#1F1E1C;">Display</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Display / Hero</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Garamond Italic 500<br>64&nbsp;/&nbsp;65px · LH 1.02 · LS −0.01em</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:40px;line-height:1.08;letter-spacing:-0.01em;color:#1F1E1C;">Section title</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">H1 / Section</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Garamond Italic 500<br>40&nbsp;/&nbsp;43px · LH 1.08 · LS −0.01em</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:600;font-size:26px;line-height:1.2;letter-spacing:-0.01em;color:#1F1E1C;">Subsection heading</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">H2</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist SemiBold 600<br>26&nbsp;/&nbsp;31px · LH 1.2 · LS −0.01em</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:600;font-size:20px;line-height:1.3;color:#1F1E1C;">Card &amp; block heading</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">H3</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist SemiBold 600<br>20&nbsp;/&nbsp;26px · LH 1.3</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:24px;line-height:1.45;color:#5A544C;max-width:460px;">“A loom of agents — the AI prepares the warp, you weave the weft.”</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Lede / Pull-quote</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Garamond Italic 400<br>24&nbsp;/&nbsp;35px · LH 1.45</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:400;font-size:17px;line-height:1.6;color:#1F1E1C;max-width:460px;">Body copy is set in Geist at 17px with a 1.6 line-height for comfortable editorial reading. Measure stays between 60 and 75 characters.</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Body</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Regular 400<br>17&nbsp;/&nbsp;27px · LH 1.6 · 60–75ch</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:26px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:400;font-size:14px;line-height:1.55;color:#5A544C;">Small print, captions and secondary metadata use text-2 at 14px.</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Small / Caption</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Regular 400<br>14&nbsp;/&nbsp;22px · color text-2</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:center;padding:26px 28px;">
+        <div style="font-family:'Geist Mono',monospace;font-weight:400;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#C96442;">Eyebrow / Label</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Eyebrow / Kicker</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Mono 400 · UPPER<br>12px · LS 0.18em</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ APP TYPE SCALE ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">03 · APP</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 6px;letter-spacing:-0.01em;">The app scale</h2>
+    <p style="font-size:14px;line-height:1.6;color:#5A544C;margin:0 0 28px;max-width:600px;">Denser, functional, screen-first. Garamond appears <em>only</em> as a quiet product/section title — never in controls. Tighter line-heights; a 14px UI base. Minimum interface text 12px; never smaller.</p>
+
+    <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:28px;line-height:1.1;color:#1F1E1C;">WorkLoom</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">App / Product title</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Garamond Italic 500<br>28&nbsp;/&nbsp;31px · titles only</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:600;font-size:20px;line-height:1.25;letter-spacing:-0.005em;color:#1F1E1C;">View heading</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Screen title</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist SemiBold 600<br>20&nbsp;/&nbsp;25px · LH 1.25</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:600;font-size:15px;line-height:1.3;color:#1F1E1C;">Panel / Group label</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Section label</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist SemiBold 600<br>15&nbsp;/&nbsp;20px</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:400;font-size:14px;line-height:1.5;color:#1F1E1C;max-width:440px;">Default UI text — list rows, descriptions, form values and menu items all sit at the 14px body size.</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">UI body · base</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Regular 400<br>14&nbsp;/&nbsp;21px · LH 1.5</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:center;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-family:Geist,sans-serif;font-weight:500;font-size:14px;color:#F4F1ED;background:#C96442;padding:8px 16px;border-radius:7px;line-height:1;">Tejer borrador</span>
+          <span style="font-family:Geist,sans-serif;font-weight:500;font-size:14px;color:#1F1E1C;border:1px solid #D8D0C0;padding:8px 16px;border-radius:7px;line-height:1;">Revisar</span>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Button / Control</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Medium 500<br>14px · ≥44px hit target</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:baseline;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:Geist,sans-serif;font-weight:400;font-size:12px;line-height:1.45;color:#5A544C;">Helper text, captions, sidebar meta — the smallest interface text allowed.</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Caption / Helper</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Regular 400<br>12&nbsp;/&nbsp;17px · color text-2</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:center;padding:22px 28px;border-bottom:1px solid #EDE8DF;">
+        <div style="font-family:'Geist Mono',monospace;font-weight:400;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#8A8278;">Overline · status</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Overline / Tag</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Mono 400 · UPPER<br>11px · LS 0.12em</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 232px;gap:24px;align-items:center;padding:22px 28px;">
+        <div style="display:flex;flex-direction:column;gap:5px;font-family:'Geist Mono',monospace;font-size:12.5px;line-height:1.5;color:#1F1E1C;">
+          <span><span style="color:#8A8278;">2026-06-18 14:32</span> · draft #a19f &nbsp;<span style="color:#C96442;">+128 −44</span></span>
+          <span style="color:#5A6B7C;">agent.research → human.review</span>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Data / Audit trail</div>
+          <div style="font-family:'Geist Mono',monospace;font-size:11px;line-height:1.7;color:#8A8278;">Geist Mono 400/500<br>12.5&nbsp;/&nbsp;19px · tabular</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#D8D0C0;margin:52px 0 44px;"></div>
+
+    <!-- ============ RULES ============ -->
+    <div style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.18em;color:#8A8278;margin-bottom:8px;">04</div>
+    <h2 style="font-family:'EB Garamond',serif;font-style:italic;font-weight:500;font-size:32px;margin:0 0 24px;letter-spacing:-0.01em;">Rules of use</h2>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;padding:24px 26px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#C96442;color:#F4F1ED;font-size:12px;font-weight:700;">✓</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#5A544C;">Do</span>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7;color:#1F1E1C;">
+          <li>Garamond italic for the wordmark, titles and pull-quotes only.</li>
+          <li>Geist for all body, UI and controls — the workhorse.</li>
+          <li>Geist Mono for anything that must be exact: time, IDs, diffs, code.</li>
+          <li>Keep editorial measure at 60–75 characters.</li>
+          <li>Use tabular figures (Geist Mono) when numbers must align.</li>
+        </ul>
+      </div>
+      <div style="background:#fff;border:1px solid #D8D0C0;border-radius:8px;padding:24px 26px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#C0392B;color:#fff;font-size:12px;font-weight:700;">✕</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#5A544C;">Don’t</span>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7;color:#1F1E1C;">
+          <li>Never set body copy or buttons in Garamond — it breaks the editorial calm.</li>
+          <li>Never go below 12px in the interface, or 14px in print.</li>
+          <li>No upright Garamond for the wordmark — italic is the voice.</li>
+          <li>No third type family; three is the whole system.</li>
+          <li>Don’t letterspace lowercase Geist; reserve tracking for mono caps.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:0.1em;color:#8A8278;margin:56px 0 0;text-align:center;">FABERLOOM · EB GARAMOND · GEIST · GEIST MONO</p>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

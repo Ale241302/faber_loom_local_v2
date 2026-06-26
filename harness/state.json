@@ -1,0 +1,155 @@
+{
+  "current_phase": "SL5",
+  "iteration": 1,
+  "max_iterations": 3,
+  "status": "needs_review",
+  "completed_phases": [
+    "SL0",
+    "SL1a",
+    "SL1b",
+    "SL2a",
+    "SL2b/c",
+    "SL3a",
+    "SL3b/c",
+    "SL3.5",
+    "SL4",
+    "SL5"
+  ],
+  "next_phase": "E0_CEO_decisions_and_MWT_pack",
+  "history": [
+    {
+      "phase": "SL1a",
+      "iteration": 4,
+      "role": "manual_fix",
+      "output": "harness/reports/SL1a_audit_iter4.md",
+      "written": [
+        "app/src/router/engine.py",
+        "app/src/router/models.py",
+        "app/src/router/providers.py",
+        "app/src/api.py",
+        "app/src/db.py",
+        "app/src/audit.py",
+        "app/static/js/app.jsx",
+        "app/tests/test_sl1a_router.py"
+      ],
+      "note": "Fixed residual blockers from SL1a re-audit: user message routing, fallback model allowlist, accumulated budget cap/audit, audit mirror best-effort, NoAllowedModel usage/audit, system prompt hardening, UI spend/cap status. Fugu static audit: PASS. pytest: 24 passed."
+    },
+    {
+      "phase": "SL1b",
+      "iteration": 1,
+      "role": "implementation",
+      "output": null,
+      "written": [
+        "app/src/models.py",
+        "app/src/kb.py",
+        "app/src/draft_engine.py",
+        "app/src/api.py",
+        "app/src/seed.py",
+        "app/static/js/app.jsx",
+        "app/tests/test_sl1a_router.py",
+        "app/tests/test_sl1b_kb_drafts.py"
+      ],
+      "note": "Implemented SL1b: schema v5 (kb_chunk, kb_fact, kb_chunk_fts, hardened draft table), KB ingestion for md/txt/csv, FTS5 retrieval (OR terms), draft generation against router with source validation + stale-fact warnings, HITL endpoints (edit only before approval, approve, reject, export-only-if-approved), demo KB fixtures, and minimal React UI. pytest: 37 passed."
+    },
+    {
+      "phase": "SL1b",
+      "iteration": 1,
+      "role": "fugu_audit",
+      "output": "harness/reports/AUDIT_BLOQUEANTES_SL1b_FUGU_v1.md",
+      "written": [
+        "harness/reports/AUDIT_BLOQUEANTES_SL1b_FUGU_v1.md"
+      ],
+      "note": "Fugu audited all SL1b blockers. Verdict: technically delivered but operationally blocked. Priority: CEO decisions + MWT real data pack. Conditions to open SL2a documented. Blockers and action items stored in report."
+    },
+    {
+      "phase": "SL1b",
+      "iteration": 2,
+      "role": "implementation",
+      "output": "harness/reports/FIXES_SL1b_FUGU_v1_IMPLEMENTATION.md",
+      "written": [
+        "app/src/update.py",
+        "app/src/backup.py",
+        "app/src/security/injection.py",
+        "app/src/draft_engine.py",
+        "app/src/kb.py",
+        "app/tests/test_sl1b_kb_drafts.py",
+        "harness/reports/AUDIT_FIXES_SL1b_FUGU_v1.md",
+        "harness/reports/FIXES_SL1b_FUGU_v1_IMPLEMENTATION.md"
+      ],
+      "note": "Implemented fugu v1 audit fixes: pinned public key + downgrade + pending-mutation check + multi-rollback for auto-update; os.urandom salt + schema-version check + InvalidToken message + business-data verification for backup; stronger HTML injection regex + javascript/data schemes; datetime-aware stale checks + valid_from future blocker + default freshness + undisclosed-hard-fact scan. pytest: 50 passed."
+    },
+    {
+      "phase": "SL1b",
+      "iteration": 3,
+      "role": "implementation",
+      "output": "harness/reports/FIXES_SL1b_FUGU_v2_IMPLEMENTATION.md",
+      "written": [
+        "app/src/update.py",
+        "app/src/draft_engine.py",
+        "app/src/kb.py",
+        "app/pyproject.toml",
+        "app/uv.lock",
+        "app/tests/test_sl1b_kb_drafts.py",
+        "harness/reports/AUDIT_SL1b_FUGU_v2.md",
+        "harness/reports/FIXES_SL1b_FUGU_v2_IMPLEMENTATION.md"
+      ],
+      "note": "Closed the 3 conditions from fugu v2 PASS-conditional verdict: removed empty-key fallback in update verification, declared cryptography dependency and regenerated uv.lock, added invented-hard-value detection in body_md. Cleaned up dead _is_vigente and fixed rollback version return. pytest: 51 passed."
+    },
+    {
+      "phase": "SL1b",
+      "iteration": 3,
+      "role": "fugu_audit",
+      "output": "harness/reports/AUDIT_SL1b_FUGU_v3.md",
+      "written": [
+        "harness/reports/AUDIT_SL1b_FUGU_v3.md"
+      ],
+      "note": "Fugu final audit: PASS formal. SL1b technical blockers resolved. SL2a remains blocked on CEO decisions and MWT real data pack."
+    },
+    {
+      "phase": "SL2a",
+      "iteration": 1,
+      "role": "implementation",
+      "output": null,
+      "written": [
+        "app/src/models.py",
+        "app/src/db.py",
+        "app/src/kb.py",
+        "app/src/draft_engine.py",
+        "app/src/api.py",
+        "app/static/js/app.jsx",
+        "app/tests/test_sl2_kb_ingestion.py",
+        "app/tests/test_sl2_draft_validation.py",
+        "app/tests/test_sl2_workspace_seal.py",
+        "app/pyproject.toml",
+        "app/uv.lock"
+      ],
+      "note": "Implemented SL2a/b/c technical baseline: schema v7 (workspace field_aliases_json, parser_version, source_sheet), robust upload endpoint for md/txt/csv/xlsx/pdf, workspace-configurable field aliases, source-label citation validation, stale-fact blockers, drag-and-drop KB upload UI. Added 14 SL2 tests. pytest: 65 passed. Pack MWT real and CEO decisions still pending."
+    },
+    {
+      "phase": "SL2b/c · SL3a · SL3b/c · SL3.5 · SL4 · SL5",
+      "iteration": 1,
+      "role": "implementation",
+      "output": "harness/reports/AUDIT_FUGU_CODEX_SL3_4_5.md",
+      "written": [
+        "app/src/models.py",
+        "app/src/db.py",
+        "app/src/skills.py",
+        "app/src/workloom.py",
+        "app/src/gold.py",
+        "app/src/seal.py",
+        "app/src/connectors/imap.py",
+        "app/src/api.py",
+        "app/SpaceLoom.spec",
+        "app/build.py",
+        "app/VERSION",
+        "app/tests/test_sl3a_skills.py",
+        "app/tests/test_sl3b_workloom_gold.py",
+        "app/tests/test_sl3_5_seal.py",
+        "app/tests/test_sl4_packaging.py",
+        "app/tests/test_sl5_imap.py",
+        "harness/reports/AUDIT_SL3_4_5_FUGU_MANUAL.md"
+      ],
+      "note": "Single-pass implementation and integration of SL2b/c, SL3a, SL3b/c, SL3.5, SL4 and SL5 on the local FastAPI/SQLite stack. Fixed remaining failing tests (skill allowlist, routine run HMAC, gold candidate isolation). Final pytest: 112 passed, 1 warning. Codex -p fugu audit completed (harness/reports/AUDIT_FUGU_CODEX_SL3_4_5.md): technically functional but several P0/P1 gaps remain before operational closure. User decided to stay on PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md; Foundation Beta migration files were reverted."
+    }
+  ]
+}

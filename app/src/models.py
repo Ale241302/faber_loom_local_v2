@@ -1,0 +1,994 @@
+"""SQLite schema migrations and Pydantic v2 API models for SpaceLoom SL0."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
+
+
+# Migration policy:
+# - v1 is the original skeleton contract.
+# - v2 hardens the contract-first seams required before closing SL0:
+#   routine/routine_run and a uniform latent-field surface.
+# - v3 adds SL1a chat router support: usage_record table with latent fields.
+# - v4 hardens SL1a audit/cost seams: usage_record.chat_id, attempts_json,
+#   model allowlist, accumulated budget cap, and pricing version.
+# - v5 adds SL1b KB + draft support: kb_chunk, kb_fact, kb_chunk_fts, and a
+#   workspace-scoped draft table with HITL fields (blockers, warnings, approved_by).
+# - v6 adds SL2 robust ingestion: pdf/xlsx source types, workspace seal_id, and
+#   source file metadata.
+# - v7 adds SL2 field aliases, parser_version/source_sheet tracking, and
+#   workspace-level synonym maps.
+# - v8 adds SL3/SL3.5/SL5/SL4 seams: workspace HMAC seal, mail_message and
+#   gold_candidate tables; enables skill runs, IMAP connector and desktop
+#   packaging contracts.
+# - v9 closes fugu P0 HITL gaps for destructive actions and mail send:
+#   mail_outbox idempotency, confirmation tokens, and explicit approval gating.
+# - v10 enriches WorkLoom + gold loop: urgency/reason on draft and routine_run,
+#   editorial_history audit seam, and gold candidate apply-to-routine feedback.
+MIGRATIONS: dict[int, str] = {
+    1: """
+    CREATE TABLE IF NOT EXISTS workspace (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        tenant_id TEXT,
+        user_id TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_source (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content_text TEXT,
+        content_blob BLOB,
+        meta_json TEXT NOT NULL DEFAULT '{}',
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        title TEXT NOT NULL,
+        model_preset TEXT NOT NULL DEFAULT 'default',
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        source_version TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS message (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool')),
+        content_json TEXT NOT NULL,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        source_version TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (chat_id) REFERENCES chat(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS draft (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'rejected', 'exported')),
+        content_json TEXT NOT NULL,
+        sources_json TEXT NOT NULL DEFAULT '[]',
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        source_version TEXT,
+        approved_by TEXT,
+        approved_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (chat_id) REFERENCES chat(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        action TEXT NOT NULL,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        approved_by TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        source_version TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kb_source_workspace_id ON kb_source(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_workspace_id ON chat(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_message_chat_id ON message(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_draft_chat_id ON draft(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_workspace_id ON audit_log(workspace_id);
+    """,
+    2: """
+    ALTER TABLE workspace ADD COLUMN actor_id TEXT;
+    ALTER TABLE workspace ADD COLUMN actor_role_at_decision TEXT;
+    ALTER TABLE workspace ADD COLUMN routine_version TEXT;
+    ALTER TABLE workspace ADD COLUMN skill_version TEXT;
+    ALTER TABLE workspace ADD COLUMN source_version TEXT;
+    ALTER TABLE workspace ADD COLUMN approved_by TEXT;
+
+    ALTER TABLE kb_source ADD COLUMN actor_id TEXT;
+    ALTER TABLE kb_source ADD COLUMN actor_role_at_decision TEXT;
+    ALTER TABLE kb_source ADD COLUMN approved_by TEXT;
+
+    ALTER TABLE chat ADD COLUMN actor_id TEXT;
+    ALTER TABLE chat ADD COLUMN actor_role_at_decision TEXT;
+    ALTER TABLE chat ADD COLUMN approved_by TEXT;
+
+    ALTER TABLE message ADD COLUMN workspace_id TEXT;
+    ALTER TABLE message ADD COLUMN approved_by TEXT;
+
+    CREATE TABLE IF NOT EXISTS routine (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        name TEXT NOT NULL,
+        skill_md TEXT NOT NULL DEFAULT '',
+        tools_allowlist TEXT NOT NULL DEFAULT '[]',
+        schema_output_json TEXT NOT NULL DEFAULT '{}',
+        preset_id TEXT,
+        trigger_json TEXT NOT NULL DEFAULT '{}',
+        persona_md TEXT NOT NULL DEFAULT '',
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 2,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS routine_run (
+        id TEXT PRIMARY KEY,
+        routine_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        input_json TEXT NOT NULL DEFAULT '{}',
+        output_json TEXT NOT NULL DEFAULT '{}',
+        evidence_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'requires_hitl')),
+        edit_pct REAL,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 2,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (routine_id) REFERENCES routine(id) ON DELETE CASCADE,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    UPDATE message
+    SET workspace_id = (
+        SELECT chat.workspace_id FROM chat WHERE chat.id = message.chat_id
+    )
+    WHERE workspace_id IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_message_workspace_id ON message(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_workspace_id ON routine(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_run_workspace_id ON routine_run(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_run_routine_id ON routine_run(routine_id);
+    """,
+    3: """
+    CREATE TABLE IF NOT EXISTS usage_record (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        provider_slug TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed', 'budget_exceeded')),
+        error TEXT,
+        request_json TEXT NOT NULL DEFAULT '{}',
+        response_json TEXT NOT NULL DEFAULT '{}',
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 3,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_record_workspace_id ON usage_record(workspace_id);
+    """,
+    4: """
+    ALTER TABLE usage_record ADD COLUMN chat_id TEXT;
+    ALTER TABLE usage_record ADD COLUMN attempts_json TEXT NOT NULL DEFAULT '[]';
+
+    CREATE INDEX IF NOT EXISTS idx_usage_record_chat_id ON usage_record(chat_id);
+    """,
+    5: """
+    CREATE TABLE IF NOT EXISTS kb_chunk (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content_text TEXT NOT NULL,
+        source_locator TEXT,
+        source_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 5,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (source_id) REFERENCES kb_source(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_workspace_id ON kb_chunk(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_source_id ON kb_chunk(source_id);
+
+    CREATE TABLE IF NOT EXISTS kb_fact (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        field_value TEXT NOT NULL,
+        unit TEXT,
+        currency TEXT,
+        valid_from TEXT,
+        valid_until TEXT,
+        source_locator TEXT,
+        source_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 5,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (source_id) REFERENCES kb_source(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_workspace_id ON kb_fact(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_entity_key ON kb_fact(workspace_id, entity_key);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS kb_chunk_fts USING fts5(
+        content_text,
+        content='kb_chunk',
+        content_rowid='rowid'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS kb_chunk_fts_insert AFTER INSERT ON kb_chunk BEGIN
+        INSERT INTO kb_chunk_fts(rowid, content_text) VALUES (new.rowid, new.content_text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS kb_chunk_fts_delete AFTER DELETE ON kb_chunk BEGIN
+        INSERT INTO kb_chunk_fts(kb_chunk_fts, rowid, content_text) VALUES ('delete', old.rowid, old.content_text);
+    END;
+
+    DROP TABLE IF EXISTS draft;
+
+    CREATE TABLE draft (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        chat_id TEXT,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        task TEXT NOT NULL DEFAULT 'draft_commercial_reply',
+        subject TEXT,
+        body_md TEXT NOT NULL,
+        hard_facts_json TEXT NOT NULL DEFAULT '[]',
+        sources_json TEXT NOT NULL DEFAULT '[]',
+        blockers_json TEXT NOT NULL DEFAULT '[]',
+        warnings_json TEXT NOT NULL DEFAULT '[]',
+        requires_confirmation INTEGER NOT NULL DEFAULT 0 CHECK (requires_confirmation IN (0, 1)),
+        status TEXT NOT NULL CHECK (status IN ('draft', 'pending_approval', 'approved', 'rejected', 'exported')),
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 5,
+        source_version TEXT,
+        approved_by TEXT,
+        approved_at TEXT,
+        exported_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (chat_id) REFERENCES chat(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_draft_workspace_id ON draft(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_draft_chat_id ON draft(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_draft_status ON draft(workspace_id, status);
+    """,
+    6: """
+    ALTER TABLE workspace ADD COLUMN seal_id TEXT;
+
+    UPDATE workspace SET seal_id = lower(hex(randomblob(16)))
+    WHERE seal_id IS NULL;
+
+    CREATE TABLE IF NOT EXISTS _workspace_seal_backup (
+        workspace_id TEXT PRIMARY KEY,
+        seal_id TEXT NOT NULL
+    );
+
+    ALTER TABLE kb_source ADD COLUMN file_name TEXT;
+    ALTER TABLE kb_source ADD COLUMN mime_type TEXT;
+    ALTER TABLE kb_source ADD COLUMN file_size INTEGER;
+    ALTER TABLE kb_fact ADD COLUMN extraction_method TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_source_id ON kb_fact(source_id);
+    """,
+    7: """
+    ALTER TABLE workspace ADD COLUMN field_aliases_json TEXT DEFAULT '{}';
+
+    ALTER TABLE kb_source ADD COLUMN parser_version TEXT;
+    ALTER TABLE kb_fact ADD COLUMN source_sheet TEXT;
+    """,
+    8: """
+    ALTER TABLE kb_source ADD COLUMN workspace_hmac TEXT;
+    ALTER TABLE kb_fact ADD COLUMN workspace_hmac TEXT;
+    ALTER TABLE draft ADD COLUMN workspace_hmac TEXT;
+    ALTER TABLE routine_run ADD COLUMN workspace_hmac TEXT;
+
+    CREATE TABLE IF NOT EXISTS mail_message (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        account TEXT NOT NULL,
+        mail_uid TEXT NOT NULL,
+        subject TEXT,
+        sender TEXT,
+        body_text TEXT,
+        raw_payload BLOB,
+        status TEXT NOT NULL CHECK (status IN ('unread','drafted','approved','sent','rejected')),
+        draft_id TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 8,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (draft_id) REFERENCES draft(id) ON DELETE SET NULL,
+        UNIQUE(workspace_id, account, mail_uid)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_message_workspace_id ON mail_message(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_message_status ON mail_message(workspace_id, status);
+
+    CREATE TABLE IF NOT EXISTS gold_candidate (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        routine_id TEXT NOT NULL,
+        run_id TEXT NOT NULL UNIQUE,
+        edit_pct REAL,
+        input_json TEXT NOT NULL DEFAULT '{}',
+        output_json TEXT NOT NULL DEFAULT '{}',
+        learned_output_json TEXT NOT NULL DEFAULT '{}',
+        approved INTEGER NOT NULL DEFAULT 0 CHECK (approved IN (0, 1)),
+        schema_version INTEGER NOT NULL DEFAULT 8,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (routine_id) REFERENCES routine(id) ON DELETE CASCADE,
+        FOREIGN KEY (run_id) REFERENCES routine_run(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gold_candidate_workspace_id ON gold_candidate(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_gold_candidate_routine_id ON gold_candidate(routine_id);
+    """,
+    9: """
+    CREATE TABLE IF NOT EXISTS mail_outbox (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        mail_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','sending','sent','failed')),
+        smtp_message_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (mail_id) REFERENCES mail_message(id) ON DELETE CASCADE,
+        UNIQUE(workspace_id, mail_id),
+        UNIQUE(workspace_id, idempotency_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_outbox_workspace_id ON mail_outbox(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_outbox_mail_id ON mail_outbox(mail_id);
+    """,
+    10: """
+    ALTER TABLE routine_run ADD COLUMN urgency INTEGER DEFAULT 0;
+    ALTER TABLE routine_run ADD COLUMN reason TEXT;
+
+    ALTER TABLE draft ADD COLUMN urgency INTEGER DEFAULT 0;
+    ALTER TABLE draft ADD COLUMN reason TEXT;
+
+    ALTER TABLE gold_candidate ADD COLUMN used INTEGER DEFAULT 0 CHECK (used IN (0, 1));
+
+    CREATE TABLE IF NOT EXISTS editorial_history (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('draft','routine_run','gold_candidate')),
+        entity_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_editorial_history_entity ON editorial_history(workspace_id, entity_type, entity_id);
+    """,
+}
+
+
+class HealthRead(BaseModel):
+    status: Literal["ok"] = "ok"
+    app: str = "SpaceLoom"
+    schema_version: int
+    database_path: str
+
+
+class WorkspaceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    slug: str | None = Field(default=None, min_length=1, max_length=140)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Workspace name cannot be blank")
+        return stripped
+
+    @field_validator("slug")
+    @classmethod
+    def slug_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Workspace slug cannot be blank")
+        return stripped
+
+
+class WorkspaceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    slug: str
+    seal_id: str | None = None
+    field_aliases_json: str | None = None
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkspaceFieldAliasesUpdate(BaseModel):
+    aliases: dict[str, list[str]] = Field(default_factory=dict)
+
+    @field_validator("aliases")
+    @classmethod
+    def aliases_must_be_simple_strings(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        for key, targets in value.items():
+            if not key.strip():
+                raise ValueError("Alias key cannot be blank")
+            if not isinstance(targets, list) or not all(isinstance(t, str) and t.strip() for t in targets):
+                raise ValueError(f"Alias '{key}' must map to a list of non-empty strings")
+        return value
+
+
+class WorkspaceListRead(BaseModel):
+    workspaces: list[WorkspaceRead]
+
+
+class AuditEvent(BaseModel):
+    id: str
+    workspace_id: str
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    action: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    tenant_id: str | None = None
+    user_id: str | None = None
+    approved_by: str | None = None
+    schema_version: int = SCHEMA_VERSION
+    routine_version: str | None = None
+    skill_version: str | None = None
+    source_version: str | None = None
+    created_at: str
+
+
+class RoutineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    name: str
+    skill_md: str
+    tools_allowlist: str
+    schema_output_json: str
+    preset_id: str | None = None
+    trigger_json: str
+    persona_md: str
+    is_active: int
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class RoutineRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    routine_id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    input_json: str
+    output_json: str
+    evidence_json: str
+    status: str
+    edit_pct: float | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    urgency: int = 0
+    reason: str | None = None
+    created_at: str
+
+
+class RoutineCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    skill_md: str = Field(default="", max_length=50000)
+    tools_allowlist: str = Field(default="[]", max_length=2000)
+    schema_output_json: str = Field(default="{}", max_length=10000)
+    preset_id: str | None = Field(default=None, max_length=120)
+    trigger_json: str = Field(default="{}", max_length=10000)
+    persona_md: str = Field(default="", max_length=20000)
+    is_active: int = Field(default=1, ge=0, le=1)
+    source_version: str = Field(default="v1", min_length=1, max_length=120)
+
+    @field_validator("schema_output_json")
+    @classmethod
+    def schema_output_json_must_be_valid_schema(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            return "{}"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"schema_output_json must be valid JSON: {exc}") from exc
+
+        # Trivial/empty schema is allowed as a no-op.
+        if parsed == {}:
+            return stripped
+
+        if not isinstance(parsed, dict):
+            raise ValueError("schema_output_json must be a JSON object")
+        if parsed.get("type") != "object":
+            raise ValueError("schema_output_json must have type='object'")
+        if not isinstance(parsed.get("properties"), dict):
+            raise ValueError("schema_output_json must have a 'properties' object")
+        return stripped
+
+
+class SkillInvokeRequest(BaseModel):
+    input_json: dict[str, Any] = Field(default_factory=dict)
+    provider_slug: str | None = None
+    model: str | None = None
+
+
+class AtMentionInvokeRequest(BaseModel):
+    routine_name: str = Field(min_length=1, max_length=120)
+    user_request: str = Field(min_length=1, max_length=20000)
+    provider_slug: str | None = None
+    model: str | None = None
+
+
+class MailMessageCreate(BaseModel):
+    account: str = Field(min_length=1, max_length=300)
+    mail_uid: str = Field(min_length=1, max_length=300)
+    subject: str | None = Field(default=None, max_length=1000)
+    sender: str | None = Field(default=None, max_length=500)
+    body_text: str | None = Field(default=None, max_length=100000)
+    raw_payload: bytes | None = None
+
+
+class MailMessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    account: str
+    mail_uid: str
+    subject: str | None = None
+    sender: str | None = None
+    body_text: str | None = None
+    status: str
+    draft_id: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class GoldCandidateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    routine_id: str
+    run_id: str
+    edit_pct: float | None = None
+    input_json: str
+    output_json: str
+    learned_output_json: str
+    approved: int
+    used: int = 0
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkLoomRead(BaseModel):
+    routine_runs: list[RoutineRunRead]
+    drafts: list[DraftRead]
+    gold_candidates: list[GoldCandidateRead]
+
+
+# -----------------------------------------------------------------------------
+# SL1a: Chat + Router API models
+# -----------------------------------------------------------------------------
+
+class ChatCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Chat title cannot be blank")
+        return stripped
+
+
+class ChatRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    title: str
+    model_preset: str
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+
+
+class MessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    chat_id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    role: str
+    content: str
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+
+
+class ChatCompletionRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=20000)
+    provider_slug: str | None = None
+    model: str | None = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=1024, gt=0, le=4096)
+
+
+class ChatCompletionResponse(BaseModel):
+    message: MessageRead
+    provider_slug: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    duration_ms: int
+
+
+class UsageRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    chat_id: str | None = None
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    provider_slug: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    duration_ms: int
+    status: str
+    error: str | None = None
+    attempts_json: str
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+
+
+class RouterProviderRead(BaseModel):
+    provider_slug: str
+    model_default: str
+    configured: bool
+    enabled: bool
+    allowed: bool
+    available: bool
+    reason: str | None = None
+
+
+class RouterStatusRead(BaseModel):
+    providers: list[RouterProviderRead]
+    budget_cap_usd: float
+    spent_usd: float
+    provider_allowlist: list[str] | None = None
+    model_allowlist: dict[str, list[str]] | None = None
+
+
+# -----------------------------------------------------------------------------
+# SL1b: Knowledge Base + Draft API models
+# -----------------------------------------------------------------------------
+
+
+class KBSourceCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    type: Literal["md", "txt", "csv", "xlsx", "pdf"] = "md"
+    content_text: str = Field(default="", min_length=0, max_length=500000)
+    source_version: str = Field(default="v1", min_length=1, max_length=120)
+    file_name: str | None = Field(default=None, max_length=500)
+    mime_type: str | None = Field(default=None, max_length=200)
+    file_size: int | None = Field(default=None, ge=0)
+
+
+class KBSourceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    type: str
+    title: str
+    content_text: str | None = None
+    meta_json: str
+    source_version: str | None = None
+    schema_version: int
+    file_name: str | None = None
+    mime_type: str | None = None
+    file_size: int | None = None
+    parser_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+
+
+class KBFactRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    source_id: str
+    entity_key: str
+    field_name: str
+    field_value: str
+    unit: str | None = None
+    currency: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    source_locator: str | None = None
+    source_version: str | None = None
+    source_sheet: str | None = None
+    created_at: str
+
+
+class KBChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    source_id: str
+    chunk_index: int
+    content_text: str
+    source_locator: str | None = None
+    source_version: str | None = None
+    created_at: str
+
+
+class DraftSource(BaseModel):
+    source_id: str
+    label: str
+    title: str
+    locator: str | None = None
+    source_version: str | None = None
+    excerpt: str
+
+
+class DraftHardFact(BaseModel):
+    field: str
+    value: str
+    source_id: str
+    source_locator: str | None = None
+    source_version: str | None = None
+
+
+class DraftContent(BaseModel):
+    subject: str | None = None
+    body_md: str
+    hard_facts_used: list[DraftHardFact] = Field(default_factory=list)
+    sources: list[DraftSource] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    requires_confirmation: bool = False
+
+
+class DraftGenerateRequest(BaseModel):
+    chat_id: str | None = None
+    task: Literal["draft_commercial_reply"] = "draft_commercial_reply"
+    user_request: str = Field(min_length=1, max_length=20000)
+    provider_slug: str | None = None
+    model: str | None = None
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=2048, gt=0, le=4096)
+
+
+class DraftRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    chat_id: str | None = None
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    task: str
+    subject: str | None = None
+    body_md: str
+    hard_facts_json: str
+    sources_json: str
+    blockers_json: str
+    warnings_json: str
+    requires_confirmation: bool
+    status: str
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    approved_at: str | None = None
+    exported_at: str | None = None
+    urgency: int = 0
+    reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DraftUpdateRequest(BaseModel):
+    subject: str | None = Field(default=None, max_length=500)
+    body_md: str | None = Field(default=None, max_length=50000)
+
+
+class DraftApproveRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+    urgency: int = Field(default=0, ge=0)
+
+
+class DraftRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class RoutineRunApproveRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+    urgency: int = Field(default=0, ge=0)
+
+
+class RoutineRunRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class DraftExportRead(BaseModel):
+    markdown: str
+    subject: str | None = None
+    exported_at: str

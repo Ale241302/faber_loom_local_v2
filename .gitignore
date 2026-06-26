@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Databases (local-first)
+*.sqlite3
+*.db
+
+# Application runtime data
+app/data/
+app/dist/
+app/build/
+app/graphify-out/
+app/*.log
+
+# External tools / generated graphs
+graphify/
+graphify-out/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 276 72" width="276" height="72" role="img" aria-labelledby="title desc">
+  <title id="title">FaberLoom wordmark</title>
+  <desc id="desc">Wordmark de FaberLoom en EB Garamond Italic: Faber en coral y Loom en tinta.</desc>
+  <text x="4" y="50" font-family="'EB Garamond', Georgia, 'Times New Roman', serif" font-size="56" font-style="italic" font-weight="500" letter-spacing="-0.8">
+    <tspan fill="#C96442">Faber</tspan><tspan fill="#1F1E1C">Loom</tspan>
+  </text>
+</svg>
