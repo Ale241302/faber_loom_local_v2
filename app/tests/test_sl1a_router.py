@@ -56,7 +56,7 @@ def _demo_workspace_id(client: TestClient) -> str:
 def test_schema_version_is_10(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["schema_version"] == 10
+    assert response.json()["schema_version"] == 11
 
 
 def test_schema_contains_usage_record_table(client: TestClient) -> None:

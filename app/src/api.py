@@ -1179,6 +1179,7 @@ def api_create_kb_source(
             source_type=payload.type,
             content_text=payload.content_text,
             source_version=payload.source_version,
+            level=payload.level,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
@@ -1204,6 +1205,7 @@ def api_upload_kb_source(
     request: Request,
     title: str = Form(min_length=1, max_length=300),
     source_version: str = Form(default="v1", min_length=1, max_length=120),
+    level: int = Form(default=0, ge=0, le=4),
     file: UploadFile = File(...),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> KBSourceRead:
@@ -1236,6 +1238,7 @@ def api_upload_kb_source(
             source_type=source_type,
             content_blob=content_blob,
             source_version=source_version,
+            level=level,
             file_name=file.filename,
             mime_type=file.content_type or "application/octet-stream",
             file_size=len(content_blob),
@@ -1609,6 +1612,28 @@ def api_list_mail_messages(
     return [MailMessageRead(**row) for row in list_mail_messages(ctx, conn)]
 
 
+# Deterministic mail classification used during IMAP sync. Avoids using
+# body_text as an injection surface; only subject and sender are inspected.
+MAIL_CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "rfq": ["cotizacion", "cotización", "quote", "rfq", "presupuesto", "solicitud de cotizacion", "pedido de cotizacion"],
+    "cobranza": ["pago", "factura", "vencimiento", "cobranza", "deuda", "saldo", "recordatorio de pago"],
+    "soporte": ["soporte", "ayuda", "error", "problema", "ticket", "incidencia"],
+    "spam": ["unsubscribe", "promo", "descuento", "newsletter", "oferta", "no reply"],
+    "seguimiento": ["seguimiento", "follow-up", "follow up", "estado", "actualizacion", "actualización"],
+}
+
+
+def _classify_mail(subject: str | None, sender: str | None) -> str:
+    """Classify a mail based on subject and sender only (no body parsing)."""
+
+    text = " ".join([subject or "", sender or ""]).lower()
+    for category, keywords in MAIL_CATEGORY_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in text:
+                return category
+    return "other"
+
+
 @router.post("/workspaces/{workspace_id}/mail/sync")
 def api_sync_mail(
     workspace_id: str,
@@ -1658,6 +1683,7 @@ def api_sync_mail(
                 body_text=msg.get("body_text"),
                 raw_payload=msg.get("raw_payload"),
                 status="unread",
+                category=_classify_mail(msg.get("subject"), msg.get("sender")),
             )
             created.append(MailMessageRead(**row))
 

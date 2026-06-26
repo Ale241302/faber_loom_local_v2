@@ -1203,6 +1203,7 @@ MAIL_MESSAGE_COLUMNS = """
     body_text,
     raw_payload,
     status,
+    category,
     draft_id,
     schema_version,
     source_version,
@@ -1223,6 +1224,7 @@ def create_mail_message(
     body_text: str | None,
     raw_payload: bytes | None,
     status: str = "unread",
+    category: str = "other",
 ) -> dict[str, Any]:
     """Insert a mail_message row scoped to the current workspace.
 
@@ -1261,6 +1263,7 @@ def create_mail_message(
             body_text,
             raw_payload,
             status,
+            category,
             draft_id,
             schema_version,
             source_version,
@@ -1268,7 +1271,7 @@ def create_mail_message(
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             mail_id,
@@ -1284,6 +1287,7 @@ def create_mail_message(
             body_text,
             raw_payload,
             status,
+            category,
             None,
             SCHEMA_VERSION,
             None,
@@ -1434,6 +1438,7 @@ GOLD_CANDIDATE_COLUMNS = """
     learned_output_json,
     approved,
     used,
+    use_count,
     schema_version,
     source_version,
     approved_by,

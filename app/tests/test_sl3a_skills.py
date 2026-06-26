@@ -54,6 +54,10 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
+    from app.src.router.config_store import ProviderConfigStore
+
+    # Prevent locally-stored provider keys from leaking into isolated tests.
+    monkeypatch.setattr(ProviderConfigStore, "all", lambda self: {})
 
     audit_writer.audit_path = audit_path
     with TestClient(create_app()) as test_client:

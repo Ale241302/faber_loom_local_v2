@@ -190,6 +190,7 @@ def ingest_kb_source(
     content_text: str | None = None,
     content_blob: bytes | None = None,
     source_version: str = "v1",
+    level: int = 0,
     approved_by: str | None = None,
     file_name: str | None = None,
     mime_type: str | None = None,
@@ -270,10 +271,10 @@ def ingest_kb_source(
             INSERT INTO kb_source (
                 id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
                 type, title, content_text, content_blob, meta_json, source_version, schema_version,
-                file_name, mime_type, file_size, parser_version, approved_by, workspace_hmac,
+                level, file_name, mime_type, file_size, parser_version, approved_by, workspace_hmac,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_id,
@@ -289,6 +290,7 @@ def ingest_kb_source(
                 json.dumps(meta, ensure_ascii=False, sort_keys=True),
                 source_version,
                 SCHEMA_VERSION,
+                level,
                 file_name,
                 mime_type,
                 file_size,

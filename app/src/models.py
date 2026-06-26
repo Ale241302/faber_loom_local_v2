@@ -8,12 +8,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
 # Migration policy:
 # - v1 is the original skeleton contract.
+# - v11 adds UI-facing metadata for the FaberLoom Shell redesign:
+#   mail_message.category, kb_source.level, gold_candidate.use_count.
 # - v2 hardens the contract-first seams required before closing SL0:
 #   routine/routine_run and a uniform latent-field surface.
 # - v3 adds SL1a chat router support: usage_record table with latent fields.
@@ -465,6 +467,16 @@ MIGRATIONS: dict[int, str] = {
 
     CREATE INDEX IF NOT EXISTS idx_editorial_history_entity ON editorial_history(workspace_id, entity_type, entity_id);
     """,
+    11: """
+    ALTER TABLE mail_message ADD COLUMN category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('rfq','seguimiento','cobranza','soporte','spam','other'));
+    ALTER TABLE kb_source ADD COLUMN level INTEGER NOT NULL DEFAULT 0 CHECK (level IN (0, 1, 2, 3, 4));
+    ALTER TABLE gold_candidate ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0;
+
+    UPDATE gold_candidate SET use_count = CASE WHEN used = 1 THEN 1 ELSE 0 END;
+
+    CREATE INDEX IF NOT EXISTS idx_mail_message_category ON mail_message(workspace_id, category);
+    CREATE INDEX IF NOT EXISTS idx_kb_source_level ON kb_source(workspace_id, level);
+    """,
 }
 
 
@@ -723,6 +735,7 @@ class MailMessageRead(BaseModel):
     sender: str | None = None
     body_text: str | None = None
     status: str
+    category: str = "other"
     draft_id: str | None = None
     schema_version: int
     source_version: str | None = None
@@ -744,6 +757,7 @@ class GoldCandidateRead(BaseModel):
     learned_output_json: str
     approved: int
     used: int = 0
+    use_count: int = 0
     schema_version: int
     source_version: str | None = None
     approved_by: str | None = None
@@ -915,6 +929,7 @@ class KBSourceCreate(BaseModel):
     type: Literal["md", "txt", "csv", "xlsx", "pdf"] = "md"
     content_text: str = Field(default="", min_length=0, max_length=500000)
     source_version: str = Field(default="v1", min_length=1, max_length=120)
+    level: int = Field(default=0, ge=0, le=4)
     file_name: str | None = Field(default=None, max_length=500)
     mime_type: str | None = Field(default=None, max_length=200)
     file_size: int | None = Field(default=None, ge=0)
@@ -939,6 +954,7 @@ class KBSourceRead(BaseModel):
     mime_type: str | None = None
     file_size: int | None = None
     parser_version: str | None = None
+    level: int = 0
     approved_by: str | None = None
     created_at: str
 

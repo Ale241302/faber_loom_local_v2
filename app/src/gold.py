@@ -154,7 +154,7 @@ def apply_gold_to_routine(
         conn.execute(
             """
             UPDATE gold_candidate
-            SET used = 1, updated_at = ?
+            SET used = 1, use_count = use_count + 1, updated_at = ?
             WHERE id = ? AND workspace_id = ?
             """,
             (now, candidate_id, workspace_id),
