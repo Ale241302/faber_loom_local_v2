@@ -193,7 +193,6 @@ def run_desktop(host: str = HOST, port: int = PORT) -> None:
         height=860,
         min_size=(1000, 640),
         background_color="#F4F1ED",
-        icon=str(ICON_PATH) if ICON_PATH.exists() else None,
     )
     webview.start()
 
