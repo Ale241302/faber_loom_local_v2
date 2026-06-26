@@ -1,4 +1,4 @@
-const { useEffect, useMemo, useState } = React;
+var { useEffect, useMemo, useState } = React;
 
 const MODES = [
   { id: "operar", label: "Operar" },
@@ -125,46 +125,15 @@ function tryJsonParse(text) {
 
 function prettyJson(value) { return JSON.stringify(value, null, 2); }
 
-function Icon({ name, size = 24 }) {
-  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.75", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
-  if (name === "loom") return <svg {...common}><path d="M7 3.5V9.5M7 14.5V20.5M12 3.5V4.5M12 9.5V14.5M12 19.5V20.5M17 3.5V9.5M17 14.5V20.5"/><path d="M3.5 7H4.5M9.5 7H14.5M19.5 7H20.5M3.5 12H9.5M14.5 12H20.5M3.5 17H4.5M9.5 17H14.5M19.5 17H20.5"/></svg>;
-  if (name === "menu") return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16"/></svg>;
-  if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.6-4.6"/></svg>;
-  if (name === "send") return <svg {...common}><path d="M12 19V5M5 12h14"/></svg>;
-  if (name === "arrow-up") return <svg {...common}><path d="M12 19V5M6 11l6-6 6 6"/></svg>;
-  if (name === "book") return <svg {...common}><path d="M6 4h12v17l-6-4-6 4z"/></svg>;
-  if (name === "layers") return <svg {...common}><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg>;
-  if (name === "check") return <svg {...common}><path d="M5 12.5 10 17.5 19.5 8"/></svg>;
-  if (name === "spark") return <svg {...common}><path d="M12 4 13.5 9 18 10.5 13.5 12 12 17 10.5 12 6 10.5 10.5 9z"/><path d="M19 4v3M21 5.5h-3M5 17v3M6.5 18.5h-3"/></svg>;
-  if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="2.8"/><path d="M19.4 14.5a7.5 7.5 0 0 0 0-5l1.7-1.3-1.6-2.7-2 .8a7.5 7.5 0 0 0-4.3-2.5l-.3-2.1H10l-.3 2.1a7.5 7.5 0 0 0-4.3 2.5l-2-.8L1.8 8.2l1.7 1.3a7.5 7.5 0 0 0 0 5l-1.7 1.3 1.6 2.7 2-.8a7.5 7.5 0 0 0 4.3 2.5l.3 2.1H14l.3-2.1a7.5 7.5 0 0 0 4.3-2.5l2 .8 1.6-2.7z"/></svg>;
-  if (name === "audit") return <svg {...common}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>;
-  if (name === "shield") return <svg {...common}><path d="M12 3.5 19 6v5.5c0 4.5-3 7.4-7 9-4-1.6-7-4.5-7-9V6l7-2.5Z"/><path d="M9 12l2 2 4-4"/></svg>;
-  if (name === "database") return <svg {...common}><ellipse cx="12" cy="5.5" rx="6.5" ry="2.5"/><path d="M5.5 5.5v6c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-6"/><path d="M5.5 11.5v6c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-6"/></svg>;
-  if (name === "route") return <svg {...common}><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H12a4 4 0 0 1 0 8 4 4 0 0 0 0 8h3.5"/></svg>;
-  if (name === "mail") return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>;
-  if (name === "inbox") return <svg {...common}><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>;
-  if (name === "clock") return <svg {...common}><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>;
-  if (name === "panel-l") return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>;
-  if (name === "panel-r") return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>;
-  if (name === "x") return <svg {...common}><path d="M6 6 18 18M18 6 6 18"/></svg>;
-  if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
-  if (name === "trash") return <svg {...common}><path d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 14h12l1-14"/></svg>;
-  if (name === "refresh") return <svg {...common}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
-  if (name === "key") return <svg {...common}><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-6 6m0 0h3m-3 0V5M10 18l.01 0"/></svg>;
-  return <svg {...common}><circle cx="12" cy="12" r="8"/><path d="M12 8v4M12 16v.01"/></svg>;
-}
-
-function BrandMark() { return <Icon name="loom" />; }
-
-function Topbar() {
+function Topbar({ onOpenPalette, theme, setTheme }) {
   return <header className="topbar">
     <button type="button" className="ceja" aria-label="Panel izquierdo"><Icon name="panel-l" size={18}/></button>
     <div className="brand" aria-label="FaberLoom SpaceLoom">
       <span className="brand-mark"><BrandMark /></span>
       <span className="brand-word"><span className="brand-name"><span className="brand-faber">Faber</span><span className="brand-loom">Loom</span></span><span className="brand-sub">SpaceLoom · local-first</span></span>
     </div>
-    <div className="cmdk" role="button" tabIndex="0" aria-label="Buscar o ejecutar"><Icon name="search" size={16}/><span className="cmdk-label">Buscar o preparar contexto…</span><kbd>Ctrl K</kbd></div>
-    <div className="topbar-actions"><span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span><button type="button" className="ceja" aria-label="Panel derecho"><Icon name="panel-r" size={18}/></button></div>
+    <div className="cmdk" role="button" tabIndex="0" onClick={onOpenPalette} aria-label="Buscar o ejecutar"><Icon name="search" size={16}/><span className="cmdk-label">Buscar o ejecutar…</span><kbd>Ctrl K</kbd></div>
+    <div className="topbar-actions"><ThemeSwitcher theme={theme} onChange={setTheme} /><span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span><button type="button" className="ceja" aria-label="Panel derecho"><Icon name="panel-r" size={18}/></button></div>
   </header>;
 }
 function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status }) {
@@ -680,17 +649,16 @@ function RoutinesView({ activeWorkspace }) {
           {loading && <div style={S.loading}>Cargando…</div>}
           {error && <div style={S.error}>{error}</div>}
           {!loading && filteredRoutines.length === 0 && <div style={S.empty}>No hay rutinas en esta categoría.</div>}
-          <div style={S.list}>
-            {filteredRoutines.map((routine) => <div key={routine.id} style={S.card}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
-                <div style={S.cardTitle}>{routine.name}</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <span style={S.badge}>{routine.category || "custom"}</span>
-                  <span style={routine.is_active ? S.badge : { ...S.badge, opacity: 0.6 }}>{routine.is_active ? "activo" : "inactivo"}</span>
-                  {routine.approved_by ? <span style={{ ...S.badge, background: "var(--coral-soft)" }}>aprobada</span> : <span style={S.badge}>pendiente</span>}
-                </div>
+          <Accordion items={filteredRoutines.map((routine) => ({
+            id: routine.id,
+            title: routine.name,
+            subtitle: `${routine.id} · ${routine.source_version || "v1"}`,
+            badge: routine.category || "custom",
+            children: <div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-start", marginBottom: 10 }}>
+                <span style={routine.is_active ? S.badge : { ...S.badge, opacity: 0.6 }}>{routine.is_active ? "activo" : "inactivo"}</span>
+                {routine.approved_by ? <span style={{ ...S.badge, background: "var(--coral-soft)" }}>aprobada</span> : <span style={S.badge}>pendiente</span>}
               </div>
-              <div style={S.cardMeta}>{routine.id} · {routine.source_version || "v1"}</div>
               <div style={S.inlineGroup}>
                 <button style={S.button} onClick={() => startEdit(routine)}>Editar</button>
                 <button style={S.button} onClick={() => toggleRoutine(routine)}>{routine.is_active ? "Desactivar" : "Activar"}</button>
@@ -702,8 +670,8 @@ function RoutinesView({ activeWorkspace }) {
                 <textarea style={S.monoTextarea} value={runInputs[routine.id] || "{}"} onChange={(e) => setRunInputs({ ...runInputs, [routine.id]: e.target.value })} rows={4}/>
               </label>
               {runOutputs[routine.id] && <div><div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)" }}>output_json</div><pre style={S.pre}>{runOutputs[routine.id]}</pre></div>}
-            </div>)}
-          </div>
+            </div>
+          }))} />
         </div>
       </section>
       <section className="panel" aria-label="Crear rutina">
@@ -717,7 +685,10 @@ function RoutinesView({ activeWorkspace }) {
             <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={form.schema_output_json} onChange={(e) => setForm({ ...form, schema_output_json: e.target.value })} rows={5}/></label>
             <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={form.trigger_json} onChange={(e) => setForm({ ...form, trigger_json: e.target.value })}/></label>
             <label style={S.label}>source_version<input style={S.input} value={form.source_version} onChange={(e) => setForm({ ...form, source_version: e.target.value })}/></label>
-            <label style={S.label}><input type="checkbox" checked={form.is_active === 1} onChange={(e) => setForm({ ...form, is_active: e.target.checked ? 1 : 0 })}/> Activo</label>
+            <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+              <Toggle checked={form.is_active === 1} onChange={(checked) => setForm({ ...form, is_active: checked ? 1 : 0 })} />
+              Activo
+            </div>
             <button type="submit" style={S.buttonPrimary}>Crear rutina</button>
           </form>
         </div>
@@ -736,7 +707,10 @@ function RoutinesView({ activeWorkspace }) {
           <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={editForm.schema_output_json} onChange={(e) => setEditForm({ ...editForm, schema_output_json: e.target.value })} rows={5}/></label>
           <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={editForm.trigger_json} onChange={(e) => setEditForm({ ...editForm, trigger_json: e.target.value })}/></label>
           <label style={S.label}>source_version<input style={S.input} value={editForm.source_version} onChange={(e) => setEditForm({ ...editForm, source_version: e.target.value })}/></label>
-          <label style={S.label}><input type="checkbox" checked={editForm.is_active === 1} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked ? 1 : 0 })}/> Activo</label>
+          <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+            <Toggle checked={editForm.is_active === 1} onChange={(checked) => setEditForm({ ...editForm, is_active: checked ? 1 : 0 })} />
+            Activo
+          </div>
           <div style={S.inlineGroup}>
             <button type="submit" style={S.buttonPrimary}>Guardar</button>
             <button type="button" style={S.button} onClick={() => setEditingRoutine(null)}>Cancelar</button>
@@ -853,7 +827,8 @@ function WorkloomView({ activeWorkspace }) {
           <div style={S.list}>{data.routine_runs.map((run) => <div key={run.id} style={S.card}>
             <div style={S.cardTitle}>{run.id}</div>
             <div style={S.cardMeta}>routine {run.routine_id}</div>
-            <div style={{ fontSize: 12, marginBottom: 8 }}><span className={statusClass(run.status)}>{run.status}</span> · urgencia {run.urgency || 0}</div>
+            <div style={{ marginBottom: 8 }}><span className={statusClass(run.status)}>{run.status}</span></div>
+            <Meter value={run.urgency || 0} max={10} label="Urgencia" variant={run.urgency >= 7 ? "vino" : run.urgency >= 4 ? "amber" : "sage"} />
             {run.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{run.reason}</div>}
             <div style={S.inlineGroup}>
               <button style={S.buttonPrimary} onClick={() => approveRun(run)}>Aprobar</button>
@@ -869,7 +844,8 @@ function WorkloomView({ activeWorkspace }) {
           <div style={S.list}>{data.drafts.map((draft) => <div key={draft.id} style={S.card}>
             <div style={S.cardTitle}>{draft.subject || "(sin asunto)"}</div>
             <div style={S.cardMeta}>{draft.id}</div>
-            <div style={{ fontSize: 12, marginBottom: 8 }}><span className={statusClass(draft.status)}>{draft.status}</span> · urgencia {draft.urgency || 0}</div>
+            <div style={{ marginBottom: 8 }}><span className={statusClass(draft.status)}>{draft.status}</span></div>
+            <Meter value={draft.urgency || 0} max={10} label="Urgencia" variant={draft.urgency >= 7 ? "vino" : draft.urgency >= 4 ? "amber" : "sage"} />
             {draft.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{draft.reason}</div>}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{draft.body_md.slice(0, 160)}…</div>
             <div style={S.inlineGroup}>
@@ -1039,10 +1015,10 @@ function SettingsView({ activeWorkspace }) {
                   Prioridad
                   <input type="number" style={S.input} value={draft.priority ?? cfg.priority} onChange={(e) => updateEdit(cfg.provider_slug, "priority", e.target.value)} />
                 </label>
-                <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
-                  <input type="checkbox" checked={draft.is_enabled ?? cfg.is_enabled} onChange={(e) => updateEdit(cfg.provider_slug, "is_enabled", e.target.checked)} />
+                <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+                  <Toggle checked={Boolean(draft.is_enabled ?? cfg.is_enabled)} onChange={(checked) => updateEdit(cfg.provider_slug, "is_enabled", checked)} />
                   Habilitado
-                </label>
+                </div>
               </div>
               <label style={S.label}>
                 Base URL (opcional)
@@ -1257,6 +1233,19 @@ function App() {
   const [workspaces, setWorkspaces] = useState(boot ? boot.workspaces : []);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(boot ? boot.activeWorkspaceId : null);
   const [status, setStatus] = useState(boot && boot.workspaces.length ? "ready" : "loading");
+  const [theme, setTheme] = useState(getInitialTheme);
+  const [toasts, setToasts] = useState([]);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+
+  useEffect(() => { applyTheme(theme); }, [theme]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setCmdkOpen(true); }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     if (boot && boot.workspaces.length) return;
@@ -1274,8 +1263,25 @@ function App() {
     return () => { cancelled = true; };
   }, [boot]);
 
+  const pushToast = (message, type = "info", duration = 3000) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, message, type, duration }]);
+  };
+  const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  const handleCommand = (cmd) => {
+    if (cmd.type === "nav") { setMode(cmd.mode); setNav(cmd.value); }
+    if (cmd.type === "workspace") { setActiveWorkspaceId(cmd.value); pushToast("Workspace activo cambiado", "info"); }
+    if (cmd.type === "theme") { setTheme(cmd.value); pushToast("Tema cambiado a " + cmd.value, "success"); }
+  };
+
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
-  return <div className="app-shell"><Topbar/><div className="frame"><Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status}/><Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/></div></div>;
+  return <div className="app-shell">
+    <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme}/>
+    <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
+    <div className="frame"><Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status}/><Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/></div>
+    <ToastContainer toasts={toasts} onDismiss={dismissToast}/>
+  </div>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
