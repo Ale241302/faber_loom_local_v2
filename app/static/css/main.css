@@ -394,8 +394,16 @@ button { background: none; border: none; cursor: pointer; }
 .stage-title h2 { margin: 0; font-size: 24px; color: var(--text-primary); line-height: 1.1; }
 .stage-title p { margin: 5px 0 0; color: var(--text-muted); font-size: 12.5px; }
 
-.message-area { min-height: 0; display: grid; place-items: center; padding: 24px; overflow: auto; background: var(--bg-canvas); }
-.empty-state { max-width: 520px; display: grid; justify-items: center; text-align: center; padding: 28px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); box-shadow: var(--shadow-sm); }
+.message-area { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px; overflow: auto; background: var(--bg-canvas); }
+.chat-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 12.5px; margin: auto; }
+.message { max-width: 85%; display: flex; flex-direction: column; gap: 4px; }
+.message-user { align-self: flex-end; }
+.message-assistant { align-self: flex-start; }
+.message-meta { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); }
+.message-content { padding: 12px 14px; border-radius: var(--r-md); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.message-user .message-content { background: var(--coral-soft); border: 1px solid var(--coral-deep); color: var(--text-primary); border-bottom-right-radius: 4px; }
+.message-assistant .message-content { background: var(--bg-raised); border: 1px solid var(--border-default); color: var(--text-primary); border-bottom-left-radius: 4px; }
+.empty-state { max-width: 520px; display: grid; justify-items: center; text-align: center; padding: 28px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); box-shadow: var(--shadow-sm); margin: auto; }
 .empty-loom { width: 58px; height: 58px; display: grid; place-items: center; margin-bottom: 14px; border-radius: 18px; background: var(--coral); color: var(--bg-canvas); }
 .empty-state h3 { font-size: 21px; margin-bottom: 10px; color: var(--text-primary); }
 .empty-state p { color: var(--text-secondary); font-size: 13px; line-height: 1.55; margin: 0; }
@@ -404,10 +412,15 @@ button { background: none; border: none; cursor: pointer; }
 .composer { background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-lg); padding: 12px 14px; transition: border-color .2s, box-shadow .2s; display: flex; gap: 10px; align-items: flex-end; }
 .composer:focus-within { border-color: var(--coral-deep); box-shadow: 0 0 0 3px var(--coral-soft); }
 .composer textarea { flex: 1; background: none; border: none; color: var(--text-primary); font: 14px/1.5 var(--font-ui); outline: none; resize: none; min-height: 24px; max-height: 140px; }
-.send-button { width: auto; min-width: 34px; height: 34px; border-radius: 9px; background: var(--bg-raised); color: var(--text-muted); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; flex-shrink: 0; transition: all .2s; font-weight: 600; }
-.send-button.ready, .send-button:not(:disabled) { background: var(--coral); color: #1A1815; }
+.composer textarea:disabled { opacity: 0.6; }
+.send-button { width: auto; min-width: 34px; height: 34px; border-radius: 9px; background: var(--bg-raised); color: var(--text-muted); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; flex-shrink: 0; transition: all .2s; font-weight: 600; border: none; cursor: pointer; }
+.send-button:not(:disabled) { background: var(--coral); color: #1A1815; }
 .send-button:not(:disabled):hover { transform: scale(1.07); }
 .composer-note { text-align: center; font-size: 10.5px; color: var(--text-muted); margin-top: 9px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+.provider-card { display: flex; flex-direction: column; }
+.provider-card .panel-header { align-items: flex-start; }
+.provider-card input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--coral); cursor: pointer; }
 
 .seams-panel .seam-list { padding: 10px; }
 .seam-card { padding: 12px; border-bottom: 1px solid var(--border-subtle); }

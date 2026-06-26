@@ -13,7 +13,9 @@ from fastapi.testclient import TestClient
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "spaceloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
+    config_dir = tmp_path / "config"
     monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(config_dir))
 
     # Ensure no provider keys or router config leak into tests.
     for name in (
@@ -24,6 +26,9 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
         "SPACELOOM_GOOGLE_API_KEY",
+        "KIMI_API_KEY",
+        "MOONSHOT_API_KEY",
+        "SPACELOOM_KIMI_API_KEY",
         "SPACELOOM_ENABLE_OLLAMA",
         "SPACELOOM_OLLAMA_ENABLED",
         "SPACELOOM_PROVIDER_ALLOWLIST",

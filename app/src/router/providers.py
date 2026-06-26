@@ -256,6 +256,13 @@ class OllamaProvider(_OpenAICompatibleProvider):
     default_base_url = "http://localhost:11434/v1"
 
 
+class KimiProvider(_OpenAICompatibleProvider):
+    """Moonshot Kimi through its OpenAI-compatible endpoint."""
+
+    requires_api_key = True
+    default_base_url = "https://api.moonshot.cn/v1"
+
+
 class AnthropicProvider(Provider):
     """Anthropic Messages API provider."""
 

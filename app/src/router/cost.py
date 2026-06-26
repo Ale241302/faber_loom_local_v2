@@ -15,6 +15,9 @@ MODEL_PRICING_USD_PER_1K: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.00015, 0.0006),
     "claude-3-5-sonnet": (0.003, 0.015),
     "gemini-1.5-pro": (0.0035, 0.0105),
+    "moonshot-v1-8k": (0.005, 0.005),
+    "moonshot-v1-32k": (0.005, 0.005),
+    "moonshot-v1-128k": (0.005, 0.005),
     "llama3.1": (0.0, 0.0),
 }
 
@@ -22,6 +25,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-sonnet",
     "google": "gemini-1.5-pro",
+    "kimi": "moonshot-v1-8k",
     "ollama": "llama3.1",
 }
 
@@ -35,6 +39,7 @@ MODEL_ALLOWLIST: dict[str, set[str]] = {
     "openai": {"gpt-4o-mini", "gpt-4o"},
     "anthropic": {"claude-3-5-sonnet"},
     "google": {"gemini-1.5-pro"},
+    "kimi": {"moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"},
     "ollama": {"llama3.1"},
 }
 

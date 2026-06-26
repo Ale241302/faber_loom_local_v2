@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,10 @@ from .models import (
     KBSourceRead,
     MailMessageRead,
     MessageRead,
+    ProviderConfigListRead,
+    ProviderConfigRead,
+    ProviderConfigWrite,
+    ProviderTestResult,
     RoutineCreate,
     RoutineRead,
     RoutineRunApproveRequest,
@@ -112,6 +117,7 @@ from .models import (
 from .workloom import list_workloom_items
 from .router import BudgetExceeded, ProviderError, build_router
 from .router import cost as router_cost
+from .router.config_store import ProviderConfigStore, mask_key
 from .router.engine import NoAllowedModel
 from .router.models import CompletionRequest
 from .seal import compute_workspace_hmac
@@ -904,6 +910,176 @@ def _persist_skill_usage(
         },
         mirror_jsonl=False,
     )
+
+
+# -----------------------------------------------------------------------------
+# SL1a: Provider configuration endpoints
+# -----------------------------------------------------------------------------
+
+
+_PROVIDER_SLUGS = {"openai", "anthropic", "google", "kimi", "ollama"}
+
+
+def _default_priority(provider_slug: str) -> int:
+    return {"openai": 10, "anthropic": 20, "kimi": 25, "google": 30, "ollama": 90}.get(provider_slug, 50)
+
+
+@router.get("/workspaces/{workspace_id}/providers", response_model=ProviderConfigListRead)
+def api_list_provider_configs(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ProviderConfigListRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    store = ProviderConfigStore()
+    stored = store.all()
+    router = build_router()
+    providers: list[ProviderConfigRead] = []
+
+    for slug in sorted(_PROVIDER_SLUGS):
+        provider = router.providers.get(slug)
+        cfg = stored.get(slug, {})
+        providers.append(
+            ProviderConfigRead(
+                provider_slug=slug,
+                api_key_masked=mask_key(cfg.get("api_key")),
+                base_url=cfg.get("base_url") or None,
+                model_default=cfg.get("model_default")
+                or (provider.config.model_default if provider else router_cost.get_default_model(slug)),
+                priority=cfg.get("priority")
+                if cfg.get("priority") is not None
+                else (provider.config.priority if provider else _default_priority(slug)),
+                is_enabled=cfg.get("is_enabled")
+                if cfg.get("is_enabled") is not None
+                else (provider.config.is_enabled if provider else True),
+            )
+        )
+
+    return ProviderConfigListRead(
+        providers=providers,
+        model_allowlist={k: sorted(v) for k, v in router_cost.MODEL_ALLOWLIST.items()},
+    )
+
+
+@router.patch("/workspaces/{workspace_id}/providers/{provider_slug}", response_model=ProviderConfigRead)
+def api_update_provider_config(
+    workspace_id: str,
+    provider_slug: str,
+    payload: ProviderConfigWrite,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ProviderConfigRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if provider_slug not in _PROVIDER_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown provider '{provider_slug}'",
+        )
+
+    store = ProviderConfigStore()
+    values: dict[str, Any] = {}
+    if payload.api_key is not None:
+        values["api_key"] = payload.api_key.strip() or None
+    if payload.base_url is not None:
+        values["base_url"] = payload.base_url.strip() or None
+    if payload.model_default is not None:
+        values["model_default"] = payload.model_default.strip() or None
+    if payload.priority is not None:
+        values["priority"] = payload.priority
+    if payload.is_enabled is not None:
+        values["is_enabled"] = payload.is_enabled
+
+    store.set(provider_slug, values)
+    cfg = store.get(provider_slug)
+
+    return ProviderConfigRead(
+        provider_slug=provider_slug,
+        api_key_masked=mask_key(cfg.get("api_key")),
+        base_url=cfg.get("base_url") or None,
+        model_default=cfg.get("model_default") or router_cost.get_default_model(provider_slug),
+        priority=cfg.get("priority") if cfg.get("priority") is not None else _default_priority(provider_slug),
+        is_enabled=cfg.get("is_enabled") if cfg.get("is_enabled") is not None else True,
+    )
+
+
+@router.delete("/workspaces/{workspace_id}/providers/{provider_slug}/key")
+def api_delete_provider_key(
+    workspace_id: str,
+    provider_slug: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, str]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if provider_slug not in _PROVIDER_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown provider '{provider_slug}'",
+        )
+
+    ProviderConfigStore().delete_key(provider_slug)
+    return {"provider_slug": provider_slug, "status": "key_removed"}
+
+
+@router.post("/workspaces/{workspace_id}/providers/{provider_slug}/test", response_model=ProviderTestResult)
+def api_test_provider(
+    workspace_id: str,
+    provider_slug: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ProviderTestResult:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if provider_slug not in _PROVIDER_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown provider '{provider_slug}'",
+        )
+
+    router = build_router()
+    provider = router.providers.get(provider_slug)
+    if provider is None:
+        return ProviderTestResult(ok=False, provider_slug=provider_slug, error="provider not registered")
+
+    if not provider.is_available():
+        return ProviderTestResult(
+            ok=False,
+            provider_slug=provider_slug,
+            model=provider.config.model_default,
+            error="provider not configured or disabled",
+        )
+
+    model = provider.config.model_default
+    start = time.perf_counter()
+    try:
+        result = provider.complete(
+            CompletionRequest(
+                messages=[{"role": "user", "content": "Hi"}],
+                model=model,
+                max_tokens=1,
+            )
+        )
+        return ProviderTestResult(
+            ok=True,
+            provider_slug=provider_slug,
+            model=result.model,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+        )
+    except Exception as exc:  # noqa: BLE001 (connectivity test must surface provider errors)
+        return ProviderTestResult(
+            ok=False,
+            provider_slug=provider_slug,
+            model=model,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+            error=str(exc),
+        )
 
 
 # -----------------------------------------------------------------------------

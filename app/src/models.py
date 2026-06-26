@@ -829,6 +829,36 @@ class RouterStatusRead(BaseModel):
     model_allowlist: dict[str, list[str]] | None = None
 
 
+class ProviderConfigWrite(BaseModel):
+    api_key: str | None = Field(default=None, max_length=2000)
+    base_url: str | None = Field(default=None, max_length=500)
+    model_default: str | None = Field(default=None, max_length=120)
+    priority: int | None = Field(default=None, ge=0, le=1000)
+    is_enabled: bool | None = Field(default=None)
+
+
+class ProviderConfigRead(BaseModel):
+    provider_slug: str
+    api_key_masked: str | None = None
+    base_url: str | None = None
+    model_default: str
+    priority: int
+    is_enabled: bool
+
+
+class ProviderConfigListRead(BaseModel):
+    providers: list[ProviderConfigRead]
+    model_allowlist: dict[str, list[str]]
+
+
+class ProviderTestResult(BaseModel):
+    ok: bool
+    provider_slug: str
+    model: str | None = None
+    latency_ms: int | None = None
+    error: str | None = None
+
+
 # -----------------------------------------------------------------------------
 # SL1b: Knowledge Base + Draft API models
 # -----------------------------------------------------------------------------

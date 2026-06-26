@@ -22,11 +22,6 @@ const NAV = {
   ],
 };
 
-const SEEDED_CHATS = [
-  { id: "draft-intake", title: "Borrador sin iniciar", snippet: "La conversación arranca en SL1a. Este hilo deja listo el shell visual.", time: "Ahora" },
-  { id: "mwt-space", title: "MWT · espacio demo", snippet: "Contexto local sembrado; sin mensajes reales todavía.", time: "Seed" },
-];
-
 const S = {
   view: { minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "auto" },
   grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, alignItems: "start" },
@@ -106,6 +101,16 @@ async function apiPatch(path, body) {
   return res.json();
 }
 
+async function apiDelete(path) {
+  const res = await fetch(path, { method: "DELETE", headers: API_HEADERS });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 async function sha256Truncated(text, length = 16) {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
@@ -142,6 +147,10 @@ function Icon({ name, size = 24 }) {
   if (name === "panel-l") return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>;
   if (name === "panel-r") return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>;
   if (name === "x") return <svg {...common}><path d="M6 6 18 18M18 6 6 18"/></svg>;
+  if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+  if (name === "trash") return <svg {...common}><path d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 14h12l1-14"/></svg>;
+  if (name === "refresh") return <svg {...common}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
+  if (name === "key") return <svg {...common}><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-6 6m0 0h3m-3 0V5M10 18l.01 0"/></svg>;
   return <svg {...common}><circle cx="12" cy="12" r="8"/><path d="M12 8v4M12 16v.01"/></svg>;
 }
 
@@ -197,26 +206,45 @@ function ContextStrip({ activeWorkspace }) {
   </div>;
 }
 
-function ChatList({ activeChatId, setActiveChatId }) {
-  return <section className="panel" aria-label="Lista de chats">
-    <div className="panel-header"><div><div className="panel-kicker">SpaceLoom</div><div className="panel-title">Chats</div></div><span className="nav-badge">Vacío</span></div>
-    <div className="chat-list">{SEEDED_CHATS.map((chat) => <button key={chat.id} type="button" className={cx("chat-card", activeChatId === chat.id && "is-active")} onClick={() => setActiveChatId(chat.id)}>
-      <span className="chat-row"><span className="chat-title">{chat.title}</span><span className="chat-time">{chat.time}</span></span><span className="chat-snippet">{chat.snippet}</span>
-    </button>)}</div>
+function ChatList({ chats, activeChatId, setActiveChatId, onCreate }) {
+  return <section className="panel chat-list-panel" aria-label="Lista de chats">
+    <div className="panel-header">
+      <div><div className="panel-kicker">SpaceLoom</div><div className="panel-title">Chats</div></div>
+      <button type="button" className="ceja" onClick={onCreate} title="Nuevo chat"><Icon name="plus" size={18}/></button>
+    </div>
+    <div className="chat-list">
+      {chats.length === 0 && <div className="chat-empty">Sin chats todavía. Crea uno para empezar.</div>}
+      {chats.map((chat) => (
+        <button key={chat.id} type="button" className={cx("chat-card", activeChatId === chat.id && "is-active")} onClick={() => setActiveChatId(chat.id)}>
+          <span className="chat-row"><span className="chat-title">{chat.title}</span><span className="chat-time">{chat.created_at ? new Date(chat.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></span>
+        </button>
+      ))}
+    </div>
   </section>;
 }
 
 function EmptyMessages({ activeWorkspace }) {
-  return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Este shell abre el canvas de SpaceLoom con el contexto de {activeWorkspace ? activeWorkspace.name : "tu workspace"}. La generación real de mensajes queda fuera de SL0 y entra con el router mínimo de SL1a.</p></div>;
+  return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Selecciona un chat o crea uno nuevo para conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
 }
 
-function Composer() {
+function Composer({ onSend, disabled }) {
   const [draft, setDraft] = useState("");
-  return <form className="composer-shell" onSubmit={(event) => event.preventDefault()} aria-label="Composer de chat visual">
-    <div className="composer"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe el encargo del borrador… (envío real disponible en SL1a)" rows="2"/><button type="submit" className="send-button" disabled title="La ejecución real empieza en SL1a"><Icon name="send" size={16}/>Preparar</button></div>
-    <div className="composer-note"><Icon name="shield" size={16}/>Sin envío, borrado ni acción irreversible desde SL0.</div>
+  const submit = (event) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || disabled) return;
+    onSend(text);
+    setDraft("");
+  };
+  return <form className="composer-shell" onSubmit={submit} aria-label="Composer de chat">
+    <div className="composer">
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe tu mensaje…" rows="2" disabled={disabled}/>
+      <button type="submit" className="send-button" disabled={disabled || !draft.trim()}><Icon name="send" size={16}/>Enviar</button>
+    </div>
+    <div className="composer-note"><Icon name="shield" size={16}/>Las acciones destructivas requieren HITL y doble confirmación.</div>
   </form>;
 }
+
 function SeamPanel() {
   return <aside className="panel seams-panel" aria-label="Costuras contract-first">
     <div className="panel-header"><div><div className="panel-kicker">Costuras</div><div className="panel-title">Contract-first</div></div></div>
@@ -229,12 +257,91 @@ function SeamPanel() {
 }
 
 function SpaceView({ activeWorkspace }) {
-  const [activeChatId, setActiveChatId] = useState(SEEDED_CHATS[0].id);
+  const [chats, setChats] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const loadChats = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/chats`);
+      setChats(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  const loadMessages = async (chatId) => {
+    if (!activeWorkspace || !chatId) {
+      setMessages([]);
+      return;
+    }
+    try {
+      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/messages`);
+      setMessages(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  useEffect(() => { loadChats(); }, [activeWorkspace]);
+  useEffect(() => { loadMessages(activeChatId); }, [activeChatId]);
+
+  const createChat = async () => {
+    if (!activeWorkspace) return;
+    setError(null);
+    try {
+      const chat = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats`, { title: "Nueva conversación" });
+      setChats((prev) => [chat, ...prev]);
+      setActiveChatId(chat.id);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const sendMessage = async (text) => {
+    if (!activeWorkspace || !activeChatId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/completions`, { message: text });
+      await loadMessages(activeChatId);
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  };
+
+  if (!activeWorkspace) return <WorkspaceRequired icon="loom" title="SpaceLoom"/>;
+
+  const activeChat = chats.find((c) => c.id === activeChatId);
+
   return <div className="space-view">
-    <ChatList activeChatId={activeChatId} setActiveChatId={setActiveChatId}/>
+    <ChatList chats={chats} activeChatId={activeChatId} setActiveChatId={setActiveChatId} onCreate={createChat}/>
     <section className="panel chat-stage" aria-label="Canvas central de SpaceLoom">
-      <div className="stage-header"><div className="stage-title"><h2>Draft-first canvas.</h2><p>Chat vacío, contexto visible, sin modelo conectado todavía.</p></div><span className="pill"><Icon name="loom" size={16}/>SL0</span></div>
-      <div className="message-area"><EmptyMessages activeWorkspace={activeWorkspace}/></div><Composer/>
+      <div className="stage-header">
+        <div className="stage-title"><h2>{activeChat ? activeChat.title : "Selecciona o crea un chat"}</h2><p>{activeChat ? "Conversación con el router SL1a." : "Elige un hilo para empezar."}</p></div>
+        <span className="pill"><Icon name="loom" size={16}/>SL1a</span>
+      </div>
+      <div className="message-area">
+        {loading && <div style={S.loading}>Cargando…</div>}
+        {error && <div style={S.error}>{error}</div>}
+        {!activeChat && !loading && <EmptyMessages activeWorkspace={activeWorkspace}/>}
+        {messages.map((msg) => (
+          <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
+            <div className="message-meta">{msg.role === "user" ? "Tú" : "SpaceLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+            <div className="message-content">{msg.content}</div>
+          </div>
+        ))}
+        {busy && <div className="message message-assistant"><div className="message-content"><em>El telar está pensando…</em></div></div>}
+      </div>
+      <Composer onSend={sendMessage} disabled={busy || !activeChat}/>
     </section>
     <SeamPanel/>
   </div>;
@@ -598,48 +705,178 @@ function WorkloomView({ activeWorkspace }) {
   </div>;
 }
 
+const PROVIDER_LABELS = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google / Gemini",
+  kimi: "Kimi / Moonshot",
+  ollama: "Ollama (local)",
+};
+
 function SettingsView({ activeWorkspace }) {
+  const [configs, setConfigs] = useState([]);
+  const [modelAllowlist, setModelAllowlist] = useState({});
   const [routerStatus, setRouterStatus] = useState(null);
-  const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState({});
+  const [testing, setTesting] = useState({});
+  const [testResults, setTestResults] = useState({});
+  const [edits, setEdits] = useState({});
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const load = async () => {
     if (!activeWorkspace) return;
-    let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
-      apiGet("/api/health"),
-    ])
-      .then(([router, healthData]) => {
-        if (cancelled) return;
-        setRouterStatus(router);
-        setHealth(healthData);
-      })
-      .catch((err) => { if (!cancelled) setError(err.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [activeWorkspace]);
+    try {
+      const [cfgData, statusData] = await Promise.all([
+        apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
+      ]);
+      setConfigs(cfgData.providers);
+      setModelAllowlist(cfgData.model_allowlist || {});
+      setRouterStatus(statusData);
+      const initialEdits = {};
+      cfgData.providers.forEach((p) => {
+        initialEdits[p.provider_slug] = {
+          api_key: "",
+          base_url: p.base_url || "",
+          model_default: p.model_default,
+          priority: p.priority,
+          is_enabled: p.is_enabled,
+        };
+      });
+      setEdits(initialEdits);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace]);
+
+  const updateEdit = (slug, field, value) => {
+    setEdits((prev) => ({ ...prev, [slug]: { ...prev[slug], [field]: value } }));
+  };
+
+  const save = async (slug) => {
+    const draft = edits[slug] || {};
+    const body = {};
+    if (draft.api_key && draft.api_key.trim()) body.api_key = draft.api_key.trim();
+    if (draft.base_url !== undefined) body.base_url = draft.base_url.trim() || null;
+    if (draft.model_default !== undefined) body.model_default = draft.model_default;
+    if (draft.priority !== undefined) body.priority = Number(draft.priority);
+    if (draft.is_enabled !== undefined) body.is_enabled = Boolean(draft.is_enabled);
+
+    setSaving((s) => ({ ...s, [slug]: true }));
+    setError(null);
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspace.id}/providers/${slug}`, body);
+      await load();
+      setEdits((prev) => ({ ...prev, [slug]: { ...prev[slug], api_key: "" } }));
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving((s) => ({ ...s, [slug]: false }));
+  };
+
+  const clearKey = async (slug) => {
+    setError(null);
+    try {
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/providers/${slug}/key`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const test = async (slug) => {
+    setTesting((s) => ({ ...s, [slug]: true }));
+    setError(null);
+    try {
+      const r = await apiPost(`/api/workspaces/${activeWorkspace.id}/providers/${slug}/test`, {});
+      setTestResults((prev) => ({ ...prev, [slug]: r }));
+    } catch (err) {
+      setError(err.message);
+    }
+    setTesting((s) => ({ ...s, [slug]: false }));
+  };
 
   if (!activeWorkspace) return <WorkspaceRequired icon="settings" title="Ajustes"/>;
 
   return <div className="classic" style={S.view}>
-    <div className="vhead"><div><div className="vtitle">Ajustes</div><div className="vsub">Router, proveedor y health del tenant</div></div></div>
+    <div className="vhead"><div><div className="vtitle">Ajustes</div><div className="vsub">Router, proveedores y API keys</div></div></div>
     {error && <div style={S.error}>{error}</div>}
     {loading && <div style={S.loading}>Cargando ajustes…</div>}
     <div style={S.grid2}>
+      {configs.map((cfg) => {
+        const status = routerStatus?.providers?.find((p) => p.provider_slug === cfg.provider_slug);
+        const draft = edits[cfg.provider_slug] || {};
+        const allowedModels = modelAllowlist[cfg.provider_slug] || [];
+        const testResult = testResults[cfg.provider_slug];
+        return <section key={cfg.provider_slug} className="panel provider-card" aria-label={`Configuración ${PROVIDER_LABELS[cfg.provider_slug]}`}>
+          <div className="panel-header">
+            <div><div className="panel-kicker">Provider</div><div className="panel-title">{PROVIDER_LABELS[cfg.provider_slug]}</div></div>
+            <span className={status ? statusClass(status.available ? "succeeded" : (status.reason || "failed")) : "badge"}>
+              {status ? (status.available ? "disponible" : (status.reason || "no disponible")) : "cargando"}
+            </span>
+          </div>
+          <div style={S.panelBody}>
+            <div style={S.form}>
+              <label style={S.label}>
+                API key
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="password"
+                    style={S.input}
+                    value={draft.api_key || ""}
+                    placeholder={cfg.api_key_masked || "Sin API key guardada"}
+                    onChange={(e) => updateEdit(cfg.provider_slug, "api_key", e.target.value)}
+                  />
+                  {cfg.api_key_masked && <button type="button" style={S.button} onClick={() => clearKey(cfg.provider_slug)} title="Borrar key guardada"><Icon name="trash" size={16}/></button>}
+                </div>
+              </label>
+              <label style={S.label}>
+                Modelo default
+                <select style={S.select} value={draft.model_default || cfg.model_default} onChange={(e) => updateEdit(cfg.provider_slug, "model_default", e.target.value)}>
+                  {allowedModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <label style={S.label}>
+                  Prioridad
+                  <input type="number" style={S.input} value={draft.priority ?? cfg.priority} onChange={(e) => updateEdit(cfg.provider_slug, "priority", e.target.value)} />
+                </label>
+                <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+                  <input type="checkbox" checked={draft.is_enabled ?? cfg.is_enabled} onChange={(e) => updateEdit(cfg.provider_slug, "is_enabled", e.target.checked)} />
+                  Habilitado
+                </label>
+              </div>
+              <label style={S.label}>
+                Base URL (opcional)
+                <input type="text" style={S.input} value={draft.base_url ?? (cfg.base_url || "")} onChange={(e) => updateEdit(cfg.provider_slug, "base_url", e.target.value)} placeholder="https://api…" />
+              </label>
+              <div style={S.inlineGroup}>
+                <button type="button" style={S.buttonPrimary} onClick={() => save(cfg.provider_slug)} disabled={saving[cfg.provider_slug]}>
+                  <Icon name="check" size={16}/> Guardar
+                </button>
+                <button type="button" style={S.button} onClick={() => test(cfg.provider_slug)} disabled={testing[cfg.provider_slug]}>
+                  <Icon name="refresh" size={16}/> Probar
+                </button>
+                {saving[cfg.provider_slug] && <span style={{ color: "var(--text-muted)" }}>Guardando…</span>}
+                {testing[cfg.provider_slug] && <span style={{ color: "var(--text-muted)" }}>Probando…</span>}
+              </div>
+              {testResult && <div className={testResult.ok ? "status-tag approved" : "status-tag rejected"} style={{ marginTop: 8, fontSize: 12 }}>
+                {testResult.ok ? `Conectado · ${testResult.model} · ${testResult.latency_ms} ms` : `Error: ${testResult.error}`}
+              </div>}
+            </div>
+          </div>
+        </section>;
+      })}
       <section className="panel" aria-label="Estado del router">
         <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">Router status</div></div></div>
         <div style={S.panelBody}>
           {routerStatus && <pre style={S.pre}>{prettyJson(routerStatus)}</pre>}
-        </div>
-      </section>
-      <section className="panel" aria-label="Health">
-        <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">Health</div></div></div>
-        <div style={S.panelBody}>
-          {health && <pre style={S.pre}>{prettyJson(health)}</pre>}
         </div>
       </section>
     </div>
