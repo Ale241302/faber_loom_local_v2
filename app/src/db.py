@@ -1891,6 +1891,50 @@ def delete_routine(
     return cursor.rowcount > 0
 
 
+ALLOWED_ROUTINE_UPDATE_FIELDS = frozenset(
+    {
+        "name",
+        "skill_md",
+        "tools_allowlist",
+        "schema_output_json",
+        "preset_id",
+        "trigger_json",
+        "persona_md",
+        "is_active",
+        "source_version",
+        "approved_by",
+    }
+)
+
+
+def update_routine(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    routine_id: str,
+    **fields: Any,
+) -> dict[str, Any] | None:
+    """Update a routine scoped to the current workspace.
+
+    Only keys explicitly present in ``fields`` are written, so callers can pass
+    ``approved_by=None`` to clear approval without omitting the column.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    updates = {k: v for k, v in fields.items() if k in ALLOWED_ROUTINE_UPDATE_FIELDS}
+    if not updates:
+        return get_routine(ctx, conn, routine_id)
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    params = list(updates.values()) + [utc_now(), routine_id, workspace_id]
+    cursor = conn.execute(
+        f"UPDATE routine SET {set_clause}, updated_at = ? WHERE id = ? AND workspace_id = ?",
+        params,
+    )
+    if cursor.rowcount == 0:
+        return None
+    return get_routine(ctx, conn, routine_id)
+
+
 
 def get_mail_outbox(
     ctx: Context,

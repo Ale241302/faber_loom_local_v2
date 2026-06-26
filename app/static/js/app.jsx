@@ -476,9 +476,26 @@ function RoutinesView({ activeWorkspace }) {
   const [routines, setRoutines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({ name: "", skill_md: "", tools_allowlist: "[]", schema_output_json: "{}" });
+  const [filter, setFilter] = useState("all");
+  const [form, setForm] = useState({ name: "", skill_md: "", persona_md: "", tools_allowlist: "[]", schema_output_json: "{}", trigger_json: "[]", is_active: 1, source_version: "v1" });
+  const [editingRoutine, setEditingRoutine] = useState(null);
+  const [editForm, setEditForm] = useState(null);
   const [runInputs, setRunInputs] = useState({});
   const [runOutputs, setRunOutputs] = useState({});
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [catalog, setCatalog] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [selectedImports, setSelectedImports] = useState(new Set());
+  const [importLoading, setImportLoading] = useState(false);
+
+  const FILTERS = [
+    { id: "all", label: "Todos" },
+    { id: "skill", label: "Skills" },
+    { id: "agent", label: "Agentes" },
+    { id: "template", label: "Templates" },
+    { id: "reference", label: "Referencias" },
+    { id: "custom", label: "Custom" },
+  ];
 
   const load = async () => {
     if (!activeWorkspace) return;
@@ -499,7 +516,7 @@ function RoutinesView({ activeWorkspace }) {
     setError(null);
     try {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/routines`, form);
-      setForm({ name: "", skill_md: "", tools_allowlist: "[]", schema_output_json: "{}" });
+      setForm({ name: "", skill_md: "", persona_md: "", tools_allowlist: "[]", schema_output_json: "{}", trigger_json: "[]", is_active: 1, source_version: "v1" });
       await load();
     } catch (err) {
       setError(err.message);
@@ -535,26 +552,151 @@ function RoutinesView({ activeWorkspace }) {
     }
   };
 
+  const filteredRoutines = useMemo(() => {
+    if (filter === "all") return routines;
+    return routines.filter((r) => (r.category || "custom") === filter);
+  }, [routines, filter]);
+
+  const startEdit = (routine) => {
+    setEditingRoutine(routine);
+    setEditForm({
+      name: routine.name,
+      skill_md: routine.skill_md,
+      persona_md: routine.persona_md,
+      tools_allowlist: routine.tools_allowlist,
+      schema_output_json: routine.schema_output_json,
+      trigger_json: routine.trigger_json,
+      preset_id: routine.preset_id,
+      is_active: routine.is_active,
+      source_version: routine.source_version || "v1",
+    });
+  };
+
+  const saveEdit = async (event) => {
+    event.preventDefault();
+    if (!activeWorkspace || !editingRoutine) return;
+    setError(null);
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspace.id}/routines/${editingRoutine.id}`, editForm);
+      setEditingRoutine(null);
+      setEditForm(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const toggleRoutine = async (routine) => {
+    if (!activeWorkspace) return;
+    setError(null);
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}`, { is_active: routine.is_active ? 0 : 1 });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const deleteRoutine = async (routine) => {
+    if (!window.confirm(`¿Eliminar la rutina "${routine.name}"? Esta acción no se puede deshacer.`)) return;
+    if (!activeWorkspace) return;
+    setError(null);
+    try {
+      const token = await sha256Truncated(routine.id, 16);
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}?confirmation_token=${token}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const loadCatalog = async () => {
+    setCatalogLoading(true);
+    setError(null);
+    try {
+      const items = await apiGet("/api/faberloom/catalog");
+      setCatalog(Array.isArray(items) ? items : []);
+      setSelectedImports(new Set());
+    } catch (err) {
+      setError(err.message);
+    }
+    setCatalogLoading(false);
+  };
+
+  const openImport = () => {
+    setShowImportModal(true);
+    loadCatalog();
+  };
+
+  const toggleImport = (id) => {
+    const next = new Set(selectedImports);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedImports(next);
+  };
+
+  const importSelected = async () => {
+    if (selectedImports.size === 0 || !activeWorkspace) return;
+    setImportLoading(true);
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/routines/import-faberloom`, { imports: Array.from(selectedImports) });
+      setShowImportModal(false);
+      setSelectedImports(new Set());
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+    setImportLoading(false);
+  };
+
   useEffect(() => { load(); }, [activeWorkspace]);
 
   if (!activeWorkspace) return <WorkspaceRequired icon="spark" title="Routine Hub"/>;
 
   return <div className="classic" style={S.view}>
-    <div className="vhead"><div><div className="vtitle">Routine Hub</div><div className="vsub">Skills portables · autoría → aprobación → ejecución</div></div></div>
+    <div className="vhead">
+      <div>
+        <div className="vtitle">Routine Hub</div>
+        <div className="vsub">Skills portables · autoría → aprobación → ejecución</div>
+      </div>
+      <button style={S.buttonPrimary} onClick={openImport}>Importar de FaberLoom</button>
+    </div>
+
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {FILTERS.map((f) => (
+        <button
+          key={f.id}
+          style={filter === f.id ? S.buttonPrimary : S.button}
+          onClick={() => setFilter(f.id)}
+        >{f.label}</button>
+      ))}
+    </div>
+
     <div style={S.grid2}>
       <section className="panel" aria-label="Rutinas">
-        <div className="panel-header"><div><div className="panel-kicker">Routines</div><div className="panel-title">Routine Hub ({routines.length})</div></div></div>
+        <div className="panel-header"><div><div className="panel-kicker">Routines</div><div className="panel-title">{FILTERS.find(f => f.id === filter).label} ({filteredRoutines.length})</div></div></div>
         <div style={S.panelBody}>
           {loading && <div style={S.loading}>Cargando…</div>}
           {error && <div style={S.error}>{error}</div>}
-          {!loading && routines.length === 0 && <div style={S.empty}>No hay rutinas.</div>}
+          {!loading && filteredRoutines.length === 0 && <div style={S.empty}>No hay rutinas en esta categoría.</div>}
           <div style={S.list}>
-            {routines.map((routine) => <div key={routine.id} style={S.card}>
-              <div style={S.cardTitle}>{routine.name}</div>
-              <div style={S.cardMeta}>{routine.id} · {routine.approved_by ? "aprobada" : "pendiente"}</div>
+            {filteredRoutines.map((routine) => <div key={routine.id} style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
+                <div style={S.cardTitle}>{routine.name}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <span style={S.badge}>{routine.category || "custom"}</span>
+                  <span style={routine.is_active ? S.badge : { ...S.badge, opacity: 0.6 }}>{routine.is_active ? "activo" : "inactivo"}</span>
+                  {routine.approved_by ? <span style={{ ...S.badge, background: "var(--coral-soft)" }}>aprobada</span> : <span style={S.badge}>pendiente</span>}
+                </div>
+              </div>
+              <div style={S.cardMeta}>{routine.id} · {routine.source_version || "v1"}</div>
               <div style={S.inlineGroup}>
+                <button style={S.button} onClick={() => startEdit(routine)}>Editar</button>
+                <button style={S.button} onClick={() => toggleRoutine(routine)}>{routine.is_active ? "Desactivar" : "Activar"}</button>
+                <button style={S.buttonDanger} onClick={() => deleteRoutine(routine)}>Eliminar</button>
                 {!routine.approved_by && <button style={S.buttonPrimary} onClick={() => approveRoutine(routine)}>Aprobar</button>}
-                <button style={S.button} onClick={() => runRoutine(routine)} disabled={!routine.approved_by}>Ejecutar</button>
+                <button style={S.button} onClick={() => runRoutine(routine)} disabled={!routine.approved_by || !routine.is_active}>Ejecutar</button>
               </div>
               <label style={{ ...S.label, marginTop: 10 }}>input_json
                 <textarea style={S.monoTextarea} value={runInputs[routine.id] || "{}"} onChange={(e) => setRunInputs({ ...runInputs, [routine.id]: e.target.value })} rows={4}/>
@@ -569,14 +711,64 @@ function RoutinesView({ activeWorkspace }) {
         <div style={S.panelBody}>
           <form style={S.form} onSubmit={createRoutine}>
             <label style={S.label}>Nombre<input style={S.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required/></label>
-            <label style={S.label}>skill_md<textarea style={S.textarea} value={form.skill_md} onChange={(e) => setForm({ ...form, skill_md: e.target.value })} rows={10}/></label>
+            <label style={S.label}>skill_md<textarea style={S.textarea} value={form.skill_md} onChange={(e) => setForm({ ...form, skill_md: e.target.value })} rows={8}/></label>
+            <label style={S.label}>persona_md<textarea style={S.textarea} value={form.persona_md} onChange={(e) => setForm({ ...form, persona_md: e.target.value })} rows={4}/></label>
             <label style={S.label}>tools_allowlist (JSON array)<input style={S.input} value={form.tools_allowlist} onChange={(e) => setForm({ ...form, tools_allowlist: e.target.value })}/></label>
-            <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={form.schema_output_json} onChange={(e) => setForm({ ...form, schema_output_json: e.target.value })} rows={6}/></label>
+            <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={form.schema_output_json} onChange={(e) => setForm({ ...form, schema_output_json: e.target.value })} rows={5}/></label>
+            <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={form.trigger_json} onChange={(e) => setForm({ ...form, trigger_json: e.target.value })}/></label>
+            <label style={S.label}>source_version<input style={S.input} value={form.source_version} onChange={(e) => setForm({ ...form, source_version: e.target.value })}/></label>
+            <label style={S.label}><input type="checkbox" checked={form.is_active === 1} onChange={(e) => setForm({ ...form, is_active: e.target.checked ? 1 : 0 })}/> Activo</label>
             <button type="submit" style={S.buttonPrimary}>Crear rutina</button>
           </form>
         </div>
       </section>
     </div>
+
+    {editingRoutine && <div style={S.modalOverlay} onClick={() => setEditingRoutine(null)}>
+      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+        <h3 style={S.modalTitle}>Editar rutina</h3>
+        {error && <div style={S.error}>{error}</div>}
+        <form style={S.form} onSubmit={saveEdit}>
+          <label style={S.label}>Nombre<input style={S.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required/></label>
+          <label style={S.label}>skill_md<textarea style={S.textarea} value={editForm.skill_md} onChange={(e) => setEditForm({ ...editForm, skill_md: e.target.value })} rows={8}/></label>
+          <label style={S.label}>persona_md<textarea style={S.textarea} value={editForm.persona_md} onChange={(e) => setEditForm({ ...editForm, persona_md: e.target.value })} rows={4}/></label>
+          <label style={S.label}>tools_allowlist (JSON array)<input style={S.input} value={editForm.tools_allowlist} onChange={(e) => setEditForm({ ...editForm, tools_allowlist: e.target.value })}/></label>
+          <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={editForm.schema_output_json} onChange={(e) => setEditForm({ ...editForm, schema_output_json: e.target.value })} rows={5}/></label>
+          <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={editForm.trigger_json} onChange={(e) => setEditForm({ ...editForm, trigger_json: e.target.value })}/></label>
+          <label style={S.label}>source_version<input style={S.input} value={editForm.source_version} onChange={(e) => setEditForm({ ...editForm, source_version: e.target.value })}/></label>
+          <label style={S.label}><input type="checkbox" checked={editForm.is_active === 1} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked ? 1 : 0 })}/> Activo</label>
+          <div style={S.inlineGroup}>
+            <button type="submit" style={S.buttonPrimary}>Guardar</button>
+            <button type="button" style={S.button} onClick={() => setEditingRoutine(null)}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>}
+
+    {showImportModal && <div style={S.modalOverlay} onClick={() => setShowImportModal(false)}>
+      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+        <h3 style={S.modalTitle}>Importar de FaberLoom</h3>
+        <p style={{ margin: "0 0 12px", color: "var(--text-muted)", fontSize: 13 }}>Selecciona items para importar como routines inactivas y no aprobadas.</p>
+        {error && <div style={S.error}>{error}</div>}
+        {catalogLoading && <div style={S.loading}>Cargando catálogo…</div>}
+        {!catalogLoading && catalog.length === 0 && <div style={S.empty}>Catálogo vacío.</div>}
+        {!catalogLoading && catalog.length > 0 && <div style={{ ...S.list, maxHeight: "50vh", overflow: "auto", paddingRight: 4 }}>
+          {catalog.map((item) => <label key={item.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 10, border: "1px solid var(--border-subtle)", borderRadius: "var(--r-sm)", cursor: "pointer" }}>
+            <input type="checkbox" checked={selectedImports.has(item.id)} onChange={() => toggleImport(item.id)} style={{ marginTop: 3 }}/>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 650, fontSize: 13 }}>{item.name}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{item.id} · {item.version}</div>
+              {item.description && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.4 }}>{item.description.slice(0, 200)}{item.description.length > 200 ? "…" : ""}</div>}
+            </div>
+            <span style={S.badge}>{item.category}</span>
+          </label>)}
+        </div>}
+        <div style={{ ...S.inlineGroup, marginTop: 16, justifyContent: "flex-end" }}>
+          <button style={S.button} onClick={() => setShowImportModal(false)} disabled={importLoading}>Cancelar</button>
+          <button style={S.buttonPrimary} onClick={importSelected} disabled={selectedImports.size === 0 || importLoading}>{importLoading ? "Importando…" : `Importar ${selectedImports.size}`}</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 

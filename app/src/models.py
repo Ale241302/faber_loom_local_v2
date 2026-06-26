@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 SCHEMA_VERSION = 10
@@ -579,6 +579,16 @@ class RoutineRead(BaseModel):
     created_at: str
     updated_at: str
 
+    @computed_field
+    @property
+    def category(self) -> str | None:
+        source = self.source_version or ""
+        if source.startswith("faberloom-"):
+            return source.split("-", 1)[1]
+        if source and source != "v1":
+            return source
+        return "custom"
+
 
 class RoutineRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -628,6 +638,42 @@ class RoutineCreate(BaseModel):
             raise ValueError(f"schema_output_json must be valid JSON: {exc}") from exc
 
         # Trivial/empty schema is allowed as a no-op.
+        if parsed == {}:
+            return stripped
+
+        if not isinstance(parsed, dict):
+            raise ValueError("schema_output_json must be a JSON object")
+        if parsed.get("type") != "object":
+            raise ValueError("schema_output_json must have type='object'")
+        if not isinstance(parsed.get("properties"), dict):
+            raise ValueError("schema_output_json must have a 'properties' object")
+        return stripped
+
+
+class RoutineUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    skill_md: str | None = Field(default=None, max_length=50000)
+    tools_allowlist: str | None = Field(default=None, max_length=2000)
+    schema_output_json: str | None = Field(default=None, max_length=10000)
+    preset_id: str | None = Field(default=None, max_length=120)
+    trigger_json: str | None = Field(default=None, max_length=10000)
+    persona_md: str | None = Field(default=None, max_length=20000)
+    is_active: int | None = Field(default=None, ge=0, le=1)
+    source_version: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("schema_output_json")
+    @classmethod
+    def schema_output_json_must_be_valid_schema(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return "{}"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"schema_output_json must be valid JSON: {exc}") from exc
+
         if parsed == {}:
             return stripped
 

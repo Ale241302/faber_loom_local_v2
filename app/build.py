@@ -44,6 +44,31 @@ EXECUTABLE = DIST_DIR / ("SpaceLoom.exe" if sys.platform == "win32" else "SpaceL
 MANIFEST_PATH = DIST_DIR / "update_manifest.json"
 
 
+def _bundle_faberloom_catalog() -> None:
+    """Copy the FaberLoom Markdown catalog into the static bundle.
+
+    This guarantees the desktop executable can import from ``faberloom/`` even
+    though that directory is not tracked in the PyInstaller analysis by itself.
+    """
+
+    source_dir = APP_DIR.parent / "faberloom"
+    dest_dir = APP_DIR / "static" / "faberloom"
+
+    if not source_dir.exists():
+        print(f"[build] FaberLoom source directory not found: {source_dir}")
+        return
+
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for path in source_dir.glob("*.md"):
+        shutil.copy2(path, dest_dir / path.name)
+        copied += 1
+    print(f"[build] Bundled {copied} FaberLoom Markdown files to {dest_dir}")
+
+
 def run_pyinstaller() -> None:
     spec = APP_DIR / "SpaceLoom.spec"
     if not spec.exists():
@@ -137,6 +162,7 @@ def main() -> int:
     if DIST_DIR.exists():
         shutil.rmtree(DIST_DIR)
 
+    _bundle_faberloom_catalog()
     run_pyinstaller()
     print(f"[build] Executable available at {EXECUTABLE}")
 

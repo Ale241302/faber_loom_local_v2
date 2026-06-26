@@ -52,3 +52,7 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+
+# FaberLoom specs (local-only, bundled at build time)
+/faberloom/
+/app/static/faberloom/

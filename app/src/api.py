@@ -55,11 +55,19 @@ from .db import (
     transaction,
     update_mail_message_status,
     update_mail_outbox_status,
+    update_routine,
     update_routine_run_output,
     update_workspace_field_aliases,
     workspace_seal_id,
 )
 from .draft_engine import generate_draft
+from .faberloom_catalog import (
+    FaberloomCatalogItem,
+    FaberloomImportRequest,
+    get_catalog_item,
+    import_catalog_items,
+    list_catalog,
+)
 from .kb import (
     approve_draft,
     delete_kb_source,
@@ -104,6 +112,7 @@ from .models import (
     RoutineRunApproveRequest,
     RoutineRunRead,
     RoutineRunRejectRequest,
+    RoutineUpdate,
     RouterProviderRead,
     RouterStatusRead,
     SkillInvokeRequest,
@@ -2212,6 +2221,77 @@ def api_get_routine(
     return RoutineRead(**routine)
 
 
+# Fields that, when changed, invalidate an existing human approval.
+_ROUTINE_APPROVAL_SENSITIVE_FIELDS = {
+    "skill_md",
+    "tools_allowlist",
+    "schema_output_json",
+    "persona_md",
+    "trigger_json",
+}
+
+
+@router.patch("/workspaces/{workspace_id}/routines/{routine_id}", response_model=RoutineRead)
+def api_update_routine(
+    workspace_id: str,
+    routine_id: str,
+    payload: RoutineUpdate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> RoutineRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    existing = get_routine(ctx, conn, routine_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        return RoutineRead(**existing)
+
+    # Validate the new skill_md through the same injection gate used on create.
+    if "skill_md" in updates:
+        try:
+            compiled = compile_skill_md(updates["skill_md"])
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        # Keep frontmatter-derived persona unless the user explicitly supplied one.
+        if "persona_md" not in updates:
+            updates["persona_md"] = compiled.get("persona", "")
+
+    # Changing executable content clears human approval (HITL bypass prevention).
+    approval_cleared = False
+    for field in _ROUTINE_APPROVAL_SENSITIVE_FIELDS:
+        if field in updates and updates[field] != existing.get(field):
+            approval_cleared = True
+            break
+
+    if approval_cleared and existing.get("approved_by") is not None:
+        updates["approved_by"] = None
+
+    with transaction(conn):
+        updated = update_routine(ctx, conn, routine_id, **updates)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
+
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="routine.updated",
+            payload={
+                "routine_id": routine_id,
+                "fields": list(updates.keys()),
+                "approval_cleared": approval_cleared,
+            },
+            mirror_jsonl=False,
+        )
+
+    _mirror_audit(audit_event)
+    return RoutineRead(**updated)
+
+
 @router.delete("/workspaces/{workspace_id}/routines/{routine_id}", status_code=status.HTTP_204_NO_CONTENT)
 def api_delete_routine(
     workspace_id: str,
@@ -2326,3 +2406,47 @@ def api_list_routine_runs_for_routine(
     if get_routine(ctx, conn, routine_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
     return [RoutineRunRead(**row) for row in list_routine_runs(ctx, conn, routine_id=routine_id)]
+
+
+# -----------------------------------------------------------------------------
+# FaberLoom catalog import
+# -----------------------------------------------------------------------------
+
+
+@router.get("/faberloom/catalog", response_model=list[FaberloomCatalogItem])
+def api_faberloom_catalog() -> list[FaberloomCatalogItem]:
+    """List importable FaberLoom skills/agents/templates.
+
+    The catalog is read from the ``faberloom/`` directory (or its bundled copy
+    inside the desktop executable). It does not depend on a workspace.
+    """
+    return list_catalog()
+
+
+@router.post("/workspaces/{workspace_id}/routines/import-faberloom", response_model=list[RoutineRead])
+def api_import_faberloom_routines(
+    workspace_id: str,
+    payload: FaberloomImportRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[RoutineRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    with transaction(conn):
+        imported = import_catalog_items(ctx, conn, payload.imports)
+        if imported:
+            audit_writer.write(
+                ctx,
+                conn,
+                action="routine.imported",
+                payload={
+                    "workspace_id": workspace_id,
+                    "routine_ids": [r["id"] for r in imported],
+                    "item_ids": payload.imports,
+                },
+                mirror_jsonl=False,
+            )
+
+    return [RoutineRead(**row) for row in imported]
