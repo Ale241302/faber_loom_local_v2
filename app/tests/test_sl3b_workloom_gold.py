@@ -23,7 +23,7 @@ from app.src.db import (
     transaction,
     update_routine_run_output,
 )
-from app.src.gold import apply_gold_to_routine, list_gold_candidates
+from app.src.gold import apply_gold_to_routine, list_gold_candidates, promote_gold_candidate
 from app.src.kb import insert_draft
 from app.src.models import SCHEMA_VERSION, WorkspaceCreate
 from app.src.workloom import list_workloom_items
@@ -31,23 +31,23 @@ from app.src.workloom import list_workloom_items
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_DEV_TRUST_HEADERS", "true")
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
 
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
+        "FABERLOOM_GOOGLE_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -290,9 +290,13 @@ def test_gold_candidates_endpoint_and_promote(client: TestClient) -> None:
     candidate_id = candidates[0]["id"]
     assert candidates[0]["approved"] == 0
 
+    # Hard fields require a second independent verification gate.
     promote_response = client.post(
         f"/api/workspaces/{workspace['id']}/gold-candidates/{candidate_id}/promote",
-        json={"learned_output_json": {"price": 100, "currency": "USD"}},
+        json={
+            "learned_output_json": {"price": 100, "currency": "USD"},
+            "verified_by": "controller",
+        },
     )
     assert promote_response.status_code == 200
     promoted = promote_response.json()
@@ -578,3 +582,218 @@ def test_apply_gold_to_routine_updates_schema(client: TestClient) -> None:
         and e["action"] == "applied_to_routine"
         for e in events
     )
+
+
+# -----------------------------------------------------------------------------
+# SL3b/c CLOSER extensions
+# -----------------------------------------------------------------------------
+
+
+def test_task_type_is_captured_on_routine_run(client: TestClient) -> None:
+    """routine_run stores the routine category as task_type for per-task metrics."""
+
+    workspace = _create_workspace(client, "Task Type Capture")
+    ctx = Context(workspace_id=workspace["id"])
+
+    with db_session() as conn:
+        with transaction(conn):
+            routine = create_routine(ctx, conn, name="Greeter", category="skill")
+            run = create_routine_run(
+                ctx,
+                conn,
+                routine_id=routine["id"],
+                input_json={"name": "Ada"},
+                output_json={"greeting": "Hello"},
+                evidence_json=[],
+                status="requires_hitl",
+            )
+
+    assert run["task_type"] == "skill"
+
+
+def test_edit_pct_declines_with_repetitions_by_task_type(client: TestClient) -> None:
+    """Seeded sessions for the same task_type show a declining edit_pct trend."""
+
+    workspace = _create_workspace(client, "Edit Pct Decline")
+    ctx = Context(workspace_id=workspace["id"])
+
+    target = {"reply": "approved response", "lang": "es"}
+    # Each successive model output is closer to the approved target.
+    seeded_outputs = [
+        {"reply": "approved response!!!!", "lang": "es"},
+        {"reply": "approved response!!", "lang": "es"},
+        {"reply": "approved response!", "lang": "es"},
+        target,
+        target,
+    ]
+    edit_pcts: list[float] = []
+
+    with db_session() as conn:
+        routine = create_routine(ctx, conn, name="Repeater", category="skill")
+        for i, output in enumerate(seeded_outputs):
+            run = create_routine_run(
+                ctx,
+                conn,
+                routine_id=routine["id"],
+                input_json={"turn": i},
+                output_json=output,
+                evidence_json=[],
+                status="requires_hitl",
+                task_type="skill",
+            )
+            updated = update_routine_run_output(
+                ctx,
+                conn,
+                run["id"],
+                output_json=output,
+                edited_output_json=target,
+                approved_by="local",
+            )
+            assert updated is not None
+            edit_pcts.append(updated["edit_pct"])
+
+    assert all(isinstance(p, float) and 0 <= p <= 1 for p in edit_pcts)
+    # The final repetitions are identical to the target (zero edit).
+    assert edit_pcts[-1] == 0.0
+    assert edit_pcts[-2] == 0.0
+    # The trend is non-increasing across our seeded progression.
+    assert edit_pcts[-1] <= edit_pcts[0]
+    assert edit_pcts == sorted(edit_pcts, reverse=True)
+    assert edit_pcts[0] > edit_pcts[-3] > 0
+
+
+def test_hard_field_gold_requires_second_gate(client: TestClient) -> None:
+    """Gold candidates containing prices/SKUs/stock require independent verification."""
+
+    workspace = _create_workspace(client, "Hard Field Gate")
+    ctx = Context(workspace_id=workspace["id"])
+
+    with db_session() as conn:
+        with transaction(conn):
+            routine = create_routine(ctx, conn, name="Pricer")
+            run = create_routine_run(
+                ctx,
+                conn,
+                routine_id=routine["id"],
+                input_json={"sku": "ABC-123"},
+                output_json={"price": 100, "sku": "ABC-123", "stock": 50},
+                evidence_json=[],
+                status="requires_hitl",
+            )
+            update_routine_run_output(
+                ctx,
+                conn,
+                run["id"],
+                output_json={"price": 100, "sku": "ABC-123", "stock": 50},
+                edited_output_json={"price": 100, "sku": "ABC-123", "stock": 50, "note": "ok"},
+                approved_by="local",
+            )
+
+    with db_session() as conn:
+        candidate = list_gold_candidates(ctx, conn)[0]
+
+    # Without the second gate the promotion is rejected.
+    reject_response = client.post(
+        f"/api/workspaces/{workspace['id']}/gold-candidates/{candidate['id']}/promote",
+        json={"learned_output_json": {"price": 100, "sku": "ABC-123"}},
+    )
+    assert reject_response.status_code == 422
+
+    # With an independent verifier the promotion succeeds.
+    promote_response = client.post(
+        f"/api/workspaces/{workspace['id']}/gold-candidates/{candidate['id']}/promote",
+        json={
+            "learned_output_json": {"price": 100, "sku": "ABC-123"},
+            "verified_by": "controller",
+        },
+    )
+    assert promote_response.status_code == 200
+    assert promote_response.json()["approved"] == 1
+
+
+def test_gold_candidate_tenant_isolation(client: TestClient) -> None:
+    """Gold candidates and their evidence are scoped by tenant_id."""
+
+    workspace = client.post(
+        "/api/workspaces",
+        json={"name": "Tenant Gold"},
+        headers={"x-tenant-id": "t1"},
+    ).json()
+    ctx_t1 = Context(workspace_id=workspace["id"], tenant_id="t1")
+
+    with db_session() as conn:
+        with transaction(conn):
+            routine = create_routine(ctx_t1, conn, name="Pricer")
+            run = create_routine_run(
+                ctx_t1,
+                conn,
+                routine_id=routine["id"],
+                input_json={},
+                output_json={"a": 1, "b": 2, "c": 3, "d": 4, "e": 5},
+                evidence_json=[],
+                status="requires_hitl",
+            )
+            update_routine_run_output(
+                ctx_t1,
+                conn,
+                run["id"],
+                output_json={"a": 1, "b": 2, "c": 3, "d": 4, "e": 5},
+                edited_output_json={"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "note": "ok"},
+                approved_by="local",
+            )
+
+    with db_session() as conn:
+        assert len(list_gold_candidates(ctx_t1, conn)) == 1
+        # Same workspace id but a different tenant cannot read the candidate.
+        ctx_t2 = Context(workspace_id=workspace["id"], tenant_id="t2")
+        assert list_gold_candidates(ctx_t2, conn) == []
+
+
+def test_gold_refeed_appends_approved_examples_to_skill_prompt(client: TestClient) -> None:
+    """Approved gold candidates are injected into the skill prompt at execution time."""
+
+    workspace = _create_workspace(client, "Gold Refeed")
+    ctx = Context(workspace_id=workspace["id"])
+
+    with db_session() as conn:
+        with transaction(conn):
+            routine = create_routine(ctx, conn, name="Greeter")
+            run = create_routine_run(
+                ctx,
+                conn,
+                routine_id=routine["id"],
+                input_json={"name": "Ada"},
+                output_json={"greeting": "Hello Ada", "tone": "friendly"},
+                evidence_json=[],
+                status="requires_hitl",
+            )
+            update_routine_run_output(
+                ctx,
+                conn,
+                run["id"],
+                output_json={"greeting": "Hello Ada", "tone": "friendly"},
+                edited_output_json={"greeting": "Hello Ada", "tone": "friendly", "note": "ok"},
+                approved_by="local",
+            )
+            candidate = list_gold_candidates(ctx, conn)[0]
+            promote_gold_candidate(
+                ctx,
+                conn,
+                candidate["id"],
+                learned_output_json={"greeting": "Hello Ada"},
+            )
+
+        skill = {
+            "instructions": "Be helpful.",
+            "persona": "",
+            "schema_output": {},
+            "tools": [],
+        }
+        from app.src.api import _inject_gold_examples_into_skill
+
+        _inject_gold_examples_into_skill(ctx, conn, skill, routine["id"])
+
+    instructions = skill["instructions"]
+    assert "Approved gold examples" in instructions
+    assert "Hello Ada" in instructions
+    assert json.dumps({"name": "Ada"}) in instructions

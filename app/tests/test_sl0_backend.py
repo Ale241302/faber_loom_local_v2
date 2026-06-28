@@ -12,10 +12,10 @@ from app.src.models import SCHEMA_VERSION
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_DEV_TRUST_HEADERS", "true")
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -147,3 +147,53 @@ def test_context_tenant_scope_is_applied_to_workspace_reads(client):
     )
     assert visible.status_code == 200
     assert visible.json()["slug"] == "tenant-a"
+
+
+
+def test_v12_migration_maps_unknown_source_version_to_custom(client, tmp_path):
+    from app.src.db import connect
+    from app.src.models import MIGRATIONS, SCHEMA_VERSION
+
+    test_client, db_path, _ = client
+    # Reset DB: close current connection and re-apply migrations 1..11 manually.
+    custom_path = tmp_path / "v12_migration.sqlite3"
+    import shutil
+    shutil.copy(db_path, custom_path)
+
+    # For this test we create a fresh DB by applying migrations up to v11.
+    fresh_path = tmp_path / "fresh_v11.sqlite3"
+    with sqlite3.connect(fresh_path) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        for version in sorted(MIGRATIONS):
+            if version >= 12:
+                break
+            conn.executescript(MIGRATIONS[version])
+            conn.execute(
+                "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
+                (version, "2024-01-01T00:00:00Z"),
+            )
+        # Insert routines with legacy source_version values.
+        conn.execute(
+            "INSERT INTO workspace (id, name, slug, schema_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("ws-test", "Test", "test", SCHEMA_VERSION, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO routine (id, workspace_id, name, skill_md, is_active, source_version, schema_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("r1", "ws-test", "Unknown", "", 1, "acme-proprietary", SCHEMA_VERSION, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO routine (id, workspace_id, name, skill_md, is_active, source_version, schema_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("r2", "ws-test", "Agent", "", 1, "faberloom-agent", SCHEMA_VERSION, "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+        )
+        conn.commit()
+
+    # Now apply v12 migration using the real initializer.
+    from app.src.db import initialize_database
+    import os
+    os.environ["FABERLOOM_DB_PATH"] = str(fresh_path)
+    with sqlite3.connect(fresh_path) as conn:
+        conn.row_factory = sqlite3.Row
+        initialize_database(conn)
+        rows = {row["id"]: row["category"] for row in conn.execute("SELECT id, category FROM routine").fetchall()}
+    assert rows["r1"] == "custom"
+    assert rows["r2"] == "agent"

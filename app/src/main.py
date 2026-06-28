@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 from .api import router as api_router
 from .db import db_session, initialize_database
+from .router.config_store import load_env_file
 from .seed import seed_demo_workspace
 
 
@@ -26,8 +27,8 @@ STATIC_DIR = APP_DIR / "static"
 ICON_PATH = STATIC_DIR / "faberloom.ico"
 
 # Entry point de la ventana desktop (pywebview) y del servidor local.
-HOST = os.getenv("SPACELOOM_HOST", "127.0.0.1")
-PORT = int(os.getenv("SPACELOOM_PORT", "8000"))
+HOST = os.getenv("FABERLOOM_HOST", "127.0.0.1")
+PORT = int(os.getenv("FABERLOOM_PORT", "8000"))
 APP_URL = f"http://{HOST}:{PORT}/static/index.html"
 HEALTH_URL = f"http://{HOST}:{PORT}/api/health"
 
@@ -42,6 +43,7 @@ def health_url(host: str = HOST, port: int = PORT) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_env_file()
     with db_session() as conn:
         initialize_database(conn)
         seed_demo_workspace(conn)
@@ -71,8 +73,15 @@ class LocalhostCSRFMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def _read_version() -> str:
+    version_file = APP_DIR / "VERSION"
+    if version_file.exists():
+        return version_file.read_text(encoding="utf-8").strip()
+    return "0.1.0"
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="SpaceLoom", version="0.1.0-sl0", lifespan=lifespan)
+    app = FastAPI(title="FaberLoom", version=_read_version(), lifespan=lifespan)
     app.add_middleware(LocalhostCSRFMiddleware)
     app.include_router(api_router)
 
@@ -95,7 +104,7 @@ def create_app() -> FastAPI:
               <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
-                <title>SpaceLoom SL0</title>
+                <title>FaberLoom SL0</title>
                 <style>
                   body {
                     margin: 0;
@@ -137,7 +146,7 @@ def create_app() -> FastAPI:
               </head>
               <body>
                 <main>
-                  <div class="eyebrow">FaberLoom &middot; SpaceLoom</div>
+                  <div class="eyebrow">FaberLoom &middot; FaberLoom</div>
                   <h1>SL0 skeleton is running.</h1>
                   <p>Local state is backed by SQLite. Check <code>/api/health</code> and <code>/api/workspaces</code>.</p>
                 </main>
@@ -176,7 +185,7 @@ def _wait_until_ready(url: str = HEALTH_URL, timeout: float = 20.0) -> bool:
 
 
 def run_desktop(host: str = HOST, port: int = PORT) -> None:
-    """Levanta el backend en un hilo y abre la ventana pywebview de SpaceLoom."""
+    """Levanta el backend en un hilo y abre la ventana pywebview de FaberLoom."""
     import webview
 
     server = threading.Thread(target=_run_server, args=(host, port), daemon=True)
@@ -187,7 +196,7 @@ def run_desktop(host: str = HOST, port: int = PORT) -> None:
     _wait_until_ready(resolved_health_url)
 
     webview.create_window(
-        "SpaceLoom — FaberLoom",
+        "FaberLoom",
         resolved_app_url,
         width=1320,
         height=860,

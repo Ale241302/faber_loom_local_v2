@@ -1,4 +1,4 @@
-"""Context layer for SpaceLoom SL0.
+"""Context layer for FaberLoom SL0.
 
 Every query that reads or writes application data receives a Context. In SL0 the
 app is single-user/local-first, so tenant_id and user_id are latent fields; the

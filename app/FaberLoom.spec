@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for SpaceLoom desktop (SL4).
+"""PyInstaller spec for FaberLoom desktop (SL4).
 
 Build with:
-    uv run pyinstaller SpaceLoom.spec --clean --noconfirm
+    uv run pyinstaller FaberLoom.spec --clean --noconfirm
 
 The resulting executable launches a local uvicorn server in a background thread
-and opens the SpaceLoom UI via pywebview. Static assets and the data directory
+and opens the FaberLoom UI via pywebview. Static assets and the data directory
 are bundled so the app runs without a terminal.
 """
 
@@ -19,7 +19,7 @@ ICON_PATH = STATIC_DIR / "faberloom.ico"
 
 # The local data directory is intentionally NOT bundled.  At runtime the app
 # stores its SQLite database under the user's OS-specific data directory
-# (%LOCALAPPDATA%/SpaceLoom on Windows, ~/.local/share/SpaceLoom elsewhere).
+# (%LOCALAPPDATA%/FaberLoom on Windows, ~/.local/share/FaberLoom elsewhere).
 
 a = Analysis(
     [str(ENTRYPOINT)],
@@ -61,7 +61,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="SpaceLoom",
+    name="FaberLoom",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

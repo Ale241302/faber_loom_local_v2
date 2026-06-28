@@ -1,42 +1,42 @@
-"""Environment-based router registry for SpaceLoom SL1a.
+"""Environment-based router registry for FaberLoom SL1a.
 
 Provider configuration is resolved in this order of precedence:
 
 1. Environment variables (BYOK, no persistence).
-2. Encrypted local store (`SPACELOOM_CONFIG_DIR`/providers.json).
+2. Encrypted local store (`FABERLOOM_CONFIG_DIR`/providers.json).
 3. Built-in defaults.
 
 Supported environment variables:
 
 - OpenAI:
-  - SPACELOOM_OPENAI_API_KEY or OPENAI_API_KEY
-  - optional SPACELOOM_OPENAI_BASE_URL or OPENAI_BASE_URL
-  - optional SPACELOOM_OPENAI_MODEL or OPENAI_MODEL
-  - optional SPACELOOM_OPENAI_PRIORITY (default 10)
-  - optional SPACELOOM_OPENAI_ENABLED (default true)
+  - FABERLOOM_OPENAI_API_KEY or OPENAI_API_KEY
+  - optional FABERLOOM_OPENAI_BASE_URL or OPENAI_BASE_URL
+  - optional FABERLOOM_OPENAI_MODEL or OPENAI_MODEL
+  - optional FABERLOOM_OPENAI_PRIORITY (default 10)
+  - optional FABERLOOM_OPENAI_ENABLED (default true)
 - Anthropic:
-  - SPACELOOM_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY
-  - optional SPACELOOM_ANTHROPIC_BASE_URL or ANTHROPIC_BASE_URL
-  - optional SPACELOOM_ANTHROPIC_MODEL or ANTHROPIC_MODEL
-  - optional SPACELOOM_ANTHROPIC_PRIORITY (default 20)
-  - optional SPACELOOM_ANTHROPIC_ENABLED (default true)
+  - FABERLOOM_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY
+  - optional FABERLOOM_ANTHROPIC_BASE_URL or ANTHROPIC_BASE_URL
+  - optional FABERLOOM_ANTHROPIC_MODEL or ANTHROPIC_MODEL
+  - optional FABERLOOM_ANTHROPIC_PRIORITY (default 20)
+  - optional FABERLOOM_ANTHROPIC_ENABLED (default true)
 - Google/Gemini through OpenAI-compatible SDK:
-  - SPACELOOM_GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY
-  - optional SPACELOOM_GOOGLE_BASE_URL, GEMINI_BASE_URL, or GOOGLE_BASE_URL
-  - optional SPACELOOM_GOOGLE_MODEL, GEMINI_MODEL, or GOOGLE_MODEL
-  - optional SPACELOOM_GOOGLE_PRIORITY (default 30)
-  - optional SPACELOOM_GOOGLE_ENABLED (default true)
+  - FABERLOOM_GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY
+  - optional FABERLOOM_GOOGLE_BASE_URL, GEMINI_BASE_URL, or GOOGLE_BASE_URL
+  - optional FABERLOOM_GOOGLE_MODEL, GEMINI_MODEL, or GOOGLE_MODEL
+  - optional FABERLOOM_GOOGLE_PRIORITY (default 30)
+  - optional FABERLOOM_GOOGLE_ENABLED (default true)
 - Kimi/Moonshot through OpenAI-compatible SDK:
-  - SPACELOOM_KIMI_API_KEY, KIMI_API_KEY, or MOONSHOT_API_KEY
-  - optional SPACELOOM_KIMI_BASE_URL or KIMI_BASE_URL
-  - optional SPACELOOM_KIMI_MODEL, KIMI_MODEL, or MOONSHOT_MODEL
-  - optional SPACELOOM_KIMI_PRIORITY (default 25)
-  - optional SPACELOOM_KIMI_ENABLED (default true)
+  - FABERLOOM_KIMI_API_KEY, KIMI_API_KEY, or MOONSHOT_API_KEY
+  - optional FABERLOOM_KIMI_BASE_URL or KIMI_BASE_URL
+  - optional FABERLOOM_KIMI_MODEL, KIMI_MODEL, or MOONSHOT_MODEL
+  - optional FABERLOOM_KIMI_PRIORITY (default 25)
+  - optional FABERLOOM_KIMI_ENABLED (default true)
 - Ollama (local):
-  - SPACELOOM_ENABLE_OLLAMA=true or SPACELOOM_OLLAMA_ENABLED=true
-  - optional SPACELOOM_OLLAMA_BASE_URL or OLLAMA_BASE_URL
-  - optional SPACELOOM_OLLAMA_MODEL or OLLAMA_MODEL
-  - optional SPACELOOM_OLLAMA_PRIORITY (default 90)
+  - FABERLOOM_ENABLE_OLLAMA=true or FABERLOOM_OLLAMA_ENABLED=true
+  - optional FABERLOOM_OLLAMA_BASE_URL or OLLAMA_BASE_URL
+  - optional FABERLOOM_OLLAMA_MODEL or OLLAMA_MODEL
+  - optional FABERLOOM_OLLAMA_PRIORITY (default 90)
 """
 
 from __future__ import annotations
@@ -48,7 +48,16 @@ from .config_store import ProviderConfigStore
 from .cost import get_default_model
 from .engine import Router
 from .models import ProviderConfig, RouterSettings
-from .providers import AnthropicProvider, GoogleProvider, KimiProvider, OllamaProvider, OpenAIProvider, Provider
+from .cost import KIMI_CODE_MODELS
+from .providers import (
+    AnthropicProvider,
+    GoogleProvider,
+    KIMI_CODE_BASE_URL,
+    KimiProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    Provider,
+)
 
 
 def _first_env(*names: str) -> str | None:
@@ -118,12 +127,29 @@ def _bool_or(value: Any, fallback: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _is_env_placeholder(value: str) -> bool:
+    """Return True for values that should defer to environment variables.
+
+    Matches the BYOK server-side fallback logic: empty strings, magic placeholders,
+    or suspiciously short keys are ignored so the daemon can inject a real key.
+    """
+
+    if not value:
+        return True
+    stripped = value.strip()
+    if stripped in {"server-default", "use-env"}:
+        return True
+    if len(stripped) < 20:
+        return True
+    return False
+
+
 def _resolve_value(env_value: str | None, stored_value: Any) -> str | None:
-    """Environment wins; then stored value; then None."""
+    """Environment wins; then stored value if it looks real; then None."""
 
     if env_value is not None:
         return env_value
-    if isinstance(stored_value, str) and stored_value.strip():
+    if isinstance(stored_value, str) and not _is_env_placeholder(stored_value):
         return stored_value
     return None
 
@@ -132,8 +158,8 @@ def build_router() -> Router:
     """Build the default SL1a "Balanceado" router from env vars and local store."""
 
     settings = RouterSettings(
-        budget_cap_usd=_env_float("SPACELOOM_BUDGET_CAP_USD", 5.0),
-        provider_allowlist=_env_csv("SPACELOOM_PROVIDER_ALLOWLIST"),
+        budget_cap_usd=_env_float("FABERLOOM_BUDGET_CAP_USD", 5.0),
+        provider_allowlist=_env_csv("FABERLOOM_PROVIDER_ALLOWLIST"),
     )
 
     store = ProviderConfigStore()
@@ -146,22 +172,22 @@ def build_router() -> Router:
             ProviderConfig(
                 provider_slug="openai",
                 api_key=_resolve_value(
-                    _first_env("SPACELOOM_OPENAI_API_KEY", "OPENAI_API_KEY"),
+                    _first_env("FABERLOOM_OPENAI_API_KEY", "OPENAI_API_KEY"),
                     openai_stored.get("api_key"),
                 ),
                 base_url=_resolve_value(
-                    _first_env("SPACELOOM_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
+                    _first_env("FABERLOOM_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
                     openai_stored.get("base_url"),
                 ),
                 model_default=_resolve_value(
-                    _first_env("SPACELOOM_OPENAI_MODEL", "OPENAI_MODEL"),
+                    _first_env("FABERLOOM_OPENAI_MODEL", "OPENAI_MODEL"),
                     openai_stored.get("model_default"),
                 )
                 or get_default_model("openai"),
-                priority=_int_or(openai_stored.get("priority"), _env_int("SPACELOOM_OPENAI_PRIORITY", 10)),
+                priority=_int_or(openai_stored.get("priority"), _env_int("FABERLOOM_OPENAI_PRIORITY", 10)),
                 is_enabled=_bool_or(
                     openai_stored.get("is_enabled"),
-                    _env_bool("SPACELOOM_OPENAI_ENABLED", True),
+                    _env_bool("FABERLOOM_OPENAI_ENABLED", True),
                 ),
             )
         )
@@ -173,22 +199,22 @@ def build_router() -> Router:
             ProviderConfig(
                 provider_slug="anthropic",
                 api_key=_resolve_value(
-                    _first_env("SPACELOOM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+                    _first_env("FABERLOOM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
                     anthropic_stored.get("api_key"),
                 ),
                 base_url=_resolve_value(
-                    _first_env("SPACELOOM_ANTHROPIC_BASE_URL", "ANTHROPIC_BASE_URL"),
+                    _first_env("FABERLOOM_ANTHROPIC_BASE_URL", "ANTHROPIC_BASE_URL"),
                     anthropic_stored.get("base_url"),
                 ),
                 model_default=_resolve_value(
-                    _first_env("SPACELOOM_ANTHROPIC_MODEL", "ANTHROPIC_MODEL"),
+                    _first_env("FABERLOOM_ANTHROPIC_MODEL", "ANTHROPIC_MODEL"),
                     anthropic_stored.get("model_default"),
                 )
                 or get_default_model("anthropic"),
-                priority=_int_or(anthropic_stored.get("priority"), _env_int("SPACELOOM_ANTHROPIC_PRIORITY", 20)),
+                priority=_int_or(anthropic_stored.get("priority"), _env_int("FABERLOOM_ANTHROPIC_PRIORITY", 20)),
                 is_enabled=_bool_or(
                     anthropic_stored.get("is_enabled"),
-                    _env_bool("SPACELOOM_ANTHROPIC_ENABLED", True),
+                    _env_bool("FABERLOOM_ANTHROPIC_ENABLED", True),
                 ),
             )
         )
@@ -200,58 +226,74 @@ def build_router() -> Router:
             ProviderConfig(
                 provider_slug="google",
                 api_key=_resolve_value(
-                    _first_env("SPACELOOM_GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+                    _first_env("FABERLOOM_GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
                     google_stored.get("api_key"),
                 ),
                 base_url=_resolve_value(
-                    _first_env("SPACELOOM_GOOGLE_BASE_URL", "GEMINI_BASE_URL", "GOOGLE_BASE_URL"),
+                    _first_env("FABERLOOM_GOOGLE_BASE_URL", "GEMINI_BASE_URL", "GOOGLE_BASE_URL"),
                     google_stored.get("base_url"),
                 )
                 or "https://generativelanguage.googleapis.com/v1beta/openai/",
                 model_default=_resolve_value(
-                    _first_env("SPACELOOM_GOOGLE_MODEL", "GEMINI_MODEL", "GOOGLE_MODEL"),
+                    _first_env("FABERLOOM_GOOGLE_MODEL", "GEMINI_MODEL", "GOOGLE_MODEL"),
                     google_stored.get("model_default"),
                 )
                 or get_default_model("google"),
-                priority=_int_or(google_stored.get("priority"), _env_int("SPACELOOM_GOOGLE_PRIORITY", 30)),
+                priority=_int_or(google_stored.get("priority"), _env_int("FABERLOOM_GOOGLE_PRIORITY", 30)),
                 is_enabled=_bool_or(
                     google_stored.get("is_enabled"),
-                    _env_bool("SPACELOOM_GOOGLE_ENABLED", True),
+                    _env_bool("FABERLOOM_GOOGLE_ENABLED", True),
                 ),
             )
         )
     )
 
     kimi_stored = stored.get("kimi", {})
+    kimi_api_key = _resolve_value(
+        _first_env("FABERLOOM_KIMI_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"),
+        kimi_stored.get("api_key"),
+    )
+    kimi_base_url = _resolve_value(
+        _first_env("FABERLOOM_KIMI_BASE_URL", "KIMI_BASE_URL"),
+        kimi_stored.get("base_url"),
+    )
+    kimi_model_default = _resolve_value(
+        _first_env("FABERLOOM_KIMI_MODEL", "KIMI_MODEL", "MOONSHOT_MODEL"),
+        kimi_stored.get("model_default"),
+    )
+
+    # Kimi Code / Coding Plan keys (sk-kimi-) need the dedicated coding endpoint
+    # and a coding-capable default model. Respect explicit user overrides.
+    if kimi_api_key and kimi_api_key.startswith("sk-kimi-"):
+        if kimi_base_url in {None, "https://api.moonshot.ai/v1", "https://api.moonshot.cn/v1"}:
+            kimi_base_url = KIMI_CODE_BASE_URL
+        if not kimi_model_default or kimi_model_default not in KIMI_CODE_MODELS:
+            kimi_model_default = "kimi-for-coding"
+    else:
+        if not kimi_base_url:
+            kimi_base_url = "https://api.moonshot.ai/v1"
+        if not kimi_model_default:
+            kimi_model_default = get_default_model("kimi")
+
     providers.append(
         KimiProvider(
             ProviderConfig(
                 provider_slug="kimi",
-                api_key=_resolve_value(
-                    _first_env("SPACELOOM_KIMI_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"),
-                    kimi_stored.get("api_key"),
-                ),
-                base_url=_resolve_value(
-                    _first_env("SPACELOOM_KIMI_BASE_URL", "KIMI_BASE_URL"),
-                    kimi_stored.get("base_url"),
-                ),
-                model_default=_resolve_value(
-                    _first_env("SPACELOOM_KIMI_MODEL", "KIMI_MODEL", "MOONSHOT_MODEL"),
-                    kimi_stored.get("model_default"),
-                )
-                or get_default_model("kimi"),
-                priority=_int_or(kimi_stored.get("priority"), _env_int("SPACELOOM_KIMI_PRIORITY", 25)),
+                api_key=kimi_api_key,
+                base_url=kimi_base_url,
+                model_default=kimi_model_default,
+                priority=_int_or(kimi_stored.get("priority"), _env_int("FABERLOOM_KIMI_PRIORITY", 25)),
                 is_enabled=_bool_or(
                     kimi_stored.get("is_enabled"),
-                    _env_bool("SPACELOOM_KIMI_ENABLED", True),
+                    _env_bool("FABERLOOM_KIMI_ENABLED", True),
                 ),
             )
         )
     )
 
     ollama_enabled = _env_bool(
-        "SPACELOOM_ENABLE_OLLAMA",
-        _env_bool("SPACELOOM_OLLAMA_ENABLED", False),
+        "FABERLOOM_ENABLE_OLLAMA",
+        _env_bool("FABERLOOM_OLLAMA_ENABLED", False),
     )
     ollama_stored = stored.get("ollama", {})
     providers.append(
@@ -260,16 +302,16 @@ def build_router() -> Router:
                 provider_slug="ollama",
                 api_key=None,
                 base_url=_resolve_value(
-                    _first_env("SPACELOOM_OLLAMA_BASE_URL", "OLLAMA_BASE_URL"),
+                    _first_env("FABERLOOM_OLLAMA_BASE_URL", "OLLAMA_BASE_URL"),
                     ollama_stored.get("base_url"),
                 )
                 or "http://localhost:11434/v1",
                 model_default=_resolve_value(
-                    _first_env("SPACELOOM_OLLAMA_MODEL", "OLLAMA_MODEL"),
+                    _first_env("FABERLOOM_OLLAMA_MODEL", "OLLAMA_MODEL"),
                     ollama_stored.get("model_default"),
                 )
                 or get_default_model("ollama"),
-                priority=_int_or(ollama_stored.get("priority"), _env_int("SPACELOOM_OLLAMA_PRIORITY", 90)),
+                priority=_int_or(ollama_stored.get("priority"), _env_int("FABERLOOM_OLLAMA_PRIORITY", 90)),
                 is_enabled=_bool_or(ollama_stored.get("is_enabled"), ollama_enabled),
             )
         )

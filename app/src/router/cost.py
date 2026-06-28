@@ -11,13 +11,24 @@ from __future__ import annotations
 # USD per 1K tokens: (input, output).
 # Ollama/local models are treated as $0 provider cost in SL1a.
 MODEL_PRICING_USD_PER_1K: dict[str, tuple[float, float]] = {
-    "gpt-4o": (0.005, 0.015),
+    # OpenAI pricing per 1K tokens (current as of 2025-06).
+    "gpt-4o": (0.0025, 0.01),
     "gpt-4o-mini": (0.00015, 0.0006),
+    # Hidden providers remain in the allowlist but are not surfaced in SL1a beta.
     "claude-3-5-sonnet": (0.003, 0.015),
     "gemini-1.5-pro": (0.0035, 0.0105),
     "moonshot-v1-8k": (0.005, 0.005),
     "moonshot-v1-32k": (0.005, 0.005),
     "moonshot-v1-128k": (0.005, 0.005),
+    # Kimi Code / Coding Plan approximate pricing (fallback to gpt-4o if unset).
+    "kimi-for-coding": (0.003, 0.015),
+    "kimi-latest": (0.003, 0.015),
+    "kimi-k2.5": (0.003, 0.015),
+    "kimi-k2-thinking": (0.003, 0.015),
+    "kimi-k2-turbo-preview": (0.003, 0.015),
+    "kimi-k2-0905-preview": (0.003, 0.015),
+    "kimi-k2.6": (0.003, 0.015),
+    # Local models treated as zero provider cost.
     "llama3.1": (0.0, 0.0),
 }
 
@@ -31,7 +42,7 @@ DEFAULT_MODELS: dict[str, str] = {
 
 FALLBACK_PRICING_MODEL = "gpt-4o"
 
-PRICING_VERSION = "cost:sl1a-2026-06-25"
+PRICING_VERSION = "cost:sl1a-2026-06-27"
 
 # SL1a model allowlist per provider. Unknown models are rejected at the API layer
 # to avoid surprise costs / DoS through the local Ollama provider.
@@ -39,8 +50,32 @@ MODEL_ALLOWLIST: dict[str, set[str]] = {
     "openai": {"gpt-4o-mini", "gpt-4o"},
     "anthropic": {"claude-3-5-sonnet"},
     "google": {"gemini-1.5-pro"},
-    "kimi": {"moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"},
+    "kimi": {
+        "moonshot-v1-8k",
+        "moonshot-v1-32k",
+        "moonshot-v1-128k",
+        # Kimi Code / Coding Plan models (sk-kimi-* keys).
+        "kimi-for-coding",
+        "kimi-latest",
+        "kimi-k2.5",
+        "kimi-k2-thinking",
+        "kimi-k2-turbo-preview",
+        "kimi-k2-0905-preview",
+        "kimi-k2.6",
+    },
     "ollama": {"llama3.1"},
+}
+
+# Models that are only available on the Kimi Code / Coding Plan endpoint
+# (keys prefixed sk-kimi-). Kept in one place so registry and UI can stay aligned.
+KIMI_CODE_MODELS: set[str] = {
+    "kimi-for-coding",
+    "kimi-latest",
+    "kimi-k2.5",
+    "kimi-k2-thinking",
+    "kimi-k2-turbo-preview",
+    "kimi-k2-0905-preview",
+    "kimi-k2.6",
 }
 
 

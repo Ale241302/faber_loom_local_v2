@@ -1,4 +1,4 @@
-"""SpaceLoom SL1a provider router."""
+"""FaberLoom SL1a provider router."""
 
 from .engine import BudgetExceeded, Router
 from .models import CompletionRequest, CompletionResult, ProviderConfig, RouterSettings, UsageRecord

@@ -1,4 +1,4 @@
-"""SpaceLoom desktop packaging helpers (SL4).
+"""FaberLoom desktop packaging helpers (SL4).
 
 Provides code-signing smoke tests, installer script generation, and graceful
 degradation when external tools such as ``signtool`` or ``makensis`` are not
@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 
 def generate_self_signed_code_signing_cert(
     tmpdir: str | Path,
-    common_name: str = "SpaceLoom Test Code Signing",
+    common_name: str = "FaberLoom Test Code Signing",
 ) -> tuple[Path, Path]:
     """Generate a self-signed RSA certificate + private key for tests.
 
@@ -52,7 +52,7 @@ def generate_self_signed_code_signing_cert(
         .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
         .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
         .add_extension(
-            x509.SubjectAlternativeName([x509.DNSName("spaceloom.local")]),
+            x509.SubjectAlternativeName([x509.DNSName("faberloom.local")]),
             critical=False,
         )
         .add_extension(
@@ -289,7 +289,7 @@ def smoke_test_signed_executable() -> dict[str, Any]:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         exe_path = Path(tmpdir) / "dummy.exe"
-        exe_path.write_bytes(b"MZ" + b"\x00" * 64 + b"SpaceLoom dummy executable")
+        exe_path.write_bytes(b"MZ" + b"\x00" * 64 + b"FaberLoom dummy executable")
 
         cert_path, key_path = generate_self_signed_code_signing_cert(tmpdir)
         signed = sign_executable_windows(exe_path, cert_path, key_path)
@@ -312,7 +312,7 @@ def smoke_test_signed_executable() -> dict[str, Any]:
 def generate_nsis_script(
     exe_path: str | Path,
     output_script_path: str | Path,
-    app_name: str = "SpaceLoom",
+    app_name: str = "FaberLoom",
     version: str = "0.1.0",
 ) -> Path:
     """Write an NSIS installer script that packages *exe_path*.
@@ -326,7 +326,7 @@ def generate_nsis_script(
 
     installer_name = f"{app_name}-{version}-Setup.exe"
 
-    script = f"""; SpaceLoom NSIS installer script — generated automatically.
+    script = f"""; FaberLoom NSIS installer script — generated automatically.
 !include "MUI2.nsh"
 
 Name "{app_name}"
@@ -366,7 +366,7 @@ SectionEnd
 def build_installer_windows(
     exe_path: str | Path,
     output_dir: str | Path,
-    app_name: str = "SpaceLoom",
+    app_name: str = "FaberLoom",
     version: str = "0.1.0",
 ) -> Path | None:
     """Generate an NSIS script and compile it if ``makensis`` is available.
@@ -411,7 +411,7 @@ TMP_DMG="${{OUTPUT_DMG%.*}}.tmp.dmg"
 MOUNT_DIR="$(mktemp -d)"
 
 echo "[dmg] Creating temporary DMG: $TMP_DMG"
-hdiutil create -srcfolder "$APP_BUNDLE" -volname "SpaceLoom" -fs HFS+ -format UDRW "$TMP_DMG"
+hdiutil create -srcfolder "$APP_BUNDLE" -volname "FaberLoom" -fs HFS+ -format UDRW "$TMP_DMG"
 
 echo "[dmg] Mounting $TMP_DMG"
 hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_DIR" -nobrowse -noverify

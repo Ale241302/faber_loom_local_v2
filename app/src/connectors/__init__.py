@@ -1,1 +1,1 @@
-"""SpaceLoom external connectors."""
+"""FaberLoom external connectors."""

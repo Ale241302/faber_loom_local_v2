@@ -1,0 +1,9 @@
+sku,producto,precio_usd,stock,lead_time,moq,forma_pago,validez,equivalencia
+TEL-OXF-001,Oxford,12.50,240,10,50,transferencia,2026-12-31,
+TEL-LIN-002,Lino,18.00,120,10,50,transferencia,2026-12-31,
+TEL-RAS-003,Raso,9.75,500,10,50,transferencia,2026-12-31,Oxford->Raso 1.05
+TEL-SED-004,Seda,45.00,35,10,50,transferencia,2026-12-31,
+TEL-GAB-005,Gabardina,14.30,80,10,50,transferencia,2026-12-31,
+TEL-TER-006,Terciopelo,22.00,60,10,50,transferencia,2026-12-31,
+TEL-JEA-007,Jean,11.20,300,10,50,transferencia,2026-12-31,
+TERMINOS,condiciones,,,10 dias habiles,50 metros,transferencia,2026-12-31,

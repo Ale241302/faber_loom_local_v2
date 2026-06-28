@@ -1,4 +1,4 @@
-"""Routing engine for SpaceLoom SL1a.
+"""Routing engine for FaberLoom SL1a.
 
 Default preset "Balanceado": filter by allowlist, sort providers by priority,
 try in order, and fallback on ProviderError. A requested provider_slug is treated
@@ -120,7 +120,10 @@ class Router:
     def complete(self, request: CompletionRequest) -> CompletionResult:
         candidates = self._ordered_providers(request)
         if not candidates:
-            raise ProviderError("router", "no configured providers are available")
+            raise ProviderError(
+                "router",
+                "Ningún proveedor disponible: configura OpenAI o Kimi (API key).",
+            )
 
         failures: list[str] = []
         budget_failures: list[str] = []

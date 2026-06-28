@@ -1,21 +1,94 @@
-"""SQLite schema migrations and Pydantic v2 API models for SpaceLoom SL0."""
+"""SQLite schema migrations and Pydantic v2 API models for FaberLoom SL0."""
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 17
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
+
+
+_ROUTINE_CATEGORIES = frozenset({"skill", "agent", "template", "reference", "custom"})
+_PROVIDER_SLUGS_FOR_PRESET = frozenset({"openai", "anthropic", "google", "kimi", "ollama"})
+
+
+def _detect_dangerous(content: str) -> list[str]:
+    """Return dangerous patterns found in user-authored prompt content."""
+
+    dangers: list[str] = []
+    lowered = content.lower()
+    if "<script" in lowered:
+        dangers.append("HTML <script> tag")
+    if re.search(r"javascript\s*:", lowered):
+        dangers.append("javascript: scheme")
+    if re.search(r"(?:^|\s)import\s+", content):
+        dangers.append("Python import statement")
+    if re.search(r"\beval\s*\(", content):
+        dangers.append("eval() call")
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("=") and "!" in stripped:
+            dangers.append("Excel formula injection")
+            break
+    return dangers
+
+
+def _must_be_json_array_of_strings(value: str, field_name: str) -> str:
+    """Validate that a string field holds a JSON array of non-empty strings."""
+
+    stripped = value.strip()
+    if not stripped:
+        return "[]"
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_name} must be a JSON array")
+    if not all(isinstance(item, str) and item.strip() for item in parsed):
+        raise ValueError(f"{field_name} must contain only non-empty strings")
+    return stripped
+
+
+def _validate_preset_id(value: str | None) -> str | None:
+    """Validate that a preset_id is in 'provider:model' format with a known provider."""
+
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if ":" not in stripped:
+        raise ValueError("preset_id must be in 'provider:model' format")
+    provider, model = stripped.split(":", 1)
+    if not provider or not model:
+        raise ValueError("preset_id must have non-empty provider and model")
+    if provider not in _PROVIDER_SLUGS_FOR_PRESET:
+        raise ValueError(f"Unknown provider '{provider}' in preset_id")
+    return stripped
 
 
 # Migration policy:
 # - v1 is the original skeleton contract.
 # - v11 adds UI-facing metadata for the FaberLoom Shell redesign:
 #   mail_message.category, kb_source.level, gold_candidate.use_count.
+# - v12 adds routine.category and hardens the routine contract for the Fase 3
+#   Toolset (Agents, Skills, Context, Gold).
+# - v13 enriches editorial_history with payload_json and 'provider' entity_type,
+#   enabling auditable provider config changes and key removal for SL1a.
+# - v14 closes SL1b HITL metrics: draft.original_body_md and draft.edit_pct
+#   so the CLOSER loop can report edit_pct (approved vs original).
+# - v15 closes SL2a/b/c: workspace parent_id/inherits_kb, tenant_id on
+#   kb_chunk/kb_fact, enabling multi-tenant isolation and KB inheritance.
+# - v16 closes SL3b/c: tenant_id on gold_candidate, task_type on routine_run,
+#   enabling per-task HITL metrics and tenant-scoped gold evidence.
+# - v17 closes SL3.5: workspace.confidential flag enabling SQLCipher-backed
+#   per-workspace confidential databases and hardened seal exposure.
 # - v2 hardens the contract-first seams required before closing SL0:
 #   routine/routine_run and a uniform latent-field surface.
 # - v3 adds SL1a chat router support: usage_record table with latent fields.
@@ -477,12 +550,93 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_mail_message_category ON mail_message(workspace_id, category);
     CREATE INDEX IF NOT EXISTS idx_kb_source_level ON kb_source(workspace_id, level);
     """,
+    12: """
+    ALTER TABLE routine ADD COLUMN category TEXT NOT NULL DEFAULT 'custom'
+        CHECK (category IN ('skill', 'agent', 'template', 'reference', 'custom'));
+
+    UPDATE routine SET category = CASE
+        WHEN source_version = 'faberloom-skill' THEN 'skill'
+        WHEN source_version = 'faberloom-agent' THEN 'agent'
+        WHEN source_version = 'faberloom-template' THEN 'template'
+        WHEN source_version = 'faberloom-reference' THEN 'reference'
+        ELSE 'custom'
+    END;
+
+    CREATE INDEX IF NOT EXISTS idx_routine_category
+        ON routine(workspace_id, tenant_id, category, is_active, approved_by);
+    """,
+    14: """
+    ALTER TABLE draft ADD COLUMN original_body_md TEXT;
+    ALTER TABLE draft ADD COLUMN edit_pct REAL;
+    """,
+    15: """
+    ALTER TABLE workspace ADD COLUMN parent_id TEXT REFERENCES workspace(id) ON DELETE SET NULL;
+    ALTER TABLE workspace ADD COLUMN inherits_kb INTEGER NOT NULL DEFAULT 0 CHECK (inherits_kb IN (0, 1));
+
+    ALTER TABLE kb_chunk ADD COLUMN tenant_id TEXT;
+    ALTER TABLE kb_fact ADD COLUMN tenant_id TEXT;
+
+    UPDATE kb_chunk
+    SET tenant_id = (SELECT tenant_id FROM kb_source WHERE kb_source.id = kb_chunk.source_id)
+    WHERE tenant_id IS NULL;
+
+    UPDATE kb_fact
+    SET tenant_id = (SELECT tenant_id FROM kb_source WHERE kb_source.id = kb_fact.source_id)
+    WHERE tenant_id IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_workspace_tenant ON kb_chunk(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_workspace_tenant ON kb_fact(workspace_id, tenant_id);
+    """,
+    13: """
+    CREATE TABLE IF NOT EXISTS _editorial_history_v13 (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('draft','routine_run','gold_candidate','provider')),
+        entity_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor_id TEXT,
+        reason TEXT,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO _editorial_history_v13
+        (id, workspace_id, entity_type, entity_id, action, actor_id, reason, payload_json, created_at)
+    SELECT id, workspace_id, entity_type, entity_id, action, actor_id, reason, '{}', created_at
+    FROM editorial_history;
+
+    DROP TABLE editorial_history;
+    ALTER TABLE _editorial_history_v13 RENAME TO editorial_history;
+
+    CREATE INDEX IF NOT EXISTS idx_editorial_history_entity
+        ON editorial_history(workspace_id, entity_type, entity_id);
+    """,
+    16: """
+    ALTER TABLE gold_candidate ADD COLUMN tenant_id TEXT;
+    ALTER TABLE routine_run ADD COLUMN task_type TEXT;
+
+    UPDATE gold_candidate
+    SET tenant_id = (
+        SELECT routine.tenant_id FROM routine WHERE routine.id = gold_candidate.routine_id
+    )
+    WHERE tenant_id IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_gold_candidate_workspace_tenant
+        ON gold_candidate(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_run_task_type
+        ON routine_run(workspace_id, tenant_id, task_type);
+    """,
+    17: """
+    ALTER TABLE workspace ADD COLUMN confidential INTEGER NOT NULL DEFAULT 0
+        CHECK (confidential IN (0, 1));
+    """,
 }
 
 
 class HealthRead(BaseModel):
     status: Literal["ok"] = "ok"
-    app: str = "SpaceLoom"
+    app: str = "FaberLoom"
     schema_version: int
     database_path: str
 
@@ -490,6 +644,10 @@ class HealthRead(BaseModel):
 class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     slug: str | None = Field(default=None, min_length=1, max_length=140)
+    parent_id: str | None = Field(default=None, max_length=120)
+    inherits_kb: int = Field(default=0, ge=0, le=1)
+    confidential: int = Field(default=0, ge=0, le=1)
+    passphrase: str | None = Field(default=None, max_length=200)
 
     @field_validator("name")
     @classmethod
@@ -516,7 +674,6 @@ class WorkspaceRead(BaseModel):
     id: str
     name: str
     slug: str
-    seal_id: str | None = None
     field_aliases_json: str | None = None
     tenant_id: str | None = None
     user_id: str | None = None
@@ -527,6 +684,9 @@ class WorkspaceRead(BaseModel):
     schema_version: int
     source_version: str | None = None
     approved_by: str | None = None
+    parent_id: str | None = None
+    inherits_kb: int = 0
+    confidential: int = 0
     created_at: str
     updated_at: str
 
@@ -583,6 +743,7 @@ class RoutineRead(BaseModel):
     trigger_json: str
     persona_md: str
     is_active: int
+    category: str
     routine_version: str | None = None
     skill_version: str | None = None
     schema_version: int
@@ -590,16 +751,6 @@ class RoutineRead(BaseModel):
     approved_by: str | None = None
     created_at: str
     updated_at: str
-
-    @computed_field
-    @property
-    def category(self) -> str | None:
-        source = self.source_version or ""
-        if source.startswith("faberloom-"):
-            return source.split("-", 1)[1]
-        if source and source != "v1":
-            return source
-        return "custom"
 
 
 class RoutineRunRead(BaseModel):
@@ -617,6 +768,7 @@ class RoutineRunRead(BaseModel):
     evidence_json: str
     status: str
     edit_pct: float | None = None
+    task_type: str | None = None
     routine_version: str | None = None
     skill_version: str | None = None
     schema_version: int
@@ -637,6 +789,37 @@ class RoutineCreate(BaseModel):
     persona_md: str = Field(default="", max_length=20000)
     is_active: int = Field(default=1, ge=0, le=1)
     source_version: str = Field(default="v1", min_length=1, max_length=120)
+    category: str = Field(default="custom", max_length=20)
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_valid(cls, value: str) -> str:
+        if value not in _ROUTINE_CATEGORIES:
+            raise ValueError(f"Invalid routine category '{value}'")
+        return value
+
+    @field_validator("tools_allowlist")
+    @classmethod
+    def tools_allowlist_must_be_valid(cls, value: str) -> str:
+        return _must_be_json_array_of_strings(value, "tools_allowlist")
+
+    @field_validator("trigger_json")
+    @classmethod
+    def trigger_json_must_be_valid(cls, value: str) -> str:
+        return _must_be_json_array_of_strings(value, "trigger_json")
+
+    @field_validator("preset_id")
+    @classmethod
+    def preset_id_must_be_valid(cls, value: str | None) -> str | None:
+        return _validate_preset_id(value)
+
+    @field_validator("persona_md")
+    @classmethod
+    def persona_md_must_be_safe(cls, value: str) -> str:
+        dangers = _detect_dangerous(value)
+        if dangers:
+            raise ValueError("Unsafe persona_md content: " + "; ".join(dangers))
+        return value
 
     @field_validator("schema_output_json")
     @classmethod
@@ -672,6 +855,45 @@ class RoutineUpdate(BaseModel):
     persona_md: str | None = Field(default=None, max_length=20000)
     is_active: int | None = Field(default=None, ge=0, le=1)
     source_version: str | None = Field(default=None, min_length=1, max_length=120)
+    category: str | None = Field(default=None, max_length=20)
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_valid(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in _ROUTINE_CATEGORIES:
+            raise ValueError(f"Invalid routine category '{value}'")
+        return value
+
+    @field_validator("tools_allowlist")
+    @classmethod
+    def tools_allowlist_must_be_valid(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _must_be_json_array_of_strings(value, "tools_allowlist")
+
+    @field_validator("trigger_json")
+    @classmethod
+    def trigger_json_must_be_valid(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _must_be_json_array_of_strings(value, "trigger_json")
+
+    @field_validator("preset_id")
+    @classmethod
+    def preset_id_must_be_valid(cls, value: str | None) -> str | None:
+        return _validate_preset_id(value)
+
+    @field_validator("persona_md")
+    @classmethod
+    def persona_md_must_be_safe(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        dangers = _detect_dangerous(value)
+        if dangers:
+            raise ValueError("Unsafe persona_md content: " + "; ".join(dangers))
+        return value
 
     @field_validator("schema_output_json")
     @classmethod
@@ -702,6 +924,11 @@ class SkillInvokeRequest(BaseModel):
     input_json: dict[str, Any] = Field(default_factory=dict)
     provider_slug: str | None = None
     model: str | None = None
+
+
+class ChatInvokeRequest(BaseModel):
+    routine_id: str = Field(min_length=1, max_length=120)
+    user_request: str = Field(default="", max_length=20000)
 
 
 class AtMentionInvokeRequest(BaseModel):
@@ -751,6 +978,7 @@ class GoldCandidateRead(BaseModel):
     workspace_id: str
     routine_id: str
     run_id: str
+    tenant_id: str | None = None
     edit_pct: float | None = None
     input_json: str
     output_json: str
@@ -806,6 +1034,18 @@ class ChatRead(BaseModel):
     created_at: str
 
 
+class ChatUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Chat title cannot be blank")
+        return stripped
+
+
 class MessageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -818,6 +1058,7 @@ class MessageRead(BaseModel):
     actor_role_at_decision: str | None = None
     role: str
     content: str
+    route: dict[str, Any] | None = None
     routine_version: str | None = None
     skill_version: str | None = None
     schema_version: int
@@ -904,11 +1145,24 @@ class ProviderConfigRead(BaseModel):
     model_default: str
     priority: int
     is_enabled: bool
+    requires_api_key: bool = True
 
 
 class ProviderConfigListRead(BaseModel):
     providers: list[ProviderConfigRead]
     model_allowlist: dict[str, list[str]]
+
+
+class ProviderTestRequest(BaseModel):
+    """Optional overrides for a provider connectivity test.
+
+    Lets the UI test a key/base-url/model before saving it. When a field is
+    omitted, the persisted/env value is used.
+    """
+
+    api_key: str | None = Field(default=None, max_length=2000)
+    base_url: str | None = Field(default=None, max_length=500)
+    model_default: str | None = Field(default=None, max_length=120)
 
 
 class ProviderTestResult(BaseModel):
@@ -917,6 +1171,7 @@ class ProviderTestResult(BaseModel):
     model: str | None = None
     latency_ms: int | None = None
     error: str | None = None
+    models: list[str] | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -1051,6 +1306,8 @@ class DraftRead(BaseModel):
     approved_by: str | None = None
     approved_at: str | None = None
     exported_at: str | None = None
+    original_body_md: str | None = None
+    edit_pct: float | None = None
     urgency: int = 0
     reason: str | None = None
     created_at: str

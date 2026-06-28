@@ -10,23 +10,23 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
-        "SPACELOOM_DEV_TRUST_HEADERS",
+        "FABERLOOM_GOOGLE_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
+        "FABERLOOM_DEV_TRUST_HEADERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -39,23 +39,42 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def test_workspace_has_unique_seal_id(client: TestClient) -> None:
+    from app.src.db import connect
+
     response = client.get("/api/workspaces")
     assert response.status_code == 200
     workspaces = response.json()["workspaces"]
     assert workspaces
-    for workspace in workspaces:
-        assert workspace["seal_id"]
-        assert len(workspace["seal_id"]) >= 16
-    seals = {ws["seal_id"] for ws in workspaces}
+    with connect() as conn:
+        for workspace in workspaces:
+            row = conn.execute(
+                "SELECT seal_id FROM workspace WHERE id = ?", (workspace["id"],)
+            ).fetchone()
+            assert row and row["seal_id"]
+            assert len(row["seal_id"]) >= 16
+    with connect() as conn:
+        seals = {
+            row["seal_id"]
+            for row in conn.execute("SELECT seal_id FROM workspace").fetchall()
+        }
     assert len(seals) == len(workspaces)
 
 
 def test_seal_is_distinct_per_workspace(client: TestClient) -> None:
+    from app.src.db import connect
+
     a = client.post("/api/workspaces", json={"name": "Alpha"})
     b = client.post("/api/workspaces", json={"name": "Beta"})
     assert a.status_code == 201
     assert b.status_code == 201
-    assert a.json()["seal_id"] != b.json()["seal_id"]
+    with connect() as conn:
+        a_seal = conn.execute(
+            "SELECT seal_id FROM workspace WHERE id = ?", (a.json()["id"],)
+        ).fetchone()["seal_id"]
+        b_seal = conn.execute(
+            "SELECT seal_id FROM workspace WHERE id = ?", (b.json()["id"],)
+        ).fetchone()["seal_id"]
+    assert a_seal != b_seal
 
 
 def test_kb_source_is_cross_workspace_isolated(client: TestClient) -> None:

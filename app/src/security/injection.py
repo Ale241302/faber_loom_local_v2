@@ -30,8 +30,8 @@ HTML_UNSAFE_RE = re.compile(
 # SKILL.md is plain Markdown.  We only reject obvious overrides / hidden
 # instructions and require a top-level header.
 HIDDEN_INSTRUCTION_RE = re.compile(
-    r"(\n|\A)\s*(ignore previous instructions|ignore all prior|system override|"
-    r"you are now .*override|disregard .*instructions)\s*(\n|\Z)",
+    r"\b(ignore previous instructions|ignore all prior|system override|"
+    r"you are now .*override|disregard .*instructions)\b",
     re.IGNORECASE,
 )
 
@@ -85,6 +85,15 @@ def validate_html_basic(content_text: str) -> list[str]:
     return errors
 
 
+def validate_hidden_instructions(content_text: str) -> list[str]:
+    """Detect hidden instruction overrides in extracted text."""
+
+    errors: list[str] = []
+    if HIDDEN_INSTRUCTION_RE.search(content_text):
+        errors.append("Content contains possible hidden instruction override.")
+    return errors
+
+
 def validate_skill_md(content_text: str) -> list[str]:
     """Lightweight SKILL.md linter.
 
@@ -94,16 +103,17 @@ def validate_skill_md(content_text: str) -> list[str]:
     errors: list[str] = []
     if not re.search(r"^#\s+", content_text, re.MULTILINE):
         errors.append("SKILL.md must start with a top-level (#) heading.")
-    if HIDDEN_INSTRUCTION_RE.search(content_text):
-        errors.append("SKILL.md contains possible hidden instruction override.")
+    errors.extend(validate_hidden_instructions(content_text))
     return errors
 
 
 def assert_safe_kb_source(source_type: str, content_text: str) -> None:
     """Raise ValueError if a KB source contains known injection vectors.
 
-    For SL1b we support md/txt/csv.  Excel/HTML/PDF are rejected until SL2
-    sandboxed parsers exist.
+    Supports md/txt/csv directly and xlsx/pdf indirectly through extracted text.
+    Hidden instruction overrides (e.g. "ignore previous instructions") are
+    rejected for any text source because they could be embedded in PDF/XLSX
+    payloads and later reach the LLM context.
     """
 
     if source_type in {"md", "txt"}:
@@ -111,6 +121,10 @@ def assert_safe_kb_source(source_type: str, content_text: str) -> None:
         errors = validate_html_basic(content_text)
         if errors:
             raise ValueError("Unsafe KB source content: " + "; ".join(errors))
+        # Reject hidden instruction overrides that may arrive via extracted PDF/XLSX.
+        hidden_errors = validate_hidden_instructions(content_text)
+        if hidden_errors:
+            raise ValueError("Unsafe KB source content: " + "; ".join(hidden_errors))
         return
 
     if source_type == "csv":
@@ -121,8 +135,8 @@ def assert_safe_kb_source(source_type: str, content_text: str) -> None:
 
     if source_type in {"xlsx", "xls", "html", "pdf"}:
         raise ValueError(
-            f"KB source type '{source_type}' is not supported in SL1b. "
-            "Sandboxed parser required (SL2)."
+            f"KB source type '{source_type}' must be ingested through its "
+            "extracted text after sandboxed parsing."
         )
 
     # Unknown type: let the caller decide.

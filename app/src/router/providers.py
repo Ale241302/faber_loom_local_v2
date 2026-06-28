@@ -1,4 +1,4 @@
-"""Provider implementations for the SpaceLoom SL1a router."""
+"""Provider implementations for the FaberLoom SL1a router."""
 
 from __future__ import annotations
 
@@ -22,18 +22,25 @@ from .models import CompletionRequest, CompletionResult, ProviderConfig
 
 DEFAULT_MAX_TOKENS = 1024
 
+# Kimi Code / Coding Plan keys (prefix sk-kimi-) use a separate OpenAI-compatible
+# endpoint and require a whitelisted User-Agent to avoid 403 access-denied errors.
+KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1"
+KIMI_CODE_USER_AGENT = "KimiCLI/1.30.0"
+
 
 class ProviderError(RuntimeError):
     """Raised when one provider fails.
 
     The router catches this and falls back to the next provider when possible.
-    The public message must be generic to avoid leaking provider internals.
+    ``detail`` may contain provider-specific diagnostics and is surfaced in
+    logs and the provider-test endpoint so operators can see the real cause.
     """
 
-    def __init__(self, provider_slug: str, code: str):
+    def __init__(self, provider_slug: str, code: str, detail: str | None = None):
         self.provider_slug = provider_slug
         self.code = code
-        super().__init__(f"{provider_slug}: {code}")
+        self.detail = detail
+        super().__init__(f"{provider_slug}: {code}" + (f" - {detail}" if detail else ""))
 
 
 class Provider(ABC):
@@ -171,6 +178,39 @@ def _extract_anthropic_content(response: Any) -> str:
     return "\n".join(parts).strip()
 
 
+def _error_detail(exc: Exception) -> str:
+    """Return a short diagnostic string from an OpenAI/Anthropic exception.
+
+    Includes the provider's HTTP status, code and raw response body when available
+    so the UI can surface the real cause (401 invalid_api_key, 404 model_not_found,
+    connection error, etc.). Avoids duplicating the body when the SDK message already
+    contains it.
+    """
+
+    # OpenAI SDK errors expose .message, .code / .status and .body.
+    message = getattr(exc, "message", None)
+    code = getattr(exc, "code", None) or getattr(exc, "status", None)
+    body = getattr(exc, "body", None)
+
+    if message:
+        text = str(message)
+        # The OpenAI SDK message already includes the status and the JSON body.
+        if code and str(code) not in text:
+            text = f"{code} - {text}"
+        return text
+
+    if body is not None:
+        try:
+            return json.dumps(body, ensure_ascii=False) if isinstance(body, dict) else str(body)
+        except Exception:  # pragma: no cover - defensive
+            return str(body)
+
+    if code:
+        return str(code)
+
+    return str(exc)
+
+
 class _OpenAICompatibleProvider(Provider):
     """Shared implementation for OpenAI-compatible chat.completions APIs."""
 
@@ -182,6 +222,36 @@ class _OpenAICompatibleProvider(Provider):
     def _client_base_url(self) -> str | None:
         return self.config.base_url or self.default_base_url
 
+    def _client_default_headers(self) -> dict[str, str]:
+        """Optional default headers for the HTTP client (e.g. User-Agent)."""
+        return {}
+
+    def _build_client(self) -> Any:
+        """Build and return an OpenAI SDK client configured for this provider."""
+
+        from openai import OpenAI
+
+        client_kwargs: dict[str, Any] = {"api_key": self._client_api_key()}
+        base_url = self._client_base_url()
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        default_headers = self._client_default_headers()
+        if default_headers:
+            client_kwargs["default_headers"] = default_headers
+        return OpenAI(**client_kwargs, timeout=PROVIDER_TIMEOUT, max_retries=PROVIDER_MAX_RETRIES)
+
+    def list_models(self) -> list[str]:
+        """List available model ids from the provider's /models endpoint."""
+
+        if not self.is_available():
+            raise ProviderError(self.provider_slug, "provider is not configured")
+        try:
+            client = self._build_client()
+            return [m.id for m in client.models.list().data]
+        except Exception as exc:
+            logger.exception("Failed to list models", extra={"provider": self.provider_slug})
+            raise ProviderError(self.provider_slug, "provider_request_failed", detail=_error_detail(exc)) from exc
+
     def complete(self, request: CompletionRequest) -> CompletionResult:
         if not self.is_available():
             raise ProviderError(self.provider_slug, "provider is not configured")
@@ -190,14 +260,7 @@ class _OpenAICompatibleProvider(Provider):
         model = request.model or self.config.model_default
 
         try:
-            from openai import OpenAI
-
-            client_kwargs: dict[str, Any] = {"api_key": self._client_api_key()}
-            base_url = self._client_base_url()
-            if base_url:
-                client_kwargs["base_url"] = base_url
-
-            client = OpenAI(**client_kwargs, timeout=PROVIDER_TIMEOUT, max_retries=PROVIDER_MAX_RETRIES)
+            client = self._build_client()
 
             completion_kwargs: dict[str, Any] = {
                 "model": model,
@@ -233,7 +296,7 @@ class _OpenAICompatibleProvider(Provider):
             raise
         except Exception as exc:
             logger.exception("OpenAI-compatible provider failed", extra={"provider": self.provider_slug})
-            raise ProviderError(self.provider_slug, "provider_request_failed") from exc
+            raise ProviderError(self.provider_slug, "provider_request_failed", detail=_error_detail(exc)) from exc
 
 
 class OpenAIProvider(_OpenAICompatibleProvider):
@@ -257,10 +320,86 @@ class OllamaProvider(_OpenAICompatibleProvider):
 
 
 class KimiProvider(_OpenAICompatibleProvider):
-    """Moonshot Kimi through its OpenAI-compatible endpoint."""
+    """Moonshot Kimi through its OpenAI-compatible endpoint.
+
+    Moonshot has two regional endpoints: the international ``.ai`` endpoint and the
+    China ``.cn`` endpoint. Some API keys are only valid against one of them. When a
+    request fails with a 401 authentication error we transparently try the alternate
+    endpoint once, so users do not have to guess which region their key belongs to.
+
+    Keys prefixed ``sk-kimi-`` are Kimi Code / Coding Plan keys; they authenticate
+    against the dedicated ``https://api.kimi.com/coding/v1`` endpoint and require a
+    whitelisted ``User-Agent`` header. Those keys are routed automatically.
+    """
 
     requires_api_key = True
-    default_base_url = "https://api.moonshot.cn/v1"
+    default_base_url = "https://api.moonshot.ai/v1"
+
+    def _is_kimi_code_key(self) -> bool:
+        key = self.config.api_key or ""
+        return key.startswith("sk-kimi-")
+
+    def _client_base_url(self) -> str | None:
+        # Kimi Code keys have their own endpoint unless the user explicitly overrides it.
+        if self._is_kimi_code_key() and not self.config.base_url:
+            return KIMI_CODE_BASE_URL
+        return super()._client_base_url()
+
+    def _client_default_headers(self) -> dict[str, str]:
+        if self._is_kimi_code_key():
+            return {"User-Agent": KIMI_CODE_USER_AGENT}
+        return {}
+
+    def _alternate_base_url(self) -> str | None:
+        current = self._client_base_url()
+        if current == "https://api.moonshot.ai/v1":
+            return "https://api.moonshot.cn/v1"
+        if current == "https://api.moonshot.cn/v1":
+            return "https://api.moonshot.ai/v1"
+        # No alternate for the Kimi Code endpoint; the key only works there.
+        return None
+
+    @staticmethod
+    def _is_auth_error(detail: str | None) -> bool:
+        if not detail:
+            return False
+        lowered = detail.lower()
+        return "401" in lowered and ("invalid authentication" in lowered or "invalid_authentication" in lowered)
+
+    def _run_with_alternate_base_url(self, operation: Any) -> Any:
+        """Run ``operation`` using the alternate regional endpoint."""
+
+        alternate = self._alternate_base_url()
+        if alternate is None:
+            raise ProviderError(self.provider_slug, "provider_request_failed", detail="no alternate endpoint available")
+
+        original = self.config.base_url
+        self.config.base_url = alternate
+        try:
+            return operation()
+        finally:
+            self.config.base_url = original
+
+    def list_models(self) -> list[str]:
+        try:
+            return super().list_models()
+        except ProviderError as exc:
+            if not self._is_auth_error(exc.detail) or self._is_kimi_code_key():
+                raise
+            logger.info("Kimi auth failed on %s; trying alternate endpoint", self._client_base_url())
+            return self._run_with_alternate_base_url(lambda: super(KimiProvider, self).list_models())
+
+    def complete(self, request: CompletionRequest) -> CompletionResult:
+        # The Kimi Code endpoint only accepts temperature == 1.0 for its models.
+        if self._is_kimi_code_key() and request.temperature != 1.0:
+            request = request.model_copy(update={"temperature": 1.0})
+        try:
+            return super().complete(request)
+        except ProviderError as exc:
+            if not self._is_auth_error(exc.detail) or self._is_kimi_code_key():
+                raise
+            logger.info("Kimi auth failed on %s; trying alternate endpoint", self._client_base_url())
+            return self._run_with_alternate_base_url(lambda: super(KimiProvider, self).complete(request))
 
 
 class AnthropicProvider(Provider):
@@ -315,5 +454,5 @@ class AnthropicProvider(Provider):
         except ProviderError:
             raise
         except Exception as exc:
-            logger.exception("OpenAI-compatible provider failed", extra={"provider": self.provider_slug})
-            raise ProviderError(self.provider_slug, "provider_request_failed") from exc
+            logger.exception("Anthropic provider failed", extra={"provider": self.provider_slug})
+            raise ProviderError(self.provider_slug, "provider_request_failed", detail=_error_detail(exc)) from exc

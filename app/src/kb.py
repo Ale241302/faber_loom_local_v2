@@ -1,4 +1,4 @@
-"""SpaceLoom SL2: knowledge-base ingestion, retrieval and draft helpers.
+"""FaberLoom SL2: knowledge-base ingestion, retrieval and draft helpers.
 
 KB design for SL2:
 - Text sources (.md/.txt/.pdf) are chunked into ~900 char segments and indexed with FTS5.
@@ -11,6 +11,7 @@ KB design for SL2:
 from __future__ import annotations
 
 import csv
+import difflib
 import io
 import json
 import re
@@ -81,6 +82,64 @@ def _chunk_text(text: str, size: int = KB_CHUNK_SIZE, overlap: int = KB_CHUNK_OV
     return chunks
 
 
+def _workspace_kb_scope(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> list[str]:
+    """Return the workspace ids that contribute KB data to the current context.
+
+    If the current workspace inherits KB from its parent and both share the
+    same tenant, the parent's workspace_id is included in the scope.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        "SELECT parent_id, inherits_kb, tenant_id FROM workspace WHERE id = ?",
+        (workspace_id,),
+    ).fetchone()
+    if row and row["inherits_kb"] and row["parent_id"] and row["tenant_id"] == ctx.tenant_id:
+        return [workspace_id, row["parent_id"]]
+    return [workspace_id]
+
+
+def _workspace_seals(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    scope: list[str],
+) -> dict[str, str]:
+    """Return seal_id per workspace for HMAC verification inside a KB scope."""
+
+    if not scope:
+        return {}
+    placeholders = ",".join("?" for _ in scope)
+    rows = conn.execute(
+        f"SELECT id, seal_id FROM workspace WHERE id IN ({placeholders}) AND tenant_id IS ?",
+        (*scope, ctx.tenant_id),
+    ).fetchall()
+    return {row["id"]: row["seal_id"] for row in rows if row["seal_id"]}
+
+
+def _is_date_stale(valid_from: str | None, valid_until: str | None) -> bool:
+    """Return True if a validity window is currently stale or not yet valid."""
+
+    today = datetime.fromisoformat(_today().replace("Z", "+00:00")).date()
+    if valid_from:
+        try:
+            from_dt = datetime.fromisoformat(valid_from.replace("Z", "+00:00")).date()
+            if from_dt > today:
+                return True
+        except ValueError:
+            pass
+    if valid_until:
+        try:
+            until_dt = datetime.fromisoformat(valid_until.replace("Z", "+00:00")).date()
+            if until_dt < today:
+                return True
+        except ValueError:
+            pass
+    return False
+
+
 def _table_rows_to_facts(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -92,12 +151,16 @@ def _table_rows_to_facts(
     source_version: str,
     extraction_method: str,
     seal_id: str | None = None,
+    extraction_warnings: list[str] | None = None,
 ) -> None:
     """Insert table rows as kb_fact records.
 
     Heuristic: the first column is treated as entity_key. Columns named
     vigente_desde/hasta/valid_from/valid_until are used for validity windows;
     moneda/currency is propagated to other facts.
+
+    Rows with stale or not-yet-valid windows are inserted (so the data is
+    preserved) but flagged in ``extraction_warnings``.
     """
 
     if not rows:
@@ -120,6 +183,7 @@ def _table_rows_to_facts(
 
     locator_prefix = f"{table_name}: " if table_name else ""
     workspace_id = ctx.require_scoped_workspace()
+    tenant_id = ctx.tenant_id
     if seal_id is None:
         seal_id = workspace_seal_id(ctx, conn)
 
@@ -131,6 +195,11 @@ def _table_rows_to_facts(
         valid_from = row.get(valid_from_header, "").strip() if valid_from_header else None
         valid_until = row.get(valid_until_header, "").strip() if valid_until_header else None
         currency = row.get(currency_header, "").strip() if currency_header else None
+
+        if _is_date_stale(valid_from, valid_until) and extraction_warnings is not None:
+            extraction_warnings.append(
+                f"Row {row_index} ({entity_key}) has a stale or not-yet-valid date window."
+            )
 
         for header in headers:
             value = row.get(header, "").strip()
@@ -156,9 +225,9 @@ def _table_rows_to_facts(
                     id, workspace_id, source_id, entity_key, field_name, field_value,
                     currency, valid_from, valid_until, source_locator, source_version,
                     extraction_method, source_sheet, schema_version, workspace_hmac,
-                    created_at
+                    tenant_id, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fact_id,
@@ -176,6 +245,7 @@ def _table_rows_to_facts(
                     source_sheet,
                     SCHEMA_VERSION,
                     hmac,
+                    tenant_id,
                     utc_now(),
                 ),
             )
@@ -232,6 +302,7 @@ def ingest_kb_source(
                 extracted_tables = [{"name": None, "rows": list(reader)}]
             except Exception as exc:
                 raise ValueError(f"Invalid CSV: {exc}") from exc
+            extraction_warnings = []
     elif source_type in {"xlsx", "pdf"}:
         if content_blob is None:
             raise ValueError(f"content_blob required for source type {source_type}")
@@ -241,7 +312,7 @@ def ingest_kb_source(
             mime_type=mime_type,
         )
         extracted_text = doc.text
-        extraction_warnings = doc.warnings
+        extraction_warnings = doc.warnings or []
         extracted_tables = [
             {"name": table.name, "rows": table.rows}
             for table in (doc.tables or [])
@@ -262,9 +333,6 @@ def ingest_kb_source(
         "extraction_method": extraction_method,
         "parser_version": parser_version,
     }
-    if extraction_warnings:
-        meta["extraction_warnings"] = extraction_warnings
-
     with transaction(conn):
         conn.execute(
             f"""
@@ -323,9 +391,9 @@ def ingest_kb_source(
                     """
                     INSERT INTO kb_chunk (
                         id, workspace_id, source_id, chunk_index, content_text,
-                        source_locator, source_version, schema_version, created_at
+                        source_locator, source_version, schema_version, tenant_id, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         new_id("chunk"),
@@ -336,6 +404,7 @@ def ingest_kb_source(
                         f"chunk {index}",
                         source_version,
                         SCHEMA_VERSION,
+                        ctx.tenant_id,
                         now,
                     ),
                 )
@@ -352,7 +421,17 @@ def ingest_kb_source(
                     source_version=source_version,
                     extraction_method=extraction_method,
                     seal_id=seal_id,
+                    extraction_warnings=extraction_warnings,
                 )
+
+        if extraction_warnings:
+            meta["extraction_warnings"] = extraction_warnings
+            if any("stale or not-yet-valid date window" in w for w in extraction_warnings):
+                meta["stale_data_block"] = True
+            conn.execute(
+                "UPDATE kb_source SET meta_json = ? WHERE id = ?",
+                (json.dumps(meta, ensure_ascii=False, sort_keys=True), source_id),
+            )
 
     row = conn.execute(
         """
@@ -370,23 +449,25 @@ def ingest_kb_source(
 
 
 def list_kb_sources(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     rows = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
                type, title, content_text, meta_json, source_version, schema_version,
                file_name, mime_type, file_size, parser_version, approved_by,
                workspace_hmac, created_at
         FROM kb_source
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id IN ({placeholders}) AND tenant_id IS ?
         ORDER BY created_at DESC
         """,
-        (workspace_id, ctx.tenant_id),
+        (*scope, ctx.tenant_id),
     ).fetchall()
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
     results: list[dict[str, Any]] = []
     for row in rows:
-        if verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source"):
+        seal_id = seals.get(row["workspace_id"])
+        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source"):
             results.append(row_to_dict(row))
     return results
 
@@ -394,21 +475,25 @@ def list_kb_sources(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, An
 def get_kb_source(
     ctx: Context, conn: sqlite3.Connection, source_id: str
 ) -> dict[str, Any] | None:
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     row = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
                type, title, content_text, meta_json, source_version, schema_version,
                file_name, mime_type, file_size, parser_version, approved_by,
                workspace_hmac, created_at
         FROM kb_source
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
         """,
-        (source_id, workspace_id, ctx.tenant_id),
+        (source_id, *scope, ctx.tenant_id),
     ).fetchone()
     if row is None:
         return None
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
+    seal_id = seals.get(row["workspace_id"])
+    if not seal_id:
+        return None
     assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source")
     return row_to_dict(row)
 
@@ -430,9 +515,10 @@ def search_kb_chunks(
     *,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Keyword retrieval via FTS5, scoped to the current workspace."""
+    """Keyword retrieval via FTS5, scoped to the current workspace and its inherited KB."""
 
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     # Escape FTS5 special chars conservatively and OR the terms so any hit
     # returns evidence (we re-rank/filter downstream).
     terms = [term.strip() for term in query.split() if term.strip()]
@@ -444,17 +530,21 @@ def search_kb_chunks(
     )
 
     rows = conn.execute(
-        """
+        f"""
         SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
                c.source_locator, c.source_version, c.created_at
         FROM kb_chunk_fts f
         JOIN kb_chunk c ON c.rowid = f.rowid
         JOIN kb_source s ON s.id = c.source_id
-        WHERE kb_chunk_fts MATCH ? AND c.workspace_id = ? AND s.workspace_id = ?
+        WHERE kb_chunk_fts MATCH ?
+          AND c.workspace_id IN ({placeholders})
+          AND s.workspace_id IN ({placeholders})
+          AND c.tenant_id IS ?
+          AND s.tenant_id IS ?
         ORDER BY rank
         LIMIT ?
         """,
-        (safe_query, workspace_id, workspace_id, limit),
+        (safe_query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, limit),
     ).fetchall()
     return [row_to_dict(row) for row in rows]
 
@@ -472,25 +562,29 @@ def search_kb_facts(
     row cannot be read from another workspace.
     """
 
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     pattern = f"%{query}%"
     rows = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
                unit, currency, valid_from, valid_until, source_locator,
                source_version, extraction_method, source_sheet, workspace_hmac,
-               created_at
+               tenant_id, created_at
         FROM kb_fact
-        WHERE workspace_id = ? AND (entity_key LIKE ? OR field_value LIKE ?)
+        WHERE workspace_id IN ({placeholders})
+          AND tenant_id IS ?
+          AND (entity_key LIKE ? OR field_value LIKE ?)
         ORDER BY created_at DESC
         LIMIT ?
         """,
-        (workspace_id, pattern, pattern, limit),
+        (*scope, ctx.tenant_id, pattern, pattern, limit),
     ).fetchall()
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
     results: list[dict[str, Any]] = []
     for row in rows:
-        if verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
+        seal_id = seals.get(row["workspace_id"])
+        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
             results.append(row_to_dict(row))
     return results
 
@@ -498,21 +592,25 @@ def search_kb_facts(
 def get_kb_fact_by_id(
     ctx: Context, conn: sqlite3.Connection, fact_id: str
 ) -> dict[str, Any] | None:
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     row = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
                unit, currency, valid_from, valid_until, source_locator,
                source_version, extraction_method, source_sheet, workspace_hmac,
-               created_at
+               tenant_id, created_at
         FROM kb_fact
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
         """,
-        (fact_id, workspace_id),
+        (fact_id, *scope, ctx.tenant_id),
     ).fetchone()
     if row is None:
         return None
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
+    seal_id = seals.get(row["workspace_id"])
+    if not seal_id:
+        return None
     assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
     return row_to_dict(row)
 
@@ -520,15 +618,16 @@ def get_kb_fact_by_id(
 def get_kb_chunk_by_id(
     ctx: Context, conn: sqlite3.Connection, chunk_id: str
 ) -> dict[str, Any] | None:
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     row = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, source_id, chunk_index, content_text,
-               source_locator, source_version, created_at
+               source_locator, source_version, tenant_id, created_at
         FROM kb_chunk
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
         """,
-        (chunk_id, workspace_id),
+        (chunk_id, *scope, ctx.tenant_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -543,23 +642,29 @@ def find_kb_fact(
 ) -> dict[str, Any] | None:
     """Find a kb_fact by exact source, field and value (workspace-scoped)."""
 
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     row = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
                unit, currency, valid_from, valid_until, source_locator,
                source_version, extraction_method, source_sheet, workspace_hmac,
-               created_at
+               tenant_id, created_at
         FROM kb_fact
-        WHERE workspace_id = ? AND source_id = ? AND field_name = ? AND field_value = ?
+        WHERE workspace_id IN ({placeholders})
+          AND tenant_id IS ?
+          AND source_id = ? AND field_name = ? AND field_value = ?
         ORDER BY created_at DESC
         LIMIT 1
         """,
-        (workspace_id, source_id, field_name, field_value),
+        (*scope, ctx.tenant_id, source_id, field_name, field_value),
     ).fetchone()
     if row is None:
         return None
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
+    seal_id = seals.get(row["workspace_id"])
+    if not seal_id:
+        return None
     assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
     return row_to_dict(row)
 
@@ -569,23 +674,25 @@ def get_kb_facts_by_source(
 ) -> list[dict[str, Any]]:
     """Return all kb_fact rows for a source (workspace-scoped)."""
 
-    workspace_id = ctx.require_scoped_workspace()
+    scope = _workspace_kb_scope(ctx, conn)
+    placeholders = ",".join("?" for _ in scope)
     rows = conn.execute(
-        """
+        f"""
         SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
                unit, currency, valid_from, valid_until, source_locator,
                source_version, extraction_method, source_sheet, workspace_hmac,
-               created_at
+               tenant_id, created_at
         FROM kb_fact
-        WHERE workspace_id = ? AND source_id = ?
+        WHERE workspace_id IN ({placeholders}) AND tenant_id IS ? AND source_id = ?
         ORDER BY entity_key, field_name
         """,
-        (workspace_id, source_id),
+        (*scope, ctx.tenant_id, source_id),
     ).fetchall()
-    seal_id = workspace_seal_id(ctx, conn)
+    seals = _workspace_seals(ctx, conn, scope)
     results: list[dict[str, Any]] = []
     for row in rows:
-        if verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
+        seal_id = seals.get(row["workspace_id"])
+        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
             results.append(row_to_dict(row))
     return results
 
@@ -599,6 +706,18 @@ def _serialize_draft(row: sqlite3.Row) -> dict[str, Any]:
     data = row_to_dict(row)
     data["requires_confirmation"] = bool(data.get("requires_confirmation", 0))
     return data
+
+
+def _edit_pct(original: str | None, current: str | None) -> float | None:
+    """Return edit percentage (0-100) between original and current body."""
+
+    if original is None or current is None:
+        return None
+    if original == current:
+        return 0.0
+    # SequenceMatcher ratio is in [0, 1]; convert to percentage.
+    ratio = difflib.SequenceMatcher(None, original, current).ratio()
+    return round((1.0 - ratio) * 100.0, 2)
 
 
 def insert_draft(
@@ -616,11 +735,14 @@ def insert_draft(
     requires_confirmation: bool,
     status: str = "draft",
     source_version: str | None = None,
+    original_body_md: str | None = None,
 ) -> dict[str, Any]:
     workspace_id = ctx.require_scoped_workspace()
     draft_id = new_id("draft")
     now = utc_now()
     seal_id = workspace_seal_id(ctx, conn)
+    # The first persisted body is the baseline for measuring human edits.
+    original_body_md = original_body_md if original_body_md is not None else body_md
     hmac = compute_workspace_hmac_for_row(
         seal_id,
         {
@@ -642,9 +764,9 @@ def insert_draft(
             actor_role_at_decision, task, subject, body_md, hard_facts_json,
             sources_json, blockers_json, warnings_json, requires_confirmation,
             status, schema_version, source_version, workspace_hmac, created_at,
-            updated_at
+            updated_at, original_body_md, edit_pct
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             draft_id,
@@ -668,6 +790,8 @@ def insert_draft(
             hmac,
             now,
             now,
+            original_body_md,
+            None,
         ),
     )
     row = conn.execute(
@@ -761,6 +885,12 @@ def update_draft(
             updates.append("body_md = ?")
             params.append(body_md)
 
+        # Preserve the first persisted body as the edit baseline.
+        current_original = row["original_body_md"]
+        if current_original is None:
+            updates.append("original_body_md = ?")
+            params.append(row["body_md"])
+
         # Re-validate hard facts after any edit so "zero invented data" holds.
         new_body = body_md if body_md is not None else row["body_md"]
         reval = revalidate_draft(ctx, conn, dict(row), body_md=new_body)
@@ -841,6 +971,10 @@ def approve_draft(
                 "Draft requires explicit confirmation before approval; retry with confirmed=true"
             )
 
+        # Ensure the original body baseline is set and compute edit_pct.
+        original_body = row["original_body_md"] if row["original_body_md"] is not None else row["body_md"]
+        edit_pct = _edit_pct(original_body, row["body_md"])
+
         seal_id = workspace_seal_id(ctx, conn)
         hmac = compute_workspace_hmac_for_row(
             seal_id,
@@ -858,7 +992,8 @@ def approve_draft(
         conn.execute(
             """
             UPDATE draft
-            SET status = 'approved', approved_by = ?, approved_at = ?, updated_at = ?, workspace_hmac = ?, urgency = ?, reason = ?
+            SET status = 'approved', approved_by = ?, approved_at = ?, updated_at = ?,
+                workspace_hmac = ?, urgency = ?, reason = ?, original_body_md = ?, edit_pct = ?
             WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
             """,
             (
@@ -868,6 +1003,8 @@ def approve_draft(
                 hmac,
                 urgency,
                 reason,
+                original_body,
+                edit_pct,
                 draft_id,
                 workspace_id,
                 ctx.tenant_id,

@@ -1,4 +1,4 @@
-"""Contracts for the SpaceLoom SL1a provider router.
+"""Contracts for the FaberLoom SL1a provider router.
 
 The router keeps provider selection, cost estimation, and usage accounting behind
 one seam so BYO-key in Etapa 1 can later become managed keys without changing

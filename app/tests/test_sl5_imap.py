@@ -13,29 +13,29 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_IMAP_SERVER", "imap.example.com")
-    monkeypatch.setenv("SPACELOOM_IMAP_PORT", "993")
-    monkeypatch.setenv("SPACELOOM_IMAP_USER", "loom@example.com")
-    monkeypatch.setenv("SPACELOOM_IMAP_PASSWORD", "secret-not-logged")
-    monkeypatch.setenv("SPACELOOM_SMTP_SERVER", "smtp.example.com")
-    monkeypatch.setenv("SPACELOOM_SMTP_PORT", "465")
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_IMAP_SERVER", "imap.example.com")
+    monkeypatch.setenv("FABERLOOM_IMAP_PORT", "993")
+    monkeypatch.setenv("FABERLOOM_IMAP_USER", "loom@example.com")
+    monkeypatch.setenv("FABERLOOM_IMAP_PASSWORD", "secret-not-logged")
+    monkeypatch.setenv("FABERLOOM_SMTP_SERVER", "smtp.example.com")
+    monkeypatch.setenv("FABERLOOM_SMTP_PORT", "465")
 
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
-        "SPACELOOM_DEV_TRUST_HEADERS",
+        "FABERLOOM_GOOGLE_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
+        "FABERLOOM_DEV_TRUST_HEADERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -307,10 +307,10 @@ def test_send_with_approval_calls_smtp(client: TestClient, monkeypatch: pytest.M
 
 def test_missing_credentials_returns_503(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
-        "SPACELOOM_IMAP_SERVER",
-        "SPACELOOM_IMAP_PORT",
-        "SPACELOOM_IMAP_USER",
-        "SPACELOOM_IMAP_PASSWORD",
+        "FABERLOOM_IMAP_SERVER",
+        "FABERLOOM_IMAP_PORT",
+        "FABERLOOM_IMAP_USER",
+        "FABERLOOM_IMAP_PASSWORD",
     ):
         monkeypatch.delenv(name, raising=False)
 

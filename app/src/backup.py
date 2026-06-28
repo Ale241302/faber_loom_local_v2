@@ -1,4 +1,4 @@
-"""SpaceLoom backup/export/restore helpers.
+"""FaberLoom backup/export/restore helpers.
 
 Exports the whole SQLite database to a single archive file.  When a passphrase is
 provided the payload is encrypted with Fernet (AES-128-CBC + HMAC) using a key
@@ -22,6 +22,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from .models import SCHEMA_VERSION
+
+try:
+    import sqlcipher3
+except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
+    sqlcipher3 = None  # type: ignore[assignment]
 
 
 SALT_LEN = 16
@@ -78,19 +83,35 @@ def export_db(
     output_path: Path | str,
     *,
     passphrase: str | None = None,
+    db_key: str | None = None,
 ) -> dict[str, Any]:
-    """Export the SQLite database to a `.spaceloom` archive.
+    """Export the SQLite database to a `.faberloom` archive.
 
     Archive layout (zip):
       meta.json  -> {"version": 1, "encrypted": bool, "original_name": str, "schema_version": int}
       db.sqlite3 -> (optional) encrypted bytes of the original SQLite file
+
+    ``db_key`` is the SQLCipher passphrase for encrypted workspace databases.
+    ``passphrase`` encrypts the archive itself with Fernet.
     """
 
     db_path = Path(db_path)
     output_path = Path(output_path)
 
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("VACUUM")
+    # Ensure the database file is fully checkpointed so the exported file is
+    # self-contained.  For SQLCipher databases we need the workspace key.
+    if db_key is not None:
+        if sqlcipher3 is None:
+            raise RuntimeError("sqlcipher3 is not available; cannot export encrypted database")
+        conn = sqlcipher3.connect(str(db_path), check_same_thread=False)
+        escaped = db_key.replace("'", "''")
+        conn.execute(f"PRAGMA key = '{escaped}'")
+    else:
+        conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
 
     raw = db_path.read_bytes()
     encrypted = passphrase is not None
@@ -125,7 +146,7 @@ def restore_db(
     *,
     passphrase: str | None = None,
 ) -> dict[str, Any]:
-    """Restore the database from a `.spaceloom` archive.
+    """Restore the database from a `.faberloom` archive.
 
     The existing db_path is backed up to db_path.backup.<timestamp> before
     overwriting.  Returns the path to the backup.
@@ -186,7 +207,7 @@ def smoke_test_export_restore(
 
     db_path = Path(db_path)
     with tempfile.TemporaryDirectory() as tmpdir:
-        archive = Path(tmpdir) / "backup.spaceloom"
+        archive = Path(tmpdir) / "backup.faberloom"
         export_info = export_db(db_path, archive, passphrase=passphrase)
 
         # Corrupt the live database (simulate loss).

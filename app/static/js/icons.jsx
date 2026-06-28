@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
-   SpaceLoom · Icons
+   FaberLoom · Icons
    Icon set used by the shell. Loaded before foundation and app JSX.
    ═══════════════════════════════════════════════════════════════ */
 
-function Icon({ name, size = 24 }) {
-  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.75", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+function Icon({ name, size = 24, ...props }) {
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.75", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", ...props };
   if (name === "loom") return <svg {...common}><path d="M7 3.5V9.5M7 14.5V20.5M12 3.5V4.5M12 9.5V14.5M12 19.5V20.5M17 3.5V9.5M17 14.5V20.5"/><path d="M3.5 7H4.5M9.5 7H14.5M19.5 7H20.5M3.5 12H9.5M14.5 12H20.5M3.5 17H4.5M9.5 17H14.5M19.5 17H20.5"/></svg>;
   if (name === "menu") return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16"/></svg>;
   if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.6-4.6"/></svg>;
@@ -26,6 +26,7 @@ function Icon({ name, size = 24 }) {
   if (name === "panel-r") return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>;
   if (name === "x") return <svg {...common}><path d="M6 6 18 18M18 6 6 18"/></svg>;
   if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+  if (name === "edit") return <svg {...common}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>;
   if (name === "trash") return <svg {...common}><path d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 14h12l1-14"/></svg>;
   if (name === "refresh") return <svg {...common}><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
   if (name === "key") return <svg {...common}><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-6 6m0 0h3m-3 0V5M10 18l.01 0"/></svg>;

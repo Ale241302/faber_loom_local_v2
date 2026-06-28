@@ -23,6 +23,11 @@ from typing import Any, Iterator
 from .context import Context
 from .models import MIGRATIONS, SCHEMA_VERSION, RoutineCreate, WorkspaceCreate
 from .router import cost as router_cost
+
+try:
+    import sqlcipher3
+except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
+    sqlcipher3 = None  # type: ignore[assignment]
 from .seal import (
     assert_workspace_hmac_for_row,
     compute_workspace_hmac_for_row,
@@ -34,17 +39,40 @@ APP_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = APP_DIR / "data"
 
 
-def _default_user_data_dir() -> Path:
-    """Return the OS-appropriate user data directory for SpaceLoom."""
+def _migrate_legacy_data_dir() -> None:
+    """One-time migration: SpaceLoom -> FaberLoom user data directory.
+
+    If the old ``SpaceLoom`` directory exists and ``FaberLoom`` does not, rename
+    the directory and the legacy ``spaceloom.sqlite3`` database file. This keeps
+    existing dogfood user data intact after the rebrand.
+    """
 
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     else:
         base = Path.home() / ".local" / "share"
-    return base / "SpaceLoom"
+    old = base / "SpaceLoom"
+    new = base / "FaberLoom"
+    if old.exists() and not new.exists():
+        old.rename(new)
+        old_db = new / "spaceloom.sqlite3"
+        new_db = new / "faberloom.sqlite3"
+        if old_db.exists() and not new_db.exists():
+            old_db.rename(new_db)
 
 
-DEFAULT_DB_PATH = _default_user_data_dir() / "spaceloom.sqlite3"
+def _default_user_data_dir() -> Path:
+    """Return the OS-appropriate user data directory for FaberLoom."""
+
+    _migrate_legacy_data_dir()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:
+        base = Path.home() / ".local" / "share"
+    return base / "FaberLoom"
+
+
+DEFAULT_DB_PATH = _default_user_data_dir() / "faberloom.sqlite3"
 
 WORKSPACE_COLUMNS = """
     id,
@@ -61,6 +89,9 @@ WORKSPACE_COLUMNS = """
     schema_version,
     source_version,
     approved_by,
+    parent_id,
+    inherits_kb,
+    confidential,
     created_at,
     updated_at
 """
@@ -85,7 +116,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def get_database_path() -> Path:
-    configured = os.getenv("SPACELOOM_DB_PATH")
+    configured = os.getenv("FABERLOOM_DB_PATH")
     return Path(configured).expanduser().resolve() if configured else DEFAULT_DB_PATH
 
 
@@ -99,6 +130,73 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 5000")
     return conn
+
+
+def get_workspace_database_path(
+    workspace_id: str,
+    main_path: Path | None = None,
+) -> Path:
+    """Return the SQLCipher database path for a confidential workspace."""
+
+    main_path = main_path or get_database_path()
+    return main_path.with_name(f"{main_path.stem}-conf-{workspace_id}.sqlite3")
+
+
+def connect_workspace_data_db(
+    workspace_id: str,
+    passphrase: str,
+    main_path: Path | None = None,
+) -> sqlite3.Connection:
+    """Open the per-workspace SQLCipher database used for confidential workspaces.
+
+    The database is created and migrated on first open. The *workspace* table is
+    mirrored so that the same repository helpers work unchanged.
+    """
+
+    if sqlcipher3 is None:
+        raise RuntimeError("sqlcipher3 is not available; cannot open confidential workspace")
+
+    db_path = get_workspace_database_path(workspace_id, main_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    existed = db_path.exists()
+    conn = sqlcipher3.connect(str(db_path), check_same_thread=False)
+    conn.row_factory = sqlcipher3.Row
+    # Set the encryption key BEFORE any other PRAGMA or SQL statement.
+    escaped = passphrase.replace("'", "''")
+    conn.execute(f"PRAGMA key = '{escaped}'")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+
+    if not existed:
+        initialize_database(conn)
+    return conn
+
+
+def _mirror_workspace_to_data_db(
+    main_conn: sqlite3.Connection,
+    data_conn: sqlite3.Connection,
+    workspace_id: str,
+) -> None:
+    """Copy a workspace row from the main DB into its confidential data DB."""
+
+    row = main_conn.execute(
+        "SELECT * FROM workspace WHERE id = ?",
+        (workspace_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("Workspace row missing during confidential mirror")
+    # Do not mirror the parent_id foreign key (the parent lives in the main DB)
+    # or the plaintext passphrase into the confidential data DB.
+    columns = [k for k in row.keys() if k not in {"parent_id", "passphrase"}]
+    data_conn.execute("DELETE FROM workspace WHERE id = ?", (workspace_id,))
+    data_conn.execute(
+        f"""
+        INSERT INTO workspace ({','.join(columns)})
+        VALUES ({','.join('?' for _ in columns)})
+        """,
+        tuple(row[c] for c in columns),
+    )
 
 
 def get_db() -> Iterator[sqlite3.Connection]:
@@ -354,6 +452,19 @@ def create_workspace(
     slug = unique_workspace_slug(ctx, conn, payload.slug or name)
     seal_id = uuid.uuid4().hex
 
+    parent_id = payload.parent_id
+    inherits_kb = payload.inherits_kb
+    confidential = getattr(payload, "confidential", 0) or 0
+    if parent_id:
+        parent = conn.execute(
+            "SELECT id, tenant_id FROM workspace WHERE id = ?",
+            (parent_id,),
+        ).fetchone()
+        if parent is None:
+            raise ValueError(f"Parent workspace {parent_id} not found")
+        if parent["tenant_id"] != ctx.tenant_id:
+            raise ValueError("Parent workspace belongs to a different tenant")
+
     conn.execute(
         """
         INSERT INTO workspace(
@@ -371,10 +482,13 @@ def create_workspace(
             schema_version,
             source_version,
             approved_by,
+            parent_id,
+            inherits_kb,
+            confidential,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -391,6 +505,9 @@ def create_workspace(
             SCHEMA_VERSION,
             None,
             None,
+            parent_id,
+            inherits_kb,
+            confidential,
             now,
             now,
         ),
@@ -453,6 +570,7 @@ EDITORIAL_HISTORY_COLUMNS = """
     action,
     actor_id,
     reason,
+    payload_json,
     created_at
 """
 
@@ -464,18 +582,20 @@ def record_editorial_event(
     entity_id: str,
     action: str,
     reason: str | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record an editorial decision (approve/reject/apply) for an entity."""
 
     workspace_id = ctx.require_scoped_workspace()
     event_id = new_id("ed")
     now = utc_now()
+    payload_value = payload if payload is not None else {}
     conn.execute(
         """
         INSERT INTO editorial_history (
-            id, workspace_id, entity_type, entity_id, action, actor_id, reason, created_at
+            id, workspace_id, entity_type, entity_id, action, actor_id, reason, payload_json, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -485,6 +605,7 @@ def record_editorial_event(
             action,
             ctx.resolved_actor_id(),
             reason,
+            json.dumps(payload_value, ensure_ascii=False, sort_keys=True),
             now,
         ),
     )
@@ -496,6 +617,7 @@ def record_editorial_event(
         "action": action,
         "actor_id": ctx.resolved_actor_id(),
         "reason": reason,
+        "payload": payload_value,
         "created_at": now,
     }
 
@@ -526,7 +648,16 @@ def list_editorial_history(
     params.append(limit)
 
     rows = conn.execute(sql, params).fetchall()
-    return [row_to_dict(row) for row in rows]
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        item = row_to_dict(row)
+        try:
+            item["payload"] = json.loads(item.get("payload_json") or "{}")
+        except json.JSONDecodeError:
+            item["payload"] = {}
+        item.pop("payload_json", None)
+        results.append(item)
+    return results
 
 
 def insert_audit_log(
@@ -739,6 +870,50 @@ def get_chat(
     return row_to_dict(row) if row else None
 
 
+def update_chat(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    chat_id: str,
+    title: str,
+) -> dict[str, Any] | None:
+    """Rename a chat. Returns the updated row or None if not found/scoped."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    cursor = conn.execute(
+        """
+        UPDATE chat
+        SET title = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        """,
+        (title.strip(), chat_id, workspace_id, ctx.tenant_id),
+    )
+    if cursor.rowcount == 0:
+        return None
+    return get_chat(ctx, conn, chat_id)
+
+
+def delete_chat(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    chat_id: str,
+) -> bool:
+    """Delete a chat and its messages (cascade), scoped to workspace/tenant.
+
+    Leaves usage records with a dangling chat_id; callers may clean them up.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    conn.execute(
+        "UPDATE usage_record SET chat_id = NULL WHERE chat_id = ? AND workspace_id = ?",
+        (chat_id, workspace_id),
+    )
+    cursor = conn.execute(
+        "DELETE FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        (chat_id, workspace_id, ctx.tenant_id),
+    )
+    return cursor.rowcount > 0
+
+
 def insert_message(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -746,12 +921,17 @@ def insert_message(
     chat_id: str,
     role: str,
     content: str,
+    route: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workspace_id = ctx.require_scoped_workspace()
     if get_chat(ctx, conn, chat_id) is None:
         raise ValueError("Chat not found in current Context")
     message_id = new_id("msg")
     now = utc_now()
+
+    content_json: dict[str, Any] = {"content": content}
+    if route:
+        content_json["route"] = route
 
     conn.execute(
         f"""
@@ -783,7 +963,7 @@ def insert_message(
             ctx.resolved_actor_id(),
             ctx.actor_role_at_decision,
             role,
-            json.dumps({"content": content}, ensure_ascii=False),
+            json.dumps(content_json, ensure_ascii=False),
             None,
             None,
             SCHEMA_VERSION,
@@ -997,6 +1177,7 @@ ROUTINE_RUN_COLUMNS = """
     evidence_json,
     status,
     edit_pct,
+    task_type,
     routine_version,
     skill_version,
     schema_version,
@@ -1019,6 +1200,7 @@ def create_routine_run(
     evidence_json: list[dict[str, Any]],
     status: str,
     edit_pct: float | None = None,
+    task_type: str | None = None,
     routine_version: str | None = None,
     skill_version: str | None = None,
     source_version: str | None = None,
@@ -1027,6 +1209,9 @@ def create_routine_run(
     """Insert a routine_run row sealed to the current workspace."""
 
     workspace_id = ctx.require_scoped_workspace()
+    if task_type is None:
+        routine = get_routine(ctx, conn, routine_id)
+        task_type = routine.get("category") if routine else None
     run_id = new_id("run")
     now = utc_now()
     seal_id = workspace_seal_id(ctx, conn)
@@ -1051,10 +1236,10 @@ def create_routine_run(
         INSERT INTO routine_run (
             id, routine_id, workspace_id, tenant_id, user_id, actor_id,
             actor_role_at_decision, input_json, output_json, evidence_json,
-            status, edit_pct, routine_version, skill_version, schema_version,
+            status, edit_pct, task_type, routine_version, skill_version, schema_version,
             source_version, approved_by, workspace_hmac, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -1069,6 +1254,7 @@ def create_routine_run(
             json.dumps(evidence_json, ensure_ascii=False),
             status,
             edit_pct,
+            task_type,
             routine_version,
             skill_version,
             SCHEMA_VERSION,
@@ -1079,8 +1265,8 @@ def create_routine_run(
         ),
     )
     row = conn.execute(
-        f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE id = ? AND workspace_id = ?",
-        (run_id, workspace_id),
+        f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)
@@ -1104,9 +1290,9 @@ def set_routine_run_output(
         f"""
         SELECT {ROUTINE_RUN_COLUMNS}
         FROM routine_run
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (run_id, workspace_id),
+        (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     if existing is None:
         return None
@@ -1121,7 +1307,7 @@ def set_routine_run_output(
         """
         UPDATE routine_run
         SET output_json = ?, evidence_json = ?, status = ?, edit_pct = ?, workspace_hmac = ?
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
         (
             output_json_str,
@@ -1131,6 +1317,7 @@ def set_routine_run_output(
             hmac,
             run_id,
             workspace_id,
+            ctx.tenant_id,
         ),
     )
     if cursor.rowcount == 0:
@@ -1148,9 +1335,9 @@ def get_routine_run(
         f"""
         SELECT {ROUTINE_RUN_COLUMNS}
         FROM routine_run
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (run_id, workspace_id),
+        (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     if row is None:
         return None
@@ -1169,8 +1356,8 @@ def list_routine_runs(
     """List routine_run rows, discarding any with a broken workspace HMAC seal."""
 
     workspace_id = ctx.require_scoped_workspace()
-    sql = f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE workspace_id = ?"
-    params: list[Any] = [workspace_id]
+    sql = f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE workspace_id = ? AND tenant_id IS ?"
+    params: list[Any] = [workspace_id, ctx.tenant_id]
     if routine_id is not None:
         sql += " AND routine_id = ?"
         params.append(routine_id)
@@ -1418,6 +1605,7 @@ ROUTINE_COLUMNS = """
     trigger_json,
     persona_md,
     is_active,
+    category,
     routine_version,
     skill_version,
     schema_version,
@@ -1430,6 +1618,7 @@ ROUTINE_COLUMNS = """
 GOLD_CANDIDATE_COLUMNS = """
     id,
     workspace_id,
+    tenant_id,
     routine_id,
     run_id,
     edit_pct,
@@ -1467,12 +1656,14 @@ def create_routine(
     persona_md: str = "",
     is_active: int = 1,
     source_version: str = "v1",
+    category: str = "custom",
 ) -> dict[str, Any]:
     """Insert a routine scoped to the current workspace."""
 
     workspace_id = ctx.require_scoped_workspace()
     routine_id = new_id("rtn")
     now = utc_now()
+    routine_version = utc_now()
 
     conn.execute(
         f"""
@@ -1480,10 +1671,10 @@ def create_routine(
             id, workspace_id, tenant_id, user_id, actor_id,
             actor_role_at_decision, name, skill_md, tools_allowlist,
             schema_output_json, preset_id, trigger_json, persona_md,
-            is_active, routine_version, skill_version, schema_version,
+            is_active, category, routine_version, skill_version, schema_version,
             source_version, approved_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             routine_id,
@@ -1500,7 +1691,8 @@ def create_routine(
             trigger_json,
             persona_md,
             is_active,
-            None,
+            category,
+            routine_version,
             None,
             SCHEMA_VERSION,
             source_version,
@@ -1513,9 +1705,9 @@ def create_routine(
         f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (routine_id, workspace_id),
+        (routine_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)
@@ -1537,20 +1729,22 @@ def _upsert_gold_candidate_from_run(
     conn.execute(
         """
         INSERT INTO gold_candidate (
-            id, workspace_id, routine_id, run_id, edit_pct,
+            id, workspace_id, tenant_id, routine_id, run_id, edit_pct,
             input_json, output_json, learned_output_json, approved,
             schema_version, source_version, approved_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
             edit_pct = excluded.edit_pct,
             input_json = excluded.input_json,
             output_json = excluded.output_json,
+            tenant_id = excluded.tenant_id,
             updated_at = excluded.updated_at
         """,
         (
             candidate_id,
             run["workspace_id"],
+            run.get("tenant_id"),
             run["routine_id"],
             run["id"],
             edit_pct,
@@ -1824,6 +2018,27 @@ def approve_routine(
     return get_routine(ctx, conn, routine_id)
 
 
+def is_routine_name_taken(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    name: str,
+    exclude_id: str | None = None,
+) -> bool:
+    """Return True if another routine in the workspace already uses the name."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    sql = f"""
+        SELECT 1 FROM routine
+        WHERE workspace_id = ? AND tenant_id IS ? AND lower(name) = lower(?)
+    """
+    params: list[Any] = [workspace_id, ctx.tenant_id, name.strip()]
+    if exclude_id:
+        sql += " AND id != ?"
+        params.append(exclude_id)
+    sql += " LIMIT 1"
+    return conn.execute(sql, params).fetchone() is not None
+
+
 def get_routine(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -1836,9 +2051,9 @@ def get_routine(
         f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (routine_id, workspace_id),
+        (routine_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -1847,37 +2062,47 @@ def get_routine_by_name(
     ctx: Context,
     conn: sqlite3.Connection,
     name: str,
-) -> dict[str, Any] | None:
-    """Read a routine by name (case-insensitive) in the current workspace."""
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read routines by name (case-insensitive) in the current workspace.
+
+    Returns a list so callers can detect ambiguous names.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        f"""
+    sql = f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE workspace_id = ? AND lower(name) = lower(?)
-        """,
-        (workspace_id, name),
-    ).fetchone()
-    return row_to_dict(row) if row else None
+        WHERE workspace_id = ? AND tenant_id IS ? AND lower(name) = lower(?)
+    """
+    params: list[Any] = [workspace_id, ctx.tenant_id, name]
+    if category is not None:
+        sql += " AND category = ?"
+        params.append(category)
+    sql += " ORDER BY created_at DESC"
+    rows = conn.execute(sql, params).fetchall()
+    return [row_to_dict(row) for row in rows]
 
 
 def list_routines(
     ctx: Context,
     conn: sqlite3.Connection,
+    category: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List routines scoped to the current workspace."""
+    """List routines scoped to the current workspace, optionally filtered by category."""
 
     workspace_id = ctx.require_scoped_workspace()
-    rows = conn.execute(
-        f"""
+    sql = f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE workspace_id = ?
-        ORDER BY created_at DESC
-        """,
-        (workspace_id,),
-    ).fetchall()
+        WHERE workspace_id = ? AND tenant_id IS ?
+    """
+    params: list[Any] = [workspace_id, ctx.tenant_id]
+    if category is not None:
+        sql += " AND category = ?"
+        params.append(category)
+    sql += " ORDER BY created_at DESC"
+    rows = conn.execute(sql, params).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
@@ -1890,8 +2115,8 @@ def delete_routine(
 
     workspace_id = ctx.require_scoped_workspace()
     cursor = conn.execute(
-        "DELETE FROM routine WHERE id = ? AND workspace_id = ?",
-        (routine_id, workspace_id),
+        "DELETE FROM routine WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        (routine_id, workspace_id, ctx.tenant_id),
     )
     return cursor.rowcount > 0
 
@@ -1908,6 +2133,22 @@ ALLOWED_ROUTINE_UPDATE_FIELDS = frozenset(
         "is_active",
         "source_version",
         "approved_by",
+        "category",
+        "routine_version",
+    }
+)
+
+
+_ROUTINE_APPROVAL_SENSITIVE_FIELDS = frozenset(
+    {
+        "name",
+        "skill_md",
+        "tools_allowlist",
+        "schema_output_json",
+        "preset_id",
+        "trigger_json",
+        "persona_md",
+        "category",
     }
 )
 
@@ -1922,6 +2163,7 @@ def update_routine(
 
     Only keys explicitly present in ``fields`` are written, so callers can pass
     ``approved_by=None`` to clear approval without omitting the column.
+    Changing executable content clears human approval (HITL bypass prevention).
     """
 
     workspace_id = ctx.require_scoped_workspace()
@@ -1929,10 +2171,24 @@ def update_routine(
     if not updates:
         return get_routine(ctx, conn, routine_id)
 
+    existing = get_routine(ctx, conn, routine_id)
+    if existing is None:
+        return None
+
+    # Changing executable/persona/model/category clears approval.
+    for field in _ROUTINE_APPROVAL_SENSITIVE_FIELDS:
+        if field in updates and updates[field] != existing.get(field):
+            updates["approved_by"] = None
+            break
+
+    # Bump routine_version on any content change.
+    if any(field in updates for field in _ROUTINE_APPROVAL_SENSITIVE_FIELDS):
+        updates["routine_version"] = utc_now()
+
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    params = list(updates.values()) + [utc_now(), routine_id, workspace_id]
+    params = list(updates.values()) + [utc_now(), routine_id, workspace_id, ctx.tenant_id]
     cursor = conn.execute(
-        f"UPDATE routine SET {set_clause}, updated_at = ? WHERE id = ? AND workspace_id = ?",
+        f"UPDATE routine SET {set_clause}, updated_at = ? WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
         params,
     )
     if cursor.rowcount == 0:

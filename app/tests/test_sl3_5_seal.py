@@ -11,23 +11,23 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
-        "SPACELOOM_DEV_TRUST_HEADERS",
+        "FABERLOOM_GOOGLE_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
+        "FABERLOOM_DEV_TRUST_HEADERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -39,8 +39,20 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         yield test_client
 
 
-def _create_workspace(client: TestClient, name: str) -> dict[str, Any]:
-    response = client.post("/api/workspaces", json={"name": name})
+def _create_workspace(
+    client: TestClient,
+    name: str,
+    *,
+    tenant_id: str | None = None,
+    confidential: int = 0,
+    passphrase: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": name}
+    if confidential:
+        payload["confidential"] = confidential
+        payload["passphrase"] = passphrase
+    headers = {"x-tenant-id": tenant_id} if tenant_id else {}
+    response = client.post("/api/workspaces", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -51,10 +63,12 @@ def _ingest_source(
     title: str,
     text: str,
     source_type: str = "md",
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     response = client.post(
         f"/api/workspaces/{workspace_id}/kb/sources",
         json={"title": title, "type": source_type, "content_text": text},
+        headers=headers or {},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -100,12 +114,17 @@ def _create_draft(client: TestClient, monkeypatch: pytest.MonkeyPatch, workspace
 
 
 def test_each_workspace_has_unique_seal_id(client: TestClient) -> None:
+    from app.src.db import connect
+
     a = _create_workspace(client, "Seal A")
     b = _create_workspace(client, "Seal B")
-    assert a["seal_id"]
-    assert b["seal_id"]
-    assert a["seal_id"] != b["seal_id"]
-    assert len(a["seal_id"]) >= 16
+    with connect() as conn:
+        a_row = conn.execute("SELECT seal_id FROM workspace WHERE id = ?", (a["id"],)).fetchone()
+        b_row = conn.execute("SELECT seal_id FROM workspace WHERE id = ?", (b["id"],)).fetchone()
+    assert a_row
+    assert b_row
+    assert a_row["seal_id"] != b_row["seal_id"]
+    assert len(a_row["seal_id"]) >= 16
 
 
 def test_seal_check_endpoint_does_not_expose_seal_id(client: TestClient) -> None:
@@ -298,4 +317,258 @@ def test_seal_id_column_is_backed_by_database(client: TestClient) -> None:
             (workspace["id"],),
         ).fetchone()
     assert row is not None
-    assert row["seal_id"] == workspace["seal_id"]
+    assert row["seal_id"]
+    assert len(row["seal_id"]) >= 16
+
+
+# -----------------------------------------------------------------------------
+# SL3.5 CLOSER extensions: SQLCipher confidential workspaces
+# -----------------------------------------------------------------------------
+
+
+def test_confidential_workspace_requires_passphrase(client: TestClient) -> None:
+    """A confidential workspace cannot be opened without its passphrase."""
+
+    response = client.post(
+        "/api/workspaces",
+        json={"name": "Confidential", "confidential": 1, "passphrase": "secret123"},
+    )
+    assert response.status_code == 201, response.text
+    workspace = response.json()
+    assert workspace["confidential"] == 1
+    assert "seal_id" not in workspace
+
+    # Without passphrase the data surface is locked.
+    locked = client.get(f"/api/workspaces/{workspace['id']}/kb/sources")
+    assert locked.status_code == 401
+
+    # With the correct passphrase it opens normally.
+    opened = client.get(
+        f"/api/workspaces/{workspace['id']}/kb/sources",
+        headers={"x-workspace-passphrase": "secret123"},
+    )
+    assert opened.status_code == 200
+    assert opened.json() == []
+
+    # A wrong passphrase does not open the database.
+    wrong = client.get(
+        f"/api/workspaces/{workspace['id']}/kb/sources",
+        headers={"x-workspace-passphrase": "wrong"},
+    )
+    assert wrong.status_code in (401, 500)
+
+
+def test_confidential_workspace_without_passphrase_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/workspaces",
+        json={"name": "No Pass", "confidential": 1},
+    )
+    assert response.status_code == 422
+
+
+def test_confidential_workspace_data_is_encrypted_separately(client: TestClient) -> None:
+    """Confidential content lives in its own SQLCipher file, not the main DB."""
+
+    from app.src.db import connect, get_workspace_database_path, get_database_path
+
+    workspace = client.post(
+        "/api/workspaces",
+        json={"name": "Encrypted", "confidential": 1, "passphrase": "secret123"},
+    ).json()
+
+    canary = "CANARY_CONFIDENTIAL_CONTENT_42"
+    _ingest_source(
+        client,
+        workspace["id"],
+        "Secret",
+        canary,
+        headers={"x-workspace-passphrase": "secret123"},
+    )
+
+    # The main (plain) database does not contain the confidential content.
+    data_db_path = get_workspace_database_path(workspace["id"], get_database_path())
+    assert data_db_path.exists()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT content_text FROM kb_source WHERE workspace_id = ?",
+            (workspace["id"],),
+        ).fetchone()
+    assert row is None or row["content_text"] != canary
+
+
+def test_confidential_workspace_is_cross_workspace_isolated(client: TestClient) -> None:
+    """Canary content from a confidential workspace never leaks to a normal one."""
+
+    from app.src.db import connect
+
+    normal = _create_workspace(client, "Normal Fuga")
+    confidential = client.post(
+        "/api/workspaces",
+        json={"name": "Conf Fuga", "confidential": 1, "passphrase": "secret123"},
+    ).json()
+
+    canary = "FUGA_CANARY_999"
+    _ingest_source(
+        client,
+        confidential["id"],
+        "Secret",
+        canary,
+        headers={"x-workspace-passphrase": "secret123"},
+    )
+
+    # Normal workspace cannot see the confidential content via search.
+    search = client.get(f"/api/workspaces/{normal['id']}/kb/search?q={canary}")
+    assert search.status_code == 200
+    assert search.json()["facts"] == []
+    assert search.json()["chunks"] == []
+
+    # The main (plain) database has no trace of the confidential content.
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM kb_source WHERE content_text = ?",
+            (canary,),
+        ).fetchone()
+    assert row is None
+
+
+def test_backup_restore_confidential_workspace_smoke(
+    client: TestClient, tmp_path: Any
+) -> None:
+    """Export/restore of a confidential database preserves content without leakage."""
+
+    from app.src.backup import export_db, restore_db
+    from app.src.db import (
+        connect_workspace_data_db,
+        get_database_path,
+        get_workspace_database_path,
+    )
+
+    workspace = client.post(
+        "/api/workspaces",
+        json={"name": "Backup Confidential", "confidential": 1, "passphrase": "bk-secret"},
+    ).json()
+
+    canary = "BACKUP_CANARY_12345"
+    _ingest_source(
+        client,
+        workspace["id"],
+        "Backup Source",
+        canary,
+        headers={"x-workspace-passphrase": "bk-secret"},
+    )
+
+    data_db_path = get_workspace_database_path(workspace["id"], get_database_path())
+    archive = tmp_path / "confidential.faberloom"
+
+    export_db(
+        str(data_db_path),
+        str(archive),
+        passphrase="export-secret",
+        db_key="bk-secret",
+    )
+
+    # Restore into a new path.
+    restored_path = tmp_path / "restored-confidential.sqlite3"
+    restore_db(str(archive), str(restored_path), passphrase="export-secret")
+
+    # Open restored DB with the workspace passphrase and verify content.
+    import sqlcipher3
+
+    restored = sqlcipher3.connect(str(restored_path), check_same_thread=False)
+    restored.row_factory = sqlcipher3.Row
+    restored.execute("PRAGMA key = 'bk-secret'")
+    try:
+        row = restored.execute(
+            "SELECT content_text FROM kb_source WHERE workspace_id = ?",
+            (workspace["id"],),
+        ).fetchone()
+        assert row is not None
+        assert row["content_text"] == canary
+    finally:
+        restored.close()
+
+
+def test_confidential_workspace_tenant_isolation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A confidential workspace is invisible to other tenants even with passphrase."""
+
+    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
+
+    workspace = _create_workspace(
+        client,
+        "Conf Tenant A",
+        tenant_id="tenant-a",
+        confidential=1,
+        passphrase="tenant-secret",
+    )
+    assert workspace["tenant_id"] == "tenant-a"
+
+    # Same tenant + correct passphrase opens the data surface.
+    ok = client.get(
+        f"/api/workspaces/{workspace['id']}/kb/sources",
+        headers={
+            "x-tenant-id": "tenant-a",
+            "x-workspace-passphrase": "tenant-secret",
+        },
+    )
+    assert ok.status_code == 200
+
+    # Different tenant cannot see the workspace at all (404 before passphrase check).
+    blocked = client.get(
+        f"/api/workspaces/{workspace['id']}/kb/sources",
+        headers={
+            "x-tenant-id": "tenant-b",
+            "x-workspace-passphrase": "tenant-secret",
+        },
+    )
+    assert blocked.status_code == 404
+
+    # Seal check also respects tenant scope.
+    seal_ok = client.get(
+        f"/api/workspaces/{workspace['id']}/seal-check",
+        headers={
+            "x-tenant-id": "tenant-a",
+            "x-workspace-passphrase": "tenant-secret",
+        },
+    )
+    assert seal_ok.status_code == 200
+    assert seal_ok.json()["verified"] == "true"
+
+    seal_blocked = client.get(
+        f"/api/workspaces/{workspace['id']}/seal-check",
+        headers={
+            "x-tenant-id": "tenant-b",
+            "x-workspace-passphrase": "tenant-secret",
+        },
+    )
+    assert seal_blocked.status_code == 404
+
+
+def test_confidential_workspace_cannot_inherit_cross_tenant_parent(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A confidential child workspace cannot attach to a parent in another tenant."""
+
+    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
+
+    parent = _create_workspace(
+        client,
+        "Conf Parent Tenant A",
+        tenant_id="tenant-a",
+        confidential=1,
+        passphrase="parent-secret",
+    )
+
+    response = client.post(
+        "/api/workspaces",
+        json={
+            "name": "Conf Child Tenant B",
+            "parent_id": parent["id"],
+            "inherits_kb": 1,
+            "confidential": 1,
+            "passphrase": "child-secret",
+        },
+        headers={"x-tenant-id": "tenant-b"},
+    )
+    assert response.status_code in (400, 422)

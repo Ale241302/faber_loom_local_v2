@@ -1,0 +1,132 @@
+{
+  "version": "sl1b-2026-06-25",
+  "workspace_id": "ws_bc75558989e54b89a9a5898bb2f9fad1",
+  "total_drafts": 10,
+  "fully_sourced": 8,
+  "pending": 2,
+  "edit_pct_average": 3.66,
+  "edit_pct_values": [
+    8.93,
+    0.0,
+    12.42,
+    0.0,
+    5.81,
+    0.0,
+    9.43,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "drafts": [
+    {
+      "prompt_id": "sl1b-p01",
+      "request": "Precio de Oxford",
+      "draft_id": "draft_84baf72f2479476bb61af97a53fad65e",
+      "status": "approved",
+      "edit_simulation": "light",
+      "edit_pct": 8.93,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p02",
+      "request": "Stock de Lino",
+      "draft_id": "draft_138c540b0a114905b73d8136f5c01e47",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p03",
+      "request": "Cotizar Raso",
+      "draft_id": "draft_a957763c4c924ef586bd850a6aa9c014",
+      "status": "approved",
+      "edit_simulation": "heavy",
+      "edit_pct": 12.42,
+      "requires_confirmation": false,
+      "fully_sourced": false,
+      "pending": true
+    },
+    {
+      "prompt_id": "sl1b-p04",
+      "request": "Equivalencia Oxford",
+      "draft_id": "draft_78393c5ac91b438fbf516d6a169322f6",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p05",
+      "request": "Lead time Seda",
+      "draft_id": "draft_2a50efb23002437f90296e6a833ac31e",
+      "status": "approved",
+      "edit_simulation": "light",
+      "edit_pct": 5.81,
+      "requires_confirmation": false,
+      "fully_sourced": false,
+      "pending": true
+    },
+    {
+      "prompt_id": "sl1b-p06",
+      "request": "MOQ Gabardina",
+      "draft_id": "draft_899ffe828ffc42bca76157adb3a07430",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p07",
+      "request": "Disponibilidad Terciopelo",
+      "draft_id": "draft_f47877cf6bd94260a44bbc6d016af3a5",
+      "status": "approved",
+      "edit_simulation": "light",
+      "edit_pct": 9.43,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p08",
+      "request": "Precio especial Jean",
+      "draft_id": "draft_73eadcee56274cf98a0d67643794284f",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p09",
+      "request": "Condiciones de pago",
+      "draft_id": "draft_e063547b150d472dbc69a1f92b9c4141",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    },
+    {
+      "prompt_id": "sl1b-p10",
+      "request": "Vigencia de lista",
+      "draft_id": "draft_499bc5e3f70b4cc399c5edd5f1db17f4",
+      "status": "approved",
+      "edit_simulation": "none",
+      "edit_pct": 0.0,
+      "requires_confirmation": false,
+      "fully_sourced": true,
+      "pending": false
+    }
+  ]
+}

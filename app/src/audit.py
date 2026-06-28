@@ -1,4 +1,4 @@
-"""AuditWriter seam for SpaceLoom.
+"""AuditWriter seam for FaberLoom.
 
 Today it appends JSONL to app/data/audit.jsonl and mirrors the same event into
 the audit_log table. Tomorrow this interface can be backed by an outbox/table

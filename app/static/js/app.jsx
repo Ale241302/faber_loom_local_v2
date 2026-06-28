@@ -1,4 +1,4 @@
-var { useEffect, useMemo, useState } = React;
+var { useCallback, useEffect, useMemo, useState } = React;
 
 const MODES = [
   { id: "operar", label: "Operar" },
@@ -8,7 +8,7 @@ const MODES = [
 
 const NAV = {
   operar: [
-    { id: "space", label: "SpaceLoom", sub: "Canvas y chat", badge: "SL0", icon: "loom" },
+    { id: "space", label: "FaberLoom", sub: "Canvas y chat", badge: "SL0", icon: "loom" },
     { id: "workloom", label: "WorkLoom", sub: "Cola HITL", badge: "SL3", icon: "check" },
     { id: "mail", label: "Correo", sub: "IMAP/SMTP HITL", badge: "SL5", icon: "mail" },
   ],
@@ -17,7 +17,7 @@ const NAV = {
     { id: "routines", label: "Routine Hub", sub: "Skills portables", badge: "SL3", icon: "spark" },
   ],
   admin: [
-    { id: "settings", label: "Ajustes", sub: "Router y proveedor", badge: "SL1", icon: "settings" },
+    { id: "settings", label: "Router / Proveedores", sub: "Modelos, keys y presupuesto", badge: "SL1", icon: "settings" },
     { id: "audit", label: "Auditoría", sub: "JSONL hoy", badge: "SL0", icon: "audit" },
   ],
 };
@@ -46,6 +46,8 @@ const S = {
   searchRow: { display: "flex", gap: 10, marginBottom: 12 },
   empty: { padding: "40px 20px", textAlign: "center", color: "var(--text-muted)" },
   error: { padding: "10px 13px", borderRadius: "var(--r-sm)", background: "var(--vino-soft)", border: "1px solid var(--vino-deep)", color: "var(--text-secondary)", marginBottom: 12, fontSize: 12.5, lineHeight: 1.5 },
+  errorDetail: { padding: "10px 13px", borderRadius: "var(--r-sm)", background: "var(--vino-soft)", border: "1px solid var(--vino-deep)", color: "var(--text-secondary)", marginTop: 8, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", fontFamily: "var(--font-mono)" },
+  success: { padding: "10px 13px", borderRadius: "var(--r-sm)", background: "var(--sage-soft)", border: "1px solid var(--sage-deep)", color: "var(--text-secondary)", marginBottom: 12, fontSize: 12.5, lineHeight: 1.5 },
   loading: { padding: 20, textAlign: "center", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(12,10,8,.66)", backdropFilter: "blur(4px)", display: "grid", placeItems: "center", zIndex: 90 },
   modal: { width: "min(520px, 92vw)", maxHeight: "90vh", overflow: "auto", padding: 20, border: "1px solid var(--border-default)", borderRadius: "var(--r-lg)", background: "var(--bg-raised)", boxShadow: "var(--shadow)" },
@@ -62,10 +64,25 @@ function statusClass(status) {
   return "badge";
 }
 
+function parsePreset(presetId) {
+  if (!presetId || !presetId.includes(":")) return { provider_slug: "", model: "" };
+  const [provider_slug, model] = presetId.split(":");
+  return { provider_slug: provider_slug || "", model: model || "" };
+}
+
+function formatPreset(provider_slug, model) {
+  if (!provider_slug || !model) return "";
+  return `${provider_slug}:${model}`;
+}
+
+function isExecutableCategory(category) {
+  return category === "skill" || category === "agent" || category === "custom";
+}
+
 function cx(...parts) { return parts.filter(Boolean).join(" "); }
 
 function readBootstrap() {
-  const boot = window.__SPACELOOM_BOOTSTRAP__;
+  const boot = window.__FABERLOOM_BOOTSTRAP__;
   if (!boot || typeof boot !== "object") return null;
   const workspaces = Array.isArray(boot.workspaces) ? boot.workspaces : [];
   return { workspaces, activeWorkspaceId: boot.activeWorkspaceId || boot.active_workspace_id || (workspaces[0] && workspaces[0].id) || null };
@@ -125,42 +142,172 @@ function tryJsonParse(text) {
 
 function prettyJson(value) { return JSON.stringify(value, null, 2); }
 
-function Topbar({ onOpenPalette, theme, setTheme }) {
+function BudgetChip({ budget, onClick }) {
+  if (!budget) return null;
+  const pct = Math.min(100, Math.max(0, budget.budget_cap_usd ? (budget.spent_usd / budget.budget_cap_usd) * 100 : 0));
+  const variant = pct >= 100 ? "over" : pct >= 75 ? "near" : "";
+  return (
+    <div className="budget-chip" onClick={onClick} title="Presupuesto del workspace">
+      <div className="bbar"><div className={cx("bfill", variant)} style={{ width: pct + "%" }} /></div>
+      <span className="bnum">${budget.spent_usd.toFixed(2)} / ${budget.budget_cap_usd.toFixed(0)}</span>
+    </div>
+  );
+}
+
+function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggleRight, onOpenRouting }) {
   return <header className="topbar">
-    <button type="button" className="ceja" aria-label="Panel izquierdo"><Icon name="panel-l" size={18}/></button>
-    <div className="brand" aria-label="FaberLoom SpaceLoom">
+    <button type="button" className="ceja" aria-label="Panel izquierdo" onClick={onToggleLeft}><Icon name="panel-l" size={18}/></button>
+    <div className="brand" aria-label="FaberLoom">
       <span className="brand-mark"><BrandMark /></span>
-      <span className="brand-word"><span className="brand-name"><span className="brand-faber">Faber</span><span className="brand-loom">Loom</span></span><span className="brand-sub">SpaceLoom · local-first</span></span>
+      <span className="brand-word"><span className="brand-name"><span className="brand-faber">Faber</span><span className="brand-loom">Loom</span></span><span className="brand-sub">FaberLoom · local-first</span></span>
     </div>
     <div className="cmdk" role="button" tabIndex="0" onClick={onOpenPalette} aria-label="Buscar o ejecutar"><Icon name="search" size={16}/><span className="cmdk-label">Buscar o ejecutar…</span><kbd>Ctrl K</kbd></div>
-    <div className="topbar-actions"><ThemeSwitcher theme={theme} onChange={setTheme} /><span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span><button type="button" className="ceja" aria-label="Panel derecho"><Icon name="panel-r" size={18}/></button></div>
+    <div className="topbar-actions">
+      <BudgetChip budget={budget} onClick={onOpenRouting} />
+      <ThemeSwitcher theme={theme} onChange={setTheme} />
+      <span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span>
+      <button type="button" className="ceja" aria-label="Panel derecho" onClick={onToggleRight}><Icon name="panel-r" size={18}/></button>
+    </div>
   </header>;
 }
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status }) {
-  const items = NAV[mode] || NAV.operar;
-  return <aside className="rail">
-    <div className="mode-group" aria-label="Modos de SpaceLoom">
-      {MODES.map((item) => <button key={item.id} type="button" className={cx("mode-button", mode === item.id && "is-active")} onClick={() => { setMode(item.id); setNav((NAV[item.id] || [])[0].id); }}>{item.label}</button>)}
+const DOTS = ["var(--coral)", "var(--amber)", "var(--sage)", "var(--slate)", "var(--vino)"];
+
+function RailItem({ label, icon, dot, badge, active, onClick }) {
+  return <button type="button" className={cx("nav-item", active && "is-active")} onClick={onClick}>
+    {dot ? <span className="dot" style={{ background: dot }} /> : <Icon name={icon} />}
+    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+    {badge !== undefined && badge !== null && badge !== 0 && <span className={cx("nav-badge", typeof badge === "number" && badge > 0 && "op")}>{badge}</span>}
+  </button>;
+}
+
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden }) {
+  const [counts, setCounts] = useState({});
+
+  const loadCounts = useCallback(async () => {
+    if (!activeWorkspace) { setCounts({}); return; }
+    const results = await Promise.allSettled([
+      apiGet(`/api/workspaces/${activeWorkspace.id}/chats`),
+      apiGet(`/api/workspaces/${activeWorkspace.id}/mail`),
+      apiGet(`/api/workspaces/${activeWorkspace.id}/workloom`),
+      apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
+      apiGet(`/api/workspaces/${activeWorkspace.id}/kb/sources`),
+      apiGet(`/api/workspaces/${activeWorkspace.id}/gold-candidates`),
+    ]);
+    const get = (res, fallback = []) => res.status === "fulfilled" ? res.value : fallback;
+    const [chats, mail, workloom, routines, kb, gold] = results.map((r) => get(r, []));
+    const draftCount = (workloom.drafts || []).length;
+    const runCount = (workloom.routine_runs || []).length;
+    setCounts({
+      chats: Array.isArray(chats) ? chats.length : 0,
+      mail: Array.isArray(mail) ? mail.length : 0,
+      workloom: draftCount + runCount,
+      drafts: draftCount,
+      runs: runCount,
+      skills: Array.isArray(routines) ? routines.filter((r) => (r.category || "custom") === "skill").length : 0,
+      agents: Array.isArray(routines) ? routines.filter((r) => (r.category || "custom") === "agent").length : 0,
+      routines: Array.isArray(routines) ? routines.length : 0,
+      kb: Array.isArray(kb) ? kb.length : 0,
+      gold: Array.isArray(gold) ? gold.length : 0,
+    });
+  }, [activeWorkspace]);
+
+  useEffect(() => {
+    loadCounts();
+    const interval = setInterval(loadCounts, 30000);
+    const handler = () => loadCounts();
+    window.addEventListener("faberloom-refresh", handler);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("faberloom-refresh", handler);
+    };
+  }, [loadCounts]);
+
+  const go = (newMode, id) => { setMode(newMode); setNav(id); };
+
+  const workspaceItem = (ws, idx) => (
+    <RailItem key={ws.id} label={ws.name} dot={DOTS[idx % DOTS.length]} active={ws.id === activeWorkspaceId} onClick={() => setActiveWorkspaceId(ws.id)} />
+  );
+
+  const activeAccordionId = {
+    space: "space-acc",
+    inbox: "entrada-acc", workloom: "entrada-acc",
+    stackloom: "cola-acc",
+    kb: "kb-acc", "hitl-signals": "kb-acc",
+    gold: "gold-acc",
+    skills: "caps-acc", agents: "caps-acc",
+    routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc"
+  }[nav];
+
+  return <aside className={cx("rail", hidden && "hidden")}>
+    <div className="mode-group" aria-label="Modos de FaberLoom">
+      {MODES.map((item) => <button key={item.id} type="button" className={cx("mode-button", mode === item.id && "is-active")} onClick={() => go(item.id, { operar: "space", aprender: "kb", admin: "settings" }[item.id])}>{item.label}</button>)}
     </div>
-    <section className="rail-section">
-      <div className="rail-label"><span>Workspace</span><span>{status}</span></div>
-      <div className="workspace-card">
-        <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => setActiveWorkspaceId(event.target.value || null)} disabled={!workspaces.length} aria-label="Workspace activo">
-          {!workspaces.length && <option value="">Sin workspace</option>}
-          {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
-        </select>
-        <div className="workspace-meta"><Icon name="shield" size={16}/><span>Context(workspace_id) listo para toda query</span></div>
+    <div className="navwrap">
+      {mode === "operar" && <>
+        <section className="rail-section">
+          <div className="rail-label"><span>Workspace</span><span>{status}</span></div>
+          <div className="workspace-card">
+            <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => setActiveWorkspaceId(event.target.value || null)} disabled={!workspaces.length} aria-label="Workspace activo">
+              {!workspaces.length && <option value="">Sin workspace</option>}
+              {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+            </select>
+            <div className="workspace-meta"><Icon name="shield" size={16}/><span>Context(workspace_id) listo para toda query</span></div>
+          </div>
+        </section>
+        <Accordion items={[
+          { id: "space-acc", title: "FaberLoom", badge: counts.chats, children: <RailItem label="FaberLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
+        ]} defaultOpen={activeAccordionId === "space-acc" ? ["space-acc"] : []} />
+        <Accordion items={[
+          { id: "entrada-acc", title: "Entrada", badge: counts.mail + counts.workloom, children: <>
+            <RailItem label="Inbox" icon="inbox" badge={counts.mail} active={nav === "inbox"} onClick={() => setNav("inbox")} />
+            <RailItem label="WorkLoom" icon="check" badge={counts.workloom} active={nav === "workloom"} onClick={() => setNav("workloom")} />
+          </> }
+        ]} defaultOpen={activeAccordionId === "entrada-acc" ? ["entrada-acc"] : []} />
+        <Accordion items={[
+          { id: "myws-acc", title: "My Workspaces", badge: workspaces.length, children: <div style={{ display: "flex", flexDirection: "column" }}>{workspaces.map((ws, idx) => workspaceItem(ws, idx))}</div> }
+        ]} defaultOpen={activeAccordionId === "myws-acc" ? ["myws-acc"] : []} />
+        <Accordion items={[
+          { id: "sharedws-acc", title: "Shared Workspaces", children: <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-muted)" }}>Sin workspaces compartidos.</div> }
+        ]} defaultOpen={activeAccordionId === "sharedws-acc" ? ["sharedws-acc"] : []} />
+        <Accordion items={[
+          { id: "hist-acc", title: "Historial", children: <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-muted)" }}>Historial reciente aparecerá aquí.</div> }
+        ]} defaultOpen={activeAccordionId === "hist-acc" ? ["hist-acc"] : []} />
+      </>}
+      {mode === "aprender" && <>
+        <Accordion items={[
+          { id: "cola-acc", title: "Cola", badge: counts.workloom, children: <RailItem label="StackLoom" icon="layers" badge={counts.workloom} active={nav === "stackloom"} onClick={() => setNav("stackloom")} /> }
+        ]} defaultOpen={activeAccordionId === "cola-acc" ? ["cola-acc"] : []} />
+        <Accordion items={[
+          { id: "kb-acc", title: "Conocimiento", badge: counts.kb, children: <>
+            <RailItem label="Conocimiento L0-L4" icon="book" badge={counts.kb} active={nav === "kb"} onClick={() => setNav("kb")} />
+            <RailItem label="Señales HITL" icon="shield" active={nav === "hitl-signals"} onClick={() => setNav("hitl-signals")} />
+          </> }
+        ]} defaultOpen={activeAccordionId === "kb-acc" ? ["kb-acc"] : []} />
+        <Accordion items={[
+          { id: "gold-acc", title: "Gold Samples", badge: counts.gold, children: <RailItem label="Gold Samples" icon="spark" badge={counts.gold} active={nav === "gold"} onClick={() => setNav("gold")} /> }
+        ]} defaultOpen={activeAccordionId === "gold-acc" ? ["gold-acc"] : []} />
+      </>}
+      {mode === "admin" && <>
+        <Accordion items={[
+          { id: "caps-acc", title: "Capacidades", badge: counts.routines, children: <>
+            <RailItem label="Skills" icon="spark" badge={counts.skills} active={nav === "skills"} onClick={() => setNav("skills")} />
+            <RailItem label="Agentes" icon="layers" badge={counts.agents} active={nav === "agents"} onClick={() => setNav("agents")} />
+          </> }
+        ]} defaultOpen={activeAccordionId === "caps-acc" ? ["caps-acc"] : []} />
+        <Accordion items={[
+          { id: "tenant-acc", title: "Tenant", children: <>
+            <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
+            <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
+          </> }
+        ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
+      </>}
+    </div>
+    <div className="userfoot"><div className="avatar">AA</div>
+      <div style={{ lineHeight: 1.2 }}>
+        <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>Usuario</div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>OWNER · FaberLoom</div>
       </div>
-    </section>
-    <section className="rail-section">
-      <div className="rail-label"><span>{MODES.find((item) => item.id === mode).label}</span><span>Vistas</span></div>
-      <nav className="nav-stack" aria-label="Navegación principal">
-        {items.map((item) => <button key={item.id} type="button" className={cx("nav-item", nav === item.id && "is-active")} onClick={() => setNav(item.id)}>
-          <Icon name={item.icon}/><span><span className="nav-title">{item.label}</span><span className="nav-sub">{item.sub}</span></span><span className="nav-badge">{item.badge}</span>
-        </button>)}
-      </nav>
-    </section>
-    <div className="rail-note"><div className="rail-note-title"><Icon name="loom" size={16}/>SpaceLoom</div><p>Frontend conectado a /api. Las acciones destructivas requieren HITL y doble confirmación.</p></div>
+    </div>
   </aside>;
 }
 
@@ -175,17 +322,69 @@ function ContextStrip({ activeWorkspace }) {
   </div>;
 }
 
-function ChatList({ chats, activeChatId, setActiveChatId, onCreate }) {
+function ChatList({ chats, activeChatId, setActiveChatId, onCreate, onRename, onRequestDelete }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  const startRename = (chat, event) => {
+    event.stopPropagation();
+    setEditingId(chat.id);
+    setEditTitle(chat.title);
+  };
+
+  const commitRename = () => {
+    const trimmed = editTitle.trim();
+    if (trimmed && trimmed !== chats.find((c) => c.id === editingId)?.title) {
+      onRename(editingId, trimmed);
+    }
+    setEditingId(null);
+    setEditTitle("");
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditTitle("");
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRename();
+    } else if (event.key === "Escape") {
+      cancelRename();
+    }
+  };
+
   return <section className="panel chat-list-panel" aria-label="Lista de chats">
     <div className="panel-header">
-      <div><div className="panel-kicker">SpaceLoom</div><div className="panel-title">Chats</div></div>
+      <div><div className="panel-kicker">FaberLoom</div><div className="panel-title">Chats</div></div>
       <button type="button" className="ceja" onClick={onCreate} title="Nuevo chat"><Icon name="plus" size={18}/></button>
     </div>
     <div className="chat-list">
       {chats.length === 0 && <div className="chat-empty">Sin chats todavía. Crea uno para empezar.</div>}
       {chats.map((chat) => (
         <button key={chat.id} type="button" className={cx("chat-card", activeChatId === chat.id && "is-active")} onClick={() => setActiveChatId(chat.id)}>
-          <span className="chat-row"><span className="chat-title">{chat.title}</span><span className="chat-time">{chat.created_at ? new Date(chat.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span></span>
+          <span className="chat-row">
+            {editingId === chat.id ? (
+              <input
+                className="chat-title-input"
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={handleKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+            ) : (
+              <span className="chat-title" onDoubleClick={(e) => startRename(chat, e)} title="Doble clic para renombrar">{chat.title}</span>
+            )}
+            <span className="chat-actions">
+              <button type="button" className="chat-action" onClick={(e) => startRename(chat, e)} title="Renombrar"><Icon name="edit" size={14}/></button>
+              <button type="button" className="chat-action chat-action-danger" onClick={(e) => { e.stopPropagation(); onRequestDelete(chat); }} title="Borrar"><Icon name="trash" size={14}/></button>
+            </span>
+          </span>
+          <span className="chat-time">{chat.created_at ? new Date(chat.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
         </button>
       ))}
     </div>
@@ -196,20 +395,62 @@ function EmptyMessages({ activeWorkspace }) {
   return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Selecciona un chat o crea uno nuevo para conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
 }
 
-function Composer({ onSend, disabled }) {
+function Composer({ onSend, disabled, routerStatus, modelAllowlist }) {
   const [draft, setDraft] = useState("");
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
+  const availableModels = modelAllowlist[provider] || [];
+
   const submit = (event) => {
     event.preventDefault();
     const text = draft.trim();
     if (!text || disabled) return;
-    onSend(text);
+    const options = {};
+    if (provider && model) {
+      options.provider_slug = provider;
+      options.model = model;
+    }
+    onSend(text, options);
     setDraft("");
   };
+
+  const handleProviderChange = (p) => {
+    setProvider(p);
+    setModel("");
+  };
+
   return <form className="composer-shell" onSubmit={submit} aria-label="Composer de chat">
     <div className="composer">
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe tu mensaje…" rows="2" disabled={disabled}/>
-      <button type="submit" className="send-button" disabled={disabled || !draft.trim()}><Icon name="send" size={16}/>Enviar</button>
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe tu mensaje… Usa @skill o /run." rows="2" disabled={disabled}/>
+      <div className="composer-actions">
+        <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor">
+          <Icon name="route" size={16}/>{provider ? (PROVIDER_LABELS[provider] || provider) : "Auto"}
+        </button>
+        <button type="submit" className="send-button" disabled={disabled || !draft.trim()}><Icon name="send" size={16}/>Enviar</button>
+      </div>
     </div>
+    {showModelPicker && <div className="composer-picker">
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
+          Proveedor
+          <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
+            <option value="">Auto (router)</option>
+            {availableProviders.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+          </select>
+        </label>
+        <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
+          Modelo
+          <select style={S.select} value={model} onChange={(e) => setModel(e.target.value)} disabled={!provider}>
+            <option value="">Seleccionar</option>
+            {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </label>
+        <button type="button" style={{ ...S.button, marginLeft: "auto" }} onClick={() => setShowModelPicker(false)}>Cerrar</button>
+      </div>
+    </div>}
     <div className="composer-note"><Icon name="shield" size={16}/>Las acciones destructivas requieren HITL y doble confirmación.</div>
   </form>;
 }
@@ -227,11 +468,20 @@ function SeamPanel() {
 
 function SpaceView({ activeWorkspace }) {
   const [chats, setChats] = useState([]);
-  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeChatId, setActiveChatIdLocal] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [routerStatus, setRouterStatus] = useState(null);
+  const [modelAllowlist, setModelAllowlist] = useState({});
+  const [deleteChatTarget, setDeleteChatTarget] = useState(null);
+  const [deleteChatToken, setDeleteChatToken] = useState("");
+
+  const setActiveChatId = (chatId) => {
+    setActiveChatIdLocal(chatId);
+    window.__faberloomActiveChatId = chatId;
+  };
 
   const loadChats = async () => {
     if (!activeWorkspace) return;
@@ -259,8 +509,48 @@ function SpaceView({ activeWorkspace }) {
     }
   };
 
-  useEffect(() => { loadChats(); }, [activeWorkspace]);
+  const loadRouter = async () => {
+    if (!activeWorkspace) return;
+    try {
+      const [status, cfg] = await Promise.all([
+        apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
+      ]);
+      setRouterStatus(status);
+      setModelAllowlist(cfg.model_allowlist || {});
+    } catch {
+      setRouterStatus(null);
+      setModelAllowlist({});
+    }
+  };
+
+  useEffect(() => { loadChats(); loadRouter(); }, [activeWorkspace]);
   useEffect(() => { loadMessages(activeChatId); }, [activeChatId]);
+
+  useEffect(() => {
+    const handler = async (e) => {
+      const { routine_id, provider_slug, model } = e.detail || {};
+      if (!activeWorkspace || !activeChatId || !routine_id) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const body = { routine_id };
+        if (provider_slug && model) {
+          body.provider_slug = provider_slug;
+          body.model = model;
+        }
+        await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/invoke`, body);
+        await loadMessages(activeChatId);
+        await loadChats();
+        await loadRouter();
+      } catch (err) {
+        setError(err.message);
+      }
+      setBusy(false);
+    };
+    window.addEventListener("faberloom:invoke-routine", handler);
+    return () => window.removeEventListener("faberloom:invoke-routine", handler);
+  }, [activeWorkspace, activeChatId]);
 
   const createChat = async () => {
     if (!activeWorkspace) return;
@@ -269,31 +559,89 @@ function SpaceView({ activeWorkspace }) {
       const chat = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats`, { title: "Nueva conversación" });
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(chat.id);
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const sendMessage = async (text) => {
+  const renameChat = async (chatId, title) => {
+    if (!activeWorkspace) return;
+    setError(null);
+    try {
+      const updated = await apiPatch(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}`, { title });
+      setChats((prev) => prev.map((c) => (c.id === chatId ? updated : c)));
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const requestDeleteChat = async (chat) => {
+    if (!activeWorkspace) return;
+    const token = await sha256Truncated(chat.id, 16);
+    setDeleteChatTarget(chat);
+    setDeleteChatToken(token);
+  };
+
+  const confirmDeleteChat = async (token) => {
+    if (!activeWorkspace || !deleteChatTarget) return;
+    if (token !== deleteChatToken) { setError("Token de confirmación incorrecto"); return; }
+    setError(null);
+    try {
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/chats/${deleteChatTarget.id}?confirmation_token=${encodeURIComponent(token)}`);
+      setChats((prev) => prev.filter((c) => c.id !== deleteChatTarget.id));
+      if (activeChatId === deleteChatTarget.id) {
+        setActiveChatId(null);
+      }
+      setDeleteChatTarget(null);
+      setDeleteChatToken("");
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const sendMessage = async (text, options = {}) => {
     if (!activeWorkspace || !activeChatId) return;
     setBusy(true);
     setError(null);
     try {
-      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/completions`, { message: text });
+      const body = { message: text };
+      if (options.provider_slug && options.model) {
+        body.provider_slug = options.provider_slug;
+        body.model = options.model;
+      }
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/completions`, body);
       await loadMessages(activeChatId);
+      await loadRouter();
+      // Auto-title the first user message if the chat still has the default name.
+      const chat = chats.find((c) => c.id === activeChatId);
+      if (chat && chat.title === "Nueva conversación") {
+        const words = text.trim().split(/\s+/).slice(0, 6);
+        const generated = words.join(" ") + (words.length >= 6 ? "…" : "");
+        if (generated) await renameChat(activeChatId, generated);
+      }
     } catch (err) {
       setError(err.message);
     }
     setBusy(false);
   };
 
-  if (!activeWorkspace) return <WorkspaceRequired icon="loom" title="SpaceLoom"/>;
+  if (!activeWorkspace) return <WorkspaceRequired icon="loom" title="FaberLoom"/>;
 
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return <div className="space-view">
-    <ChatList chats={chats} activeChatId={activeChatId} setActiveChatId={setActiveChatId} onCreate={createChat}/>
-    <section className="panel chat-stage" aria-label="Canvas central de SpaceLoom">
+    {deleteChatTarget && <DeleteConfirmModal
+      title="Borrar conversación"
+      resourceName={deleteChatTarget.title}
+      token={deleteChatToken}
+      onClose={() => { setDeleteChatTarget(null); setDeleteChatToken(""); }}
+      onConfirm={confirmDeleteChat}
+    />}
+    <ChatList chats={chats} activeChatId={activeChatId} setActiveChatId={setActiveChatId} onCreate={createChat} onRename={renameChat} onRequestDelete={requestDeleteChat}/>
+    <section className="panel chat-stage" aria-label="Canvas central de FaberLoom">
       <div className="stage-header">
         <div className="stage-title"><h2>{activeChat ? activeChat.title : "Selecciona o crea un chat"}</h2><p>{activeChat ? "Conversación con el router SL1a." : "Elige un hilo para empezar."}</p></div>
         <span className="pill"><Icon name="loom" size={16}/>SL1a</span>
@@ -304,26 +652,490 @@ function SpaceView({ activeWorkspace }) {
         {!activeChat && !loading && <EmptyMessages activeWorkspace={activeWorkspace}/>}
         {messages.map((msg) => (
           <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
-            <div className="message-meta">{msg.role === "user" ? "Tú" : "SpaceLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+            <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
             <div className="message-content">{msg.content}</div>
+            {msg.role === "assistant" && msg.route && (() => {
+              const r = msg.route;
+              const requested = r.requested_provider_slug || r.requested_model
+                ? `${r.requested_provider_slug || "auto"}${r.requested_model ? "/" + r.requested_model : ""}`
+                : null;
+              const actual = `${r.provider_slug}/${r.model}`;
+              const routeLabel = requested && requested !== actual
+                ? `${requested} → ${actual}`
+                : actual;
+              const budgetUsd = typeof r.budget_usd === "number" ? r.budget_usd : (r.cost_usd || 0);
+              const budgetCap = typeof r.budget_cap_usd === "number" ? r.budget_cap_usd : null;
+              return <div className="message-route">
+                <span><Icon name="route" size={12}/> {routeLabel}</span>
+                <span>Tokens: {r.input_tokens || 0} in · {r.output_tokens || 0} out</span>
+                <span>Costo: ${Number(r.cost_usd || 0).toFixed(5)} · {r.duration_ms || 0} ms</span>
+                {budgetCap !== null && <span>Budget: ${budgetUsd.toFixed(5)} / ${Number(budgetCap).toFixed(2)}</span>}
+                {r.fallback && <span className="route-fallback">fallback</span>}
+              </div>;
+            })()}
           </div>
         ))}
         {busy && <div className="message message-assistant"><div className="message-content"><em>El telar está pensando…</em></div></div>}
       </div>
-      <Composer onSend={sendMessage} disabled={busy || !activeChat}/>
+      <Composer onSend={sendMessage} disabled={busy || !activeChat} routerStatus={routerStatus} modelAllowlist={modelAllowlist}/>
     </section>
     <SeamPanel/>
   </div>;
 }
 
 function PlaceholderView({ nav }) {
-  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría" };
-  return <div className="placeholder"><div className="placeholder-card"><Icon name="loom"/><h2>{labels[nav] || "Vista futura"}</h2><p>Esta superficie queda señalizada en SL0, pero se implementa en hitos posteriores del plan SpaceLoom.</p></div></div>;
+  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría", skills: "Skills", agents: "Agentes", gold: "Gold Samples", routing: "IA: modelos y ruteo", users: "Usuarios", inbox: "Inbox", stackloom: "StackLoom", "hitl-signals": "Señales HITL" };
+  return <div className="placeholder"><div className="placeholder-card"><Icon name="loom"/><h2>{labels[nav] || "Vista futura"}</h2><p>Esta superficie queda señalizada en SL0, pero se implementa en hitos posteriores del plan FaberLoom.</p></div></div>;
 }
 
 function WorkspaceRequired({ icon, title }) {
   return <div className="placeholder"><div className="placeholder-card"><Icon name={icon}/><h2>{title}</h2><p>Selecciona un workspace activo para usar esta vista.</p></div></div>;
 }
+
+function ToolsetPanel({ activeWorkspace }) {
+  const [tab, setTab] = useState("agents");
+  const [routines, setRoutines] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [routerStatus, setRouterStatus] = useState(null);
+  const [modelAllowlist, setModelAllowlist] = useState({});
+
+  const load = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [list, status, cfg] = await Promise.all([
+        apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
+      ]);
+      setRoutines(Array.isArray(list) ? list : []);
+      setRouterStatus(status);
+      setModelAllowlist(cfg.model_allowlist || {});
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace]);
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener("faberloom-refresh", handler);
+    return () => window.removeEventListener("faberloom-refresh", handler);
+  }, [activeWorkspace]);
+
+  const invoke = (routine, provider_slug, model) => {
+    window.dispatchEvent(new CustomEvent("faberloom:invoke-routine", {
+      detail: { routine_id: routine.id, provider_slug, model },
+    }));
+  };
+
+  const filtered = routines.filter((r) => {
+    if (!r.is_active || !r.approved_by) return false;
+    if (tab === "skills") return r.category === "skill";
+    if (tab === "agents") return r.category === "agent";
+    if (tab === "templates") return r.category === "template";
+    if (tab === "knowledge") return r.category === "reference";
+    return false;
+  });
+
+  const isExecutableTab = tab === "skills" || tab === "agents";
+
+  return <div className="toolset-panel">
+    <div className="toolset-tabs">
+      {[
+        { id: "agents", label: "Agentes", icon: "spark" },
+        { id: "skills", label: "Skills", icon: "check" },
+        { id: "templates", label: "Templates", icon: "layers" },
+        { id: "knowledge", label: "Conocimiento", icon: "book" },
+      ].map((t) => (
+        <button key={t.id} className={cx("toolset-tab", tab === t.id && "active")} onClick={() => setTab(t.id)} title={t.label}>
+          <Icon name={t.icon} size={16}/><span>{t.label}</span>
+        </button>
+      ))}
+    </div>
+    <div className="toolset-body">
+      {loading && <div style={S.loading}>Cargando…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {!loading && filtered.length === 0 && <div style={S.empty}>No hay {tab} activos y aprobados.</div>}
+      <div className="toolset-list">
+        {filtered.map((routine) => (
+          <ToolsetItem
+            key={routine.id}
+            routine={routine}
+            routerStatus={routerStatus}
+            modelAllowlist={modelAllowlist}
+            onInvoke={isExecutableTab ? invoke : null}
+          />
+        ))}
+      </div>
+    </div>
+  </div>;
+}
+
+function ToolsetItem({ routine, routerStatus, modelAllowlist, onInvoke }) {
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+
+  useEffect(() => {
+    const preset = parsePreset(routine.preset_id || "");
+    setProvider(preset.provider_slug || "");
+    setModel(preset.model || "");
+  }, [routine.preset_id]);
+
+  const providers = (routerStatus?.providers || []).filter((p) => p.available);
+  const models = modelAllowlist[provider] || [];
+
+  return <div className="toolset-card">
+    <div className="toolset-card-head">
+      <div className="toolset-card-title">{routine.name}</div>
+      <span style={S.badge}>{routine.category}</span>
+    </div>
+    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{routine.id}</div>
+    <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+      <label style={{ ...S.label, margin: 0, fontSize: 11 }}>
+        Provider
+        <select style={S.select} value={provider} onChange={(e) => { setProvider(e.target.value); setModel(""); }}>
+          <option value="">Auto</option>
+          {providers.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+        </select>
+      </label>
+      <label style={{ ...S.label, margin: 0, fontSize: 11 }}>
+        Modelo
+        <select style={S.select} value={model} onChange={(e) => setModel(e.target.value)} disabled={!provider}>
+          <option value="">Seleccionar</option>
+          {models.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </label>
+    </div>
+    {onInvoke && (
+      <button className="toolset-invoke" onClick={() => onInvoke(routine, provider || undefined, model || undefined)} disabled={!provider || !model}>
+        <Icon name="send" size={14}/>Invocar en chat
+      </button>
+    )}
+    {!onInvoke && (
+      <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "6px 0" }}>No invocable desde chat</div>
+    )}
+  </div>;
+}
+
+function RightRail({ open, activeWorkspace }) {
+  return <aside className={cx("rail3", !open && "hidden")} aria-label="Toolset">
+    <div className="rail3-header">
+      <Icon name="layers" size={18}/>
+      <span>Toolset</span>
+    </div>
+    <ToolsetPanel activeWorkspace={activeWorkspace}/>
+  </aside>;
+}
+
+function RoutineCard({ routine, onEdit, onApprove, onToggle, onDelete, onInvoke }) {
+  return <div style={S.card}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+      <div>
+        <div style={S.cardTitle}>{routine.name}</div>
+        <div style={S.cardMeta}>{routine.id} · {routine.category || "custom"}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <span style={routine.is_active ? S.badge : { ...S.badge, opacity: 0.6 }}>{routine.is_active ? "activo" : "inactivo"}</span>
+        {routine.approved_by ? <span style={{ ...S.badge, background: "var(--coral-soft)" }}>aprobado</span> : <span style={S.badge}>borrador</span>}
+      </div>
+    </div>
+    {routine.preset_id && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}><Icon name="route" size={12}/> {routine.preset_id}</div>}
+    <div style={{ ...S.inlineGroup, marginTop: 10 }}>
+      <button style={S.button} onClick={() => onEdit(routine)}>Editar</button>
+      <button style={S.button} onClick={() => onToggle(routine)}>{routine.is_active ? "Desactivar" : "Activar"}</button>
+      <button style={S.buttonDanger} onClick={() => onDelete(routine)}>Eliminar</button>
+      {!routine.approved_by && <button style={S.buttonPrimary} onClick={() => onApprove(routine)}>Aprobar</button>}
+      {onInvoke && routine.approved_by && routine.is_active && <button style={S.buttonPrimary} onClick={() => onInvoke(routine)}>Invocar</button>}
+    </div>
+  </div>;
+}
+
+function RoutineForm({ mode, initial, modelAllowlist, routerStatus, onSubmit, onCancel }) {
+  const [form, setForm] = useState(initial);
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+
+  useEffect(() => {
+    setForm(initial);
+    const preset = parsePreset(initial.preset_id || "");
+    setProvider(preset.provider_slug || "");
+    setModel(preset.model || "");
+  }, [initial]);
+
+  const providers = (routerStatus?.providers || []).filter((p) => p.available);
+  const availableModels = modelAllowlist[provider] || [];
+
+  const handleProviderChange = (p) => {
+    setProvider(p);
+    setModel("");
+    setForm((prev) => ({ ...prev, preset_id: formatPreset(p, "") }));
+  };
+
+  const handleModelChange = (m) => {
+    setModel(m);
+    setForm((prev) => ({ ...prev, preset_id: formatPreset(provider, m) }));
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    onSubmit(form);
+  };
+
+  return <form style={S.form} onSubmit={submit}>
+    <label style={S.label}>Nombre<input style={S.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required/></label>
+    <label style={S.label}>Categoría
+      <select style={S.select} value={form.category || "custom"} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+        <option value="skill">Skill</option><option value="agent">Agente</option><option value="template">Template</option><option value="reference">Reference</option><option value="custom">Custom</option>
+      </select>
+    </label>
+    <label style={S.label}>persona_md / prompt<textarea style={S.textarea} value={form.persona_md || ""} onChange={(e) => setForm({ ...form, persona_md: e.target.value })} rows={4}/></label>
+    <label style={S.label}>skill_md / instrucciones<textarea style={S.textarea} value={form.skill_md || ""} onChange={(e) => setForm({ ...form, skill_md: e.target.value })} rows={8}/></label>
+    <label style={S.label}>tools_allowlist (JSON array)<input style={S.input} value={form.tools_allowlist || "[]"} onChange={(e) => setForm({ ...form, tools_allowlist: e.target.value })}/></label>
+    <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={form.schema_output_json || "{}"} onChange={(e) => setForm({ ...form, schema_output_json: e.target.value })} rows={5}/></label>
+    <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={form.trigger_json || "[]"} onChange={(e) => setForm({ ...form, trigger_json: e.target.value })}/></label>
+    {routerStatus && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <label style={S.label}>Provider
+        <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
+          <option value="">Sin preset</option>
+          {providers.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+        </select>
+      </label>
+      <label style={S.label}>Modelo
+        <select style={S.select} value={model} onChange={(e) => handleModelChange(e.target.value)} disabled={!provider}>
+          <option value="">Seleccionar</option>
+          {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </label>
+    </div>}
+    <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+      <Toggle checked={form.is_active === 1} onChange={(checked) => setForm({ ...form, is_active: checked ? 1 : 0 })}/>
+      Activo
+    </div>
+    <div style={S.inlineGroup}>
+      <button type="submit" style={S.buttonPrimary}>{mode === "create" ? "Crear" : "Guardar"}</button>
+      <button type="button" style={S.button} onClick={onCancel}>Cancelar</button>
+    </div>
+  </form>;
+}
+
+function useRoutines(activeWorkspace, categoryFilter) {
+  const [routines, setRoutines] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [routerStatus, setRouterStatus] = useState(null);
+  const [modelAllowlist, setModelAllowlist] = useState({});
+
+  const load = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [list, status, cfg] = await Promise.all([
+        apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
+        apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
+      ]);
+      const all = Array.isArray(list) ? list : [];
+      setRoutines(categoryFilter ? all.filter((r) => r.category === categoryFilter) : all);
+      setRouterStatus(status);
+      setModelAllowlist(cfg.model_allowlist || {});
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace, categoryFilter]);
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener("faberloom-refresh", handler);
+    return () => window.removeEventListener("faberloom-refresh", handler);
+  }, [activeWorkspace, categoryFilter]);
+
+  return { routines, loading, error, routerStatus, modelAllowlist, reload: load, setRoutines };
+}
+
+function useRoutineCrud(activeWorkspace, reload) {
+  const [error, setError] = useState(null);
+
+  const create = async (form, category) => {
+    setError(null);
+    const body = { ...form, category };
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/routines`, body);
+      reload();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  const update = async (id, form) => {
+    setError(null);
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspace.id}/routines/${id}`, form);
+      reload();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  const approve = async (routine) => {
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}/approve`, { reason: "Aprobado desde Skills/Agents", urgency: 0 });
+      reload();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  const toggle = async (routine) => {
+    setError(null);
+    try {
+      await apiPatch(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}`, { is_active: routine.is_active ? 0 : 1 });
+      reload();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  const remove = async (routine) => {
+    setError(null);
+    try {
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}`);
+      reload();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
+  return { create, update, approve, toggle, remove, error, setError };
+}
+
+function SkillAgentView({ activeWorkspace, category, title, subtitle }) {
+  const { routines, loading, error, routerStatus, modelAllowlist, reload } = useRoutines(activeWorkspace, category);
+  const crud = useRoutineCrud(activeWorkspace, reload);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [deleteToken, setDeleteToken] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const initialForm = {
+    name: "",
+    category,
+    persona_md: "",
+    skill_md: "",
+    tools_allowlist: "[]",
+    schema_output_json: "{}",
+    trigger_json: "[]",
+    source_version: "",
+    preset_id: "",
+    is_active: 0,
+  };
+
+  const [createForm, setCreateForm] = useState(initialForm);
+  const [editForm, setEditForm] = useState(initialForm);
+
+  const startEdit = (routine) => {
+    setEditing(routine.id);
+    setEditForm({
+      name: routine.name || "",
+      category: routine.category || category,
+      persona_md: routine.persona_md || "",
+      skill_md: routine.skill_md || "",
+      tools_allowlist: routine.tools_allowlist || "[]",
+      schema_output_json: routine.schema_output_json || "{}",
+      trigger_json: routine.trigger_json || "[]",
+      source_version: routine.source_version || "",
+      preset_id: routine.preset_id || "",
+      is_active: routine.is_active ? 1 : 0,
+    });
+  };
+
+  const handleCreate = async (form) => {
+    await crud.create(form, category);
+    setCreateForm(initialForm);
+    setShowCreate(false);
+  };
+
+  const handleSaveEdit = async (form) => {
+    await crud.update(editing, form);
+    setEditing(null);
+    setEditForm(initialForm);
+  };
+
+  const promptDelete = async (routine) => {
+    const token = await sha256Truncated(routine.id);
+    setDeleteToken(token);
+    setDeleteTarget(routine);
+  };
+
+  const confirmDelete = async (token) => {
+    if (token !== deleteToken) { crud.setError("Token de confirmación incorrecto"); return; }
+    await crud.remove(deleteTarget);
+    setDeleteTarget(null);
+  };
+
+  const invoke = (routine) => {
+    window.dispatchEvent(new CustomEvent("faberloom:invoke-routine", {
+      detail: { routine_id: routine.id },
+    }));
+  };
+
+  if (!activeWorkspace) return <WorkspaceRequired icon={category === "agent" ? "spark" : "check"} title={title}/>;
+
+  return <div className="classic" style={S.view}>
+    <div className="vhead">
+      <div><div className="vtitle">{title}</div><div className="vsub">{subtitle}</div></div>
+      <button style={S.buttonPrimary} onClick={() => setShowCreate(true)}>Nuevo {category}</button>
+    </div>
+    {(error || crud.error) && <div style={S.error}>{error || crud.error}</div>}
+    {loading && <div style={S.loading}>Cargando…</div>}
+    <div style={S.grid2}>
+      <section className="panel" aria-label={`Listado de ${category}s`}>
+        <div className="panel-header"><div><div className="panel-kicker">{title}</div><div className="panel-title">{category}s ({routines.length})</div></div></div>
+        <div style={S.panelBody}>
+          {!loading && routines.length === 0 && <div style={S.empty}>No hay {category}s.</div>}
+          <div style={S.list}>{routines.map((routine) => <RoutineCard key={routine.id} routine={routine} onEdit={startEdit} onApprove={crud.approve} onToggle={crud.toggle} onDelete={promptDelete} onInvoke={invoke}/>)}</div>
+        </div>
+      </section>
+      {showCreate && <section className="panel" aria-label={`Crear ${category}`}>
+        <div className="panel-header"><div><div className="panel-kicker">{title}</div><div className="panel-title">Nuevo {category}</div></div></div>
+        <div style={S.panelBody}>
+          <RoutineForm mode="create" initial={createForm} modelAllowlist={modelAllowlist} routerStatus={routerStatus} onSubmit={handleCreate} onCancel={() => setShowCreate(false)}/>
+        </div>
+      </section>}
+      {editing && <section className="panel" aria-label={`Editar ${category}`}>
+        <div className="panel-header"><div><div className="panel-kicker">{title}</div><div className="panel-title">Editar {category}</div></div></div>
+        <div style={S.panelBody}>
+          <RoutineForm mode="edit" initial={editForm} modelAllowlist={modelAllowlist} routerStatus={routerStatus} onSubmit={handleSaveEdit} onCancel={() => setEditing(null)}/>
+        </div>
+      </section>}
+    </div>
+    {deleteTarget && <DeleteConfirmModal title={`Eliminar ${category}`} resourceName={deleteTarget.name} token={deleteToken} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete}/>}
+  </div>;
+}
+
+function SkillsView({ activeWorkspace }) {
+  return <SkillAgentView activeWorkspace={activeWorkspace} category="skill" title="Skills" subtitle="Rutinas ejecutables de un solo turno"/>;
+}
+
+function AgentsView({ activeWorkspace }) {
+  return <SkillAgentView activeWorkspace={activeWorkspace} category="agent" title="Agentes" subtitle="Rutinas con persona y prompt propios"/>;
+}
+
+function GoldView({ activeWorkspace }) { return <PlaceholderView nav="gold" />; }
+function RoutingView({ activeWorkspace }) { return <SettingsView activeWorkspace={activeWorkspace} title="IA: modelos y ruteo" subtitle="Estado del router, proveedores y presupuesto" />; }
+function UsersView({ activeWorkspace }) { return <PlaceholderView nav="users" />; }
 
 function KBView({ activeWorkspace }) {
   const [sources, setSources] = useState([]);
@@ -370,6 +1182,7 @@ function KBView({ activeWorkspace }) {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/kb/sources`, form);
       setForm({ title: "", type: "md", content_text: "" });
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -441,6 +1254,31 @@ function KBView({ activeWorkspace }) {
   </div>;
 }
 
+function DeleteConfirmModal({ title, resourceName, token, onClose, onConfirm }) {
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    if (input !== token) return;
+    setBusy(true);
+    try { await onConfirm(token); onClose(); } finally { setBusy(false); }
+  };
+  return <div style={S.modalOverlay} onClick={onClose}>
+    <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+      <h3 style={S.modalTitle}>{title}</h3>
+      <p style={{ margin: 0, color: "var(--text-2)", fontSize: 13 }}>Escribe el <strong>confirmation_token</strong> para eliminar <strong>{resourceName}</strong>. Esta acción no se puede deshacer.</p>
+      <div style={S.modalToken}>{token}</div>
+      <form style={S.form} onSubmit={submit}>
+        <label style={S.label}>confirmation_token<input style={S.input} value={input} onChange={(e) => setInput(e.target.value)} required autoFocus/></label>
+        <div style={S.inlineGroup}>
+          <button type="submit" style={S.buttonDanger} disabled={busy || input !== token}>{busy ? "Eliminando…" : "Eliminar"}</button>
+          <button type="button" style={S.button} onClick={onClose} disabled={busy}>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>;
+}
+
 function RoutinesView({ activeWorkspace }) {
   const [routines, setRoutines] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -456,6 +1294,8 @@ function RoutinesView({ activeWorkspace }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [selectedImports, setSelectedImports] = useState(new Set());
   const [importLoading, setImportLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteToken, setDeleteToken] = useState("");
 
   const FILTERS = [
     { id: "all", label: "Todos" },
@@ -487,6 +1327,7 @@ function RoutinesView({ activeWorkspace }) {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/routines`, form);
       setForm({ name: "", skill_md: "", persona_md: "", tools_allowlist: "[]", schema_output_json: "{}", trigger_json: "[]", is_active: 1, source_version: "v1" });
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -498,6 +1339,7 @@ function RoutinesView({ activeWorkspace }) {
     try {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}/approve?approved_by=local`);
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -550,6 +1392,7 @@ function RoutinesView({ activeWorkspace }) {
       setEditingRoutine(null);
       setEditForm(null);
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -561,19 +1404,25 @@ function RoutinesView({ activeWorkspace }) {
     try {
       await apiPatch(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}`, { is_active: routine.is_active ? 0 : 1 });
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const deleteRoutine = async (routine) => {
-    if (!window.confirm(`¿Eliminar la rutina "${routine.name}"? Esta acción no se puede deshacer.`)) return;
-    if (!activeWorkspace) return;
+  const promptDelete = async (routine) => {
+    setDeleteTarget(routine);
+    setDeleteToken(await sha256Truncated(routine.id, 16));
+  };
+
+  const confirmDelete = async (token) => {
+    if (!activeWorkspace || !deleteTarget) return;
     setError(null);
     try {
-      const token = await sha256Truncated(routine.id, 16);
-      await apiDelete(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}?confirmation_token=${token}`);
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/routines/${deleteTarget.id}?confirmation_token=${token}`);
+      setDeleteTarget(null);
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -613,6 +1462,7 @@ function RoutinesView({ activeWorkspace }) {
       setShowImportModal(false);
       setSelectedImports(new Set());
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -662,7 +1512,7 @@ function RoutinesView({ activeWorkspace }) {
               <div style={S.inlineGroup}>
                 <button style={S.button} onClick={() => startEdit(routine)}>Editar</button>
                 <button style={S.button} onClick={() => toggleRoutine(routine)}>{routine.is_active ? "Desactivar" : "Activar"}</button>
-                <button style={S.buttonDanger} onClick={() => deleteRoutine(routine)}>Eliminar</button>
+                <button style={S.buttonDanger} onClick={() => promptDelete(routine)}>Eliminar</button>
                 {!routine.approved_by && <button style={S.buttonPrimary} onClick={() => approveRoutine(routine)}>Aprobar</button>}
                 <button style={S.button} onClick={() => runRoutine(routine)} disabled={!routine.approved_by || !routine.is_active}>Ejecutar</button>
               </div>
@@ -743,6 +1593,8 @@ function RoutinesView({ activeWorkspace }) {
         </div>
       </div>
     </div>}
+
+    {deleteTarget && <DeleteConfirmModal title="Eliminar rutina" resourceName={deleteTarget.name} token={deleteToken} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete}/>}
   </div>;
 }
 
@@ -881,7 +1733,7 @@ const PROVIDER_LABELS = {
   ollama: "Ollama (local)",
 };
 
-function SettingsView({ activeWorkspace }) {
+function SettingsView({ activeWorkspace, title = "Ajustes", subtitle = "Router, proveedores y API keys" }) {
   const [configs, setConfigs] = useState([]);
   const [modelAllowlist, setModelAllowlist] = useState({});
   const [routerStatus, setRouterStatus] = useState(null);
@@ -889,13 +1741,19 @@ function SettingsView({ activeWorkspace }) {
   const [saving, setSaving] = useState({});
   const [testing, setTesting] = useState({});
   const [testResults, setTestResults] = useState({});
+  const [liveModels, setLiveModels] = useState({});
   const [edits, setEdits] = useState({});
+  const [showKey, setShowKey] = useState({});
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteToken, setDeleteToken] = useState("");
 
   const load = async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const [cfgData, statusData] = await Promise.all([
         apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
@@ -927,6 +1785,29 @@ function SettingsView({ activeWorkspace }) {
     setEdits((prev) => ({ ...prev, [slug]: { ...prev[slug], [field]: value } }));
   };
 
+  const isDirty = (cfg) => {
+    const slug = cfg.provider_slug;
+    const draft = edits[slug] || {};
+    if (draft.api_key && draft.api_key.trim()) return true;
+    if ((draft.base_url || "") !== (cfg.base_url || "")) return true;
+    if ((draft.model_default || cfg.model_default) !== cfg.model_default) return true;
+    if (Number(draft.priority) !== Number(cfg.priority)) return true;
+    if (Boolean(draft.is_enabled) !== Boolean(cfg.is_enabled)) return true;
+    return false;
+  };
+
+  const statusText = (status) => {
+    if (!status) return { label: "cargando", className: "badge" };
+    if (status.available) return { label: "configurado", className: statusClass("succeeded") };
+    const reasons = {
+      disabled: "deshabilitado",
+      missing_api_key: "falta API key",
+      not_in_allowlist: "no permitido",
+      not_available: "no disponible",
+    };
+    return { label: reasons[status.reason] || status.reason || "no disponible", className: statusClass("failed") };
+  };
+
   const save = async (slug) => {
     const draft = edits[slug] || {};
     const body = {};
@@ -938,33 +1819,56 @@ function SettingsView({ activeWorkspace }) {
 
     setSaving((s) => ({ ...s, [slug]: true }));
     setError(null);
+    setSuccess(null);
     try {
       await apiPatch(`/api/workspaces/${activeWorkspace.id}/providers/${slug}`, body);
       await load();
       setEdits((prev) => ({ ...prev, [slug]: { ...prev[slug], api_key: "" } }));
+      setSuccess(`Configuración de ${PROVIDER_LABELS[slug] || slug} guardada.`);
     } catch (err) {
       setError(err.message);
     }
     setSaving((s) => ({ ...s, [slug]: false }));
   };
 
-  const clearKey = async (slug) => {
+  const promptClearKey = async (slug) => {
     setError(null);
+    const token = await sha256Truncated(slug, 16);
+    setDeleteToken(token);
+    setDeleteTarget(slug);
+  };
+
+  const clearKey = async (token) => {
+    if (!deleteTarget || !activeWorkspace) return;
     try {
-      await apiDelete(`/api/workspaces/${activeWorkspace.id}/providers/${slug}/key`);
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/providers/${deleteTarget}/key?confirmation_token=${encodeURIComponent(token)}`);
+      setDeleteTarget(null);
+      setDeleteToken("");
       await load();
+      setSuccess(`API key de ${PROVIDER_LABELS[deleteTarget] || deleteTarget} eliminada.`);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const test = async (slug) => {
+  const test = async (slug, cfg) => {
     setTesting((s) => ({ ...s, [slug]: true }));
     setError(null);
+    setSuccess(null);
     try {
-      const r = await apiPost(`/api/workspaces/${activeWorkspace.id}/providers/${slug}/test`, {});
+      const draft = edits[slug] || {};
+      const body = {};
+      if (draft.api_key && draft.api_key.trim()) body.api_key = draft.api_key.trim();
+      if (draft.base_url !== undefined && draft.base_url !== (cfg.base_url || "")) body.base_url = draft.base_url || null;
+      if (draft.model_default && draft.model_default !== cfg.model_default) body.model_default = draft.model_default;
+      const r = await apiPost(`/api/workspaces/${activeWorkspace.id}/providers/${slug}/test`, body);
       setTestResults((prev) => ({ ...prev, [slug]: r }));
+      if (r.models && Array.isArray(r.models) && r.models.length > 0) {
+        setLiveModels((prev) => ({ ...prev, [slug]: r.models }));
+      }
+      if (r.ok) setSuccess(`Conexión con ${PROVIDER_LABELS[slug] || slug} exitosa.`);
     } catch (err) {
+      setTestResults((prev) => ({ ...prev, [slug]: { ok: false, provider_slug: slug, error: err.message } }));
       setError(err.message);
     }
     setTesting((s) => ({ ...s, [slug]: false }));
@@ -973,36 +1877,48 @@ function SettingsView({ activeWorkspace }) {
   if (!activeWorkspace) return <WorkspaceRequired icon="settings" title="Ajustes"/>;
 
   return <div className="classic" style={S.view}>
-    <div className="vhead"><div><div className="vtitle">Ajustes</div><div className="vsub">Router, proveedores y API keys</div></div></div>
+    <div className="vhead"><div><div className="vtitle">{title}</div><div className="vsub">{subtitle}</div></div></div>
     {error && <div style={S.error}>{error}</div>}
+    {success && <div style={S.success}>{success}</div>}
     {loading && <div style={S.loading}>Cargando ajustes…</div>}
     <div style={S.grid2}>
       {configs.map((cfg) => {
         const status = routerStatus?.providers?.find((p) => p.provider_slug === cfg.provider_slug);
         const draft = edits[cfg.provider_slug] || {};
-        const allowedModels = modelAllowlist[cfg.provider_slug] || [];
+        const allowedModels = liveModels[cfg.provider_slug] || modelAllowlist[cfg.provider_slug] || [];
         const testResult = testResults[cfg.provider_slug];
+        const dirty = isDirty(cfg);
+        const st = statusText(status);
         return <section key={cfg.provider_slug} className="panel provider-card" aria-label={`Configuración ${PROVIDER_LABELS[cfg.provider_slug]}`}>
           <div className="panel-header">
             <div><div className="panel-kicker">Provider</div><div className="panel-title">{PROVIDER_LABELS[cfg.provider_slug]}</div></div>
-            <span className={status ? statusClass(status.available ? "succeeded" : (status.reason || "failed")) : "badge"}>
-              {status ? (status.available ? "disponible" : (status.reason || "no disponible")) : "cargando"}
-            </span>
+            <span className={st.className}>{st.label}</span>
           </div>
           <div style={S.panelBody}>
             <div style={S.form}>
               <label style={S.label}>
                 API key
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    type="password"
-                    style={S.input}
-                    value={draft.api_key || ""}
-                    placeholder={cfg.api_key_masked || "Sin API key guardada"}
-                    onChange={(e) => updateEdit(cfg.provider_slug, "api_key", e.target.value)}
-                  />
-                  {cfg.api_key_masked && <button type="button" style={S.button} onClick={() => clearKey(cfg.provider_slug)} title="Borrar key guardada"><Icon name="trash" size={16}/></button>}
-                </div>
+                {cfg.requires_api_key ? <>
+                  <div className="provider-key-row">
+                    <input
+                      type={showKey[cfg.provider_slug] ? "text" : "password"}
+                      style={{ ...S.input, minWidth: 0, flex: "1 1 auto" }}
+                      value={draft.api_key || ""}
+                      placeholder={cfg.api_key_masked ? "Key guardada · actualizar" : "Pega tu API key"}
+                      onChange={(e) => updateEdit(cfg.provider_slug, "api_key", e.target.value)}
+                    />
+                    <button type="button" style={S.button} onClick={() => setShowKey((prev) => ({ ...prev, [cfg.provider_slug]: !prev[cfg.provider_slug] }))}>
+                      {showKey[cfg.provider_slug] ? "Ocultar" : "Mostrar"}
+                    </button>
+                    {cfg.api_key_masked && <button type="button" style={S.button} onClick={() => promptClearKey(cfg.provider_slug)} title="Borrar key guardada"><Icon name="trash" size={16}/></button>}
+                  </div>
+                  {cfg.api_key_masked && <span className="provider-saved-key">Key guardada: {cfg.api_key_masked}</span>}
+                  {cfg.requires_api_key && !cfg.api_key_masked && <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                    No hay key guardada. Se usará la variable de entorno del provider (p. ej. KIMI_API_KEY / MOONSHOT_API_KEY) o un archivo <code>.env</code> en %LOCALAPPDATA%/FaberLoom.
+                  </div>}
+                </> : <div style={{ ...S.input, display: "flex", alignItems: "center", color: "var(--text-muted)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  No requiere API key (proveedor local)
+                </div>}
               </label>
               <label style={S.label}>
                 Modelo default
@@ -1013,7 +1929,7 @@ function SettingsView({ activeWorkspace }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <label style={S.label}>
                   Prioridad
-                  <input type="number" style={S.input} value={draft.priority ?? cfg.priority} onChange={(e) => updateEdit(cfg.provider_slug, "priority", e.target.value)} />
+                  <input type="number" min={0} max={1000} style={S.input} value={draft.priority ?? cfg.priority} onChange={(e) => updateEdit(cfg.provider_slug, "priority", e.target.value)} />
                 </label>
                 <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
                   <Toggle checked={Boolean(draft.is_enabled ?? cfg.is_enabled)} onChange={(checked) => updateEdit(cfg.provider_slug, "is_enabled", checked)} />
@@ -1024,19 +1940,28 @@ function SettingsView({ activeWorkspace }) {
                 Base URL (opcional)
                 <input type="text" style={S.input} value={draft.base_url ?? (cfg.base_url || "")} onChange={(e) => updateEdit(cfg.provider_slug, "base_url", e.target.value)} placeholder="https://api…" />
               </label>
-              <div style={S.inlineGroup}>
-                <button type="button" style={S.buttonPrimary} onClick={() => save(cfg.provider_slug)} disabled={saving[cfg.provider_slug]}>
-                  <Icon name="check" size={16}/> Guardar
-                </button>
-                <button type="button" style={S.button} onClick={() => test(cfg.provider_slug)} disabled={testing[cfg.provider_slug]}>
-                  <Icon name="refresh" size={16}/> Probar
-                </button>
-                {saving[cfg.provider_slug] && <span style={{ color: "var(--text-muted)" }}>Guardando…</span>}
-                {testing[cfg.provider_slug] && <span style={{ color: "var(--text-muted)" }}>Probando…</span>}
-              </div>
-              {testResult && <div className={testResult.ok ? "status-tag approved" : "status-tag rejected"} style={{ marginTop: 8, fontSize: 12 }}>
-                {testResult.ok ? `Conectado · ${testResult.model} · ${testResult.latency_ms} ms` : `Error: ${testResult.error}`}
+              {cfg.provider_slug === "kimi" && <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                Endpoint Moonshot: usa <button type="button" style={{ ...S.button, padding: "3px 7px", fontSize: 11 }} onClick={() => updateEdit("kimi", "base_url", "https://api.moonshot.ai/v1")}>.ai</button>
+                {" "}o{" "}
+                <button type="button" style={{ ...S.button, padding: "3px 7px", fontSize: 11 }} onClick={() => updateEdit("kimi", "base_url", "https://api.moonshot.cn/v1")}>.cn</button>
+                {" "}si tu key fue creada en platform.moonshot.cn.
+                {" "}Las keys <code>sk-kimi-…</code> se enrutan automáticamente a <code>api.kimi.com/coding/v1</code>.
               </div>}
+              {cfg.provider_slug === "kimi" && (draft.api_key || "").startsWith("sk-kimi-") && <div style={{ fontSize: 11, color: "var(--sage)", lineHeight: 1.4 }}>
+                ✓ Se detectó key de Kimi Code / Coding Plan. Se usará el endpoint <code>api.kimi.com/coding/v1</code> con el modelo <code>kimi-for-coding</code> por defecto.
+              </div>}
+              <div style={S.inlineGroup}>
+                <button type="button" style={S.buttonPrimary} onClick={() => save(cfg.provider_slug)} disabled={!dirty || saving[cfg.provider_slug]}>
+                  <Icon name="check" size={16}/> {saving[cfg.provider_slug] ? "Guardando…" : "Guardar"}
+                </button>
+                <button type="button" style={S.button} onClick={() => test(cfg.provider_slug, cfg)} disabled={testing[cfg.provider_slug]}>
+                  <Icon name="refresh" size={16}/> {testing[cfg.provider_slug] ? "Probando…" : "Probar"}
+                </button>
+              </div>
+              {testResult && (testResult.ok
+                ? <div className="status-tag approved" style={{ marginTop: 8, fontSize: 12 }}>Conectado · {testResult.model} · {testResult.latency_ms} ms</div>
+                : <div style={S.errorDetail}>Error: {testResult.error}</div>
+              )}
             </div>
           </div>
         </section>;
@@ -1048,6 +1973,13 @@ function SettingsView({ activeWorkspace }) {
         </div>
       </section>
     </div>
+    {deleteTarget && <DeleteConfirmModal
+      title={`Borrar API key de ${PROVIDER_LABELS[deleteTarget] || deleteTarget}`}
+      resourceName={`API key de ${PROVIDER_LABELS[deleteTarget] || deleteTarget}`}
+      token={deleteToken}
+      onClose={() => { setDeleteTarget(null); setDeleteToken(""); }}
+      onConfirm={clearKey}
+    />}
   </div>;
 }
 
@@ -1159,6 +2091,7 @@ function MailView({ activeWorkspace }) {
     try {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/mail/sync`);
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -1171,6 +2104,7 @@ function MailView({ activeWorkspace }) {
     try {
       await apiPost(`/api/workspaces/${activeWorkspace.id}/mail/${mail.id}/draft`);
       await load();
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
       setError(err.message);
     }
@@ -1219,9 +2153,15 @@ function Canvas({ nav, activeWorkspace, status }) {
      : nav === "kb" ? <KBView activeWorkspace={activeWorkspace}/>
      : nav === "routines" ? <RoutinesView activeWorkspace={activeWorkspace}/>
      : nav === "workloom" ? <WorkloomView activeWorkspace={activeWorkspace}/>
-     : nav === "settings" ? <SettingsView activeWorkspace={activeWorkspace}/>
+     : nav === "settings" || nav === "config" || nav === "routing" ? <SettingsView activeWorkspace={activeWorkspace}/>
      : nav === "audit" ? <AuditView activeWorkspace={activeWorkspace}/>
-     : nav === "mail" ? <MailView activeWorkspace={activeWorkspace}/>
+     : nav === "mail" || nav === "inbox" ? <MailView activeWorkspace={activeWorkspace}/>
+     : nav === "skills" ? <SkillsView activeWorkspace={activeWorkspace}/>
+     : nav === "agents" ? <AgentsView activeWorkspace={activeWorkspace}/>
+     : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
+     : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
+     : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
+     : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }
@@ -1236,6 +2176,9 @@ function App() {
   const [theme, setTheme] = useState(getInitialTheme);
   const [toasts, setToasts] = useState([]);
   const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [leftRailOpen, setLeftRailOpen] = useState(true);
+  const [rightRailOpen, setRightRailOpen] = useState(false);
+  const [budget, setBudget] = useState(null);
 
   useEffect(() => { applyTheme(theme); }, [theme]);
 
@@ -1276,10 +2219,24 @@ function App() {
   };
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+
+  useEffect(() => {
+    if (!activeWorkspace) { setBudget(null); return; }
+    let cancelled = false;
+    apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`)
+      .then((data) => { if (!cancelled) setBudget(data || null); })
+      .catch(() => { if (!cancelled) setBudget(null); });
+    return () => { cancelled = true; };
+  }, [activeWorkspace]);
+
   return <div className="app-shell">
-    <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme}/>
+    <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
-    <div className="frame"><Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status}/><Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/></div>
+    <div className="frame">
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen}/>
+      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/>
+      <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
+    </div>
     <ToastContainer toasts={toasts} onDismiss={dismissToast}/>
   </div>;
 }

@@ -11,7 +11,7 @@ from app.src.router.config_store import ProviderConfigStore, get_config_dir, mas
 
 def test_get_config_dir_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     target = tmp_path / "cfg"
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(target))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(target))
     assert get_config_dir() == target
 
 
@@ -23,7 +23,7 @@ def test_mask_key_obscures_value() -> None:
 
 
 def test_store_encrypts_and_decrypts_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
     store = ProviderConfigStore()
     store.set("openai", {"api_key": "sk-secret", "model_default": "gpt-4o-mini", "priority": 5, "is_enabled": True})
 
@@ -41,7 +41,7 @@ def test_store_encrypts_and_decrypts_values(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_store_merge_keeps_untouched_fields(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
     store = ProviderConfigStore()
     store.set("openai", {"api_key": "sk-secret", "model_default": "gpt-4o-mini"})
     store.set("openai", {"priority": 7})
@@ -53,7 +53,7 @@ def test_store_merge_keeps_untouched_fields(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_store_delete_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
     store = ProviderConfigStore()
     store.set("openai", {"api_key": "sk-secret", "model_default": "gpt-4o-mini"})
     store.delete_key("openai")
@@ -64,7 +64,7 @@ def test_store_delete_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
 
 def test_store_delete_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
     store = ProviderConfigStore()
     store.set("openai", {"api_key": "sk-secret"})
     store.set("anthropic", {"api_key": "sk-ant-secret"})

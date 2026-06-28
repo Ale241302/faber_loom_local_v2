@@ -1,4 +1,4 @@
-"""SpaceLoom SL1b draft generation engine.
+"""FaberLoom SL1b draft generation engine.
 
 Builds an evidence pack from the workspace KB, asks the LLM to produce a
 structured commercial reply, then post-validates that cited sources exist and
@@ -26,7 +26,7 @@ from .router import ProviderError, build_router
 from .router.models import CompletionRequest
 
 
-_DRAFT_SYSTEM_PROMPT = """You are SpaceLoom, a careful commercial assistant.
+_DRAFT_SYSTEM_PROMPT = """You are FaberLoom, a careful commercial assistant.
 
 Your job is to draft a reply to the user's request using ONLY the evidence pack
 provided below. The evidence comes from an authorized knowledge base.
@@ -320,6 +320,7 @@ def _build_evidence_pack(
                 "valid_from": fact.get("valid_from"),
                 "valid_until": fact.get("valid_until"),
                 "source_locator": fact.get("source_locator"),
+                "source_sheet": fact.get("source_sheet"),
                 "source_id": fact.get("source_id"),
                 "source_version": fact.get("source_version"),
             }
@@ -505,6 +506,7 @@ def _validate_citations(
                 "entity_key": matched.get("entity_key"),
                 "source_id": matched["source_id"],
                 "source_locator": matched.get("source_locator"),
+                "source_sheet": matched.get("source_sheet"),
                 "source_version": matched.get("source_version"),
                 "currency": matched.get("currency"),
                 "valid_from": matched.get("valid_from"),

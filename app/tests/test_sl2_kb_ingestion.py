@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import pytest
@@ -13,23 +14,23 @@ from openpyxl import Workbook
 
 @pytest.fixture()
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
-        "SPACELOOM_DEV_TRUST_HEADERS",
+        "FABERLOOM_GOOGLE_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
+        "FABERLOOM_DEV_TRUST_HEADERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -220,3 +221,19 @@ def test_upload_is_workspace_isolated(client: TestClient) -> None:
 
     response_a = client.get(f"/api/workspaces/{ws_a}/kb/sources")
     assert source_a["id"] in {s["id"] for s in response_a.json()}
+
+
+def test_upload_csv_stale_date_sets_stale_data_block(client: TestClient) -> None:
+    workspace_id = _demo_workspace_id(client)
+    csv_text = "sku,price,vigente_hasta\nTEL-001,12.50,2020-12-31"
+    source = _upload_file(
+        client,
+        workspace_id,
+        "stale.csv",
+        csv_text.encode("utf-8"),
+        "text/csv",
+        title="Stale Catalog",
+    )
+    meta = json.loads(source["meta_json"])
+    assert meta.get("stale_data_block") is True
+    assert any("stale" in w.lower() for w in meta.get("extraction_warnings", []))

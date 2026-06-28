@@ -1,8 +1,8 @@
 """Encrypted local storage for AI provider configuration.
 
 Provider API keys and runtime settings are persisted in the user data directory
-(%LOCALAPPDATA%/SpaceLoom/providers.json on Windows) encrypted with Fernet. The
-master key is read from SPACELOOM_MASTER_KEY or stored in .master_key in the same
+(%LOCALAPPDATA%/FaberLoom/providers.json on Windows) encrypted with Fernet. The
+master key is read from FABERLOOM_MASTER_KEY or stored in .master_key in the same
 directory. Environment variables always take precedence over stored values so
 users can BYOK without persisting secrets to disk.
 """
@@ -18,16 +18,42 @@ from cryptography.fernet import Fernet
 
 
 def get_config_dir() -> Path:
-    """Return the OS-appropriate SpaceLoom config directory."""
+    """Return the OS-appropriate FaberLoom config directory.
 
-    env = os.getenv("SPACELOOM_CONFIG_DIR")
+    Provider config lives next to the SQLite database. Importing from db ensures
+    the one-time SpaceLoom -> FaberLoom directory migration runs first.
+    """
+
+    env = os.getenv("FABERLOOM_CONFIG_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    else:
-        base = Path.home() / ".local" / "share"
-    return base / "SpaceLoom"
+    from ..db import _default_user_data_dir
+
+    return _default_user_data_dir()
+
+
+def load_env_file(path: Path | str | None = None) -> None:
+    """Load a ``.env`` file into ``os.environ`` without overwriting existing vars.
+
+    This lets packaged builds (e.g. the PyInstaller .exe) ship or pick up a local
+    ``%LOCALAPPDATA%/FaberLoom/.env`` file with provider keys, matching the
+    server-side BYOK injection pattern: the daemon supplies the credential while
+    the UI can leave the key field empty.
+    """
+
+    env_path = Path(path) if path else get_config_dir() / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def _master_key_path() -> Path:
@@ -37,7 +63,7 @@ def _master_key_path() -> Path:
 def get_master_key() -> bytes:
     """Return a Fernet-compatible key (32 bytes, urlsafe base64 encoded)."""
 
-    env = os.getenv("SPACELOOM_MASTER_KEY")
+    env = os.getenv("FABERLOOM_MASTER_KEY")
     if env:
         key = env.encode("utf-8")
         # Validate shape early; Fernet will raise later if malformed.

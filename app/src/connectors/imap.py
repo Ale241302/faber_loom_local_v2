@@ -1,4 +1,4 @@
-"""SpaceLoom SL5: read-only IMAP + SMTP send connector.
+"""FaberLoom SL5: read-only IMAP + SMTP send connector.
 
 Credentials are read from environment variables at call time. Passwords are
 never logged or returned.
@@ -32,19 +32,19 @@ def _require_env(name: str) -> str:
 
 def _imap_credentials() -> dict[str, Any]:
     return {
-        "server": _require_env("SPACELOOM_IMAP_SERVER"),
-        "port": int(_require_env("SPACELOOM_IMAP_PORT")),
-        "username": _require_env("SPACELOOM_IMAP_USER"),
-        "password": _require_env("SPACELOOM_IMAP_PASSWORD"),
+        "server": _require_env("FABERLOOM_IMAP_SERVER"),
+        "port": int(_require_env("FABERLOOM_IMAP_PORT")),
+        "username": _require_env("FABERLOOM_IMAP_USER"),
+        "password": _require_env("FABERLOOM_IMAP_PASSWORD"),
     }
 
 
 def _smtp_credentials() -> dict[str, Any]:
     return {
-        "server": _require_env("SPACELOOM_SMTP_SERVER"),
-        "port": int(_require_env("SPACELOOM_SMTP_PORT")),
-        "username": _require_env("SPACELOOM_IMAP_USER"),
-        "password": _require_env("SPACELOOM_IMAP_PASSWORD"),
+        "server": _require_env("FABERLOOM_SMTP_SERVER"),
+        "port": int(_require_env("FABERLOOM_SMTP_PORT")),
+        "username": _require_env("FABERLOOM_IMAP_USER"),
+        "password": _require_env("FABERLOOM_IMAP_PASSWORD"),
     }
 
 

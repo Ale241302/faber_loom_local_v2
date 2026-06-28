@@ -1,0 +1,66 @@
+{
+  "version": "sl1b-2026-06-25",
+  "workspace_name": "MWT Demo",
+  "prompts": [
+    {
+      "id": "sl1b-p01",
+      "request": "Precio de Oxford",
+      "expected_topic": "pricing",
+      "edit_simulation": "light"
+    },
+    {
+      "id": "sl1b-p02",
+      "request": "Stock de Lino",
+      "expected_topic": "stock",
+      "edit_simulation": "none"
+    },
+    {
+      "id": "sl1b-p03",
+      "request": "Cotizar Raso",
+      "expected_topic": "pricing",
+      "edit_simulation": "heavy"
+    },
+    {
+      "id": "sl1b-p04",
+      "request": "Equivalencia Oxford",
+      "expected_topic": "equivalence",
+      "edit_simulation": "none"
+    },
+    {
+      "id": "sl1b-p05",
+      "request": "Lead time Seda",
+      "expected_topic": "lead_time",
+      "edit_simulation": "light"
+    },
+    {
+      "id": "sl1b-p06",
+      "request": "MOQ Gabardina",
+      "expected_topic": "moq",
+      "edit_simulation": "none"
+    },
+    {
+      "id": "sl1b-p07",
+      "request": "Disponibilidad Terciopelo",
+      "expected_topic": "stock",
+      "edit_simulation": "light"
+    },
+    {
+      "id": "sl1b-p08",
+      "request": "Precio especial Jean",
+      "expected_topic": "pricing",
+      "edit_simulation": "none"
+    },
+    {
+      "id": "sl1b-p09",
+      "request": "Condiciones de pago",
+      "expected_topic": "terms",
+      "edit_simulation": "none"
+    },
+    {
+      "id": "sl1b-p10",
+      "request": "Vigencia de lista",
+      "expected_topic": "validity",
+      "edit_simulation": "none"
+    }
+  ]
+}

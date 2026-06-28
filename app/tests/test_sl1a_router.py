@@ -11,29 +11,29 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    db_path = tmp_path / "spaceloom.sqlite3"
+    db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     config_dir = tmp_path / "config"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(config_dir))
 
     # Ensure no provider keys or router config leak into tests.
     for name in (
         "OPENAI_API_KEY",
-        "SPACELOOM_OPENAI_API_KEY",
+        "FABERLOOM_OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
-        "SPACELOOM_ANTHROPIC_API_KEY",
+        "FABERLOOM_ANTHROPIC_API_KEY",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
-        "SPACELOOM_GOOGLE_API_KEY",
+        "FABERLOOM_GOOGLE_API_KEY",
         "KIMI_API_KEY",
         "MOONSHOT_API_KEY",
-        "SPACELOOM_KIMI_API_KEY",
-        "SPACELOOM_ENABLE_OLLAMA",
-        "SPACELOOM_OLLAMA_ENABLED",
-        "SPACELOOM_PROVIDER_ALLOWLIST",
-        "SPACELOOM_BUDGET_CAP_USD",
-        "SPACELOOM_DEV_TRUST_HEADERS",
+        "FABERLOOM_KIMI_API_KEY",
+        "FABERLOOM_ENABLE_OLLAMA",
+        "FABERLOOM_OLLAMA_ENABLED",
+        "FABERLOOM_PROVIDER_ALLOWLIST",
+        "FABERLOOM_BUDGET_CAP_USD",
+        "FABERLOOM_DEV_TRUST_HEADERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -53,10 +53,12 @@ def _demo_workspace_id(client: TestClient) -> str:
     return workspaces[0]["id"]
 
 
-def test_schema_version_is_10(client: TestClient) -> None:
+def test_schema_version_is_current(client: TestClient) -> None:
+    from app.src.models import SCHEMA_VERSION
+
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["schema_version"] == 11
+    assert response.json()["schema_version"] == SCHEMA_VERSION
 
 
 def test_schema_contains_usage_record_table(client: TestClient) -> None:
@@ -154,8 +156,8 @@ def test_chat_completion_rejects_disallowed_model(client: TestClient, monkeypatc
 
 
 def test_chat_completion_with_fake_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -235,6 +237,15 @@ def test_chat_completion_with_fake_provider(monkeypatch: pytest.MonkeyPatch, tmp
             assert messages[0]["content"] == "Hi"
             assert messages[1]["role"] == "assistant"
             assert messages[1]["content"] == "Fake assistant reply"
+            route = messages[1]["route"]
+            assert route["provider_slug"] == "fake"
+            assert route["model"] == "fake-model"
+            assert route["input_tokens"] == 10
+            assert route["output_tokens"] == 4
+            assert route["cost_usd"] == 0.0
+            assert route["duration_ms"] == 12
+            assert "budget_usd" in route
+            assert "budget_cap_usd" in route
 
             # The actual user message must reach the provider.
             assert len(received_requests) == 1
@@ -263,8 +274,8 @@ def test_chat_completion_with_fake_provider(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_fallback_uses_allowed_model_per_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -360,9 +371,9 @@ def test_fallback_uses_allowed_model_per_provider(monkeypatch: pytest.MonkeyPatc
 
 
 def test_provider_allowlist_restricts_providers(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_PROVIDER_ALLOWLIST", "openai")
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_PROVIDER_ALLOWLIST", "openai")
 
     from app.src.main import create_app
 
@@ -374,9 +385,9 @@ def test_provider_allowlist_restricts_providers(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_accumulated_budget_cap_blocks_requests(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_BUDGET_CAP_USD", "0.05")
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_BUDGET_CAP_USD", "0.05")
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -510,9 +521,9 @@ def test_chat_events_are_mirrored_to_audit_jsonl(client: TestClient) -> None:
 
 
 def test_fallback_to_cheaper_provider_when_first_exceeds_budget(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("SPACELOOM_BUDGET_CAP_USD", "0.05")
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_BUDGET_CAP_USD", "0.05")
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -655,8 +666,8 @@ def test_no_providers_creates_failed_usage_record(client: TestClient) -> None:
 
 
 def test_audit_mirror_failure_does_not_break_response(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     from app.src.audit import audit_writer
     from app.src.main import create_app
@@ -729,8 +740,8 @@ def test_audit_mirror_failure_does_not_break_response(monkeypatch: pytest.Monkey
 
 
 def test_no_allowed_model_records_usage_and_audit(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
-    db_path = tmp_path / "spaceloom.sqlite3"
-    monkeypatch.setenv("SPACELOOM_DB_PATH", str(db_path))
+    db_path = tmp_path / "faberloom.sqlite3"
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
 
     from app.src.audit import audit_writer
     from app.src.main import create_app

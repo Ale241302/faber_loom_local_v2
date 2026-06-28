@@ -1,4 +1,4 @@
-"""PyInstaller entry point for SpaceLoom desktop.
+"""PyInstaller entry point for FaberLoom desktop.
 
 PyInstaller runs the target script as ``__main__``, so relative imports fail.
 This wrapper imports the real package and launches the desktop window.

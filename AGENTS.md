@@ -66,48 +66,18 @@ cd app && python -m uvicorn src.main:app --reload
 <claude-mem-context>
 # Memory Context
 
-# [faber_loom_local_vv2] recent context, 2026-06-25 11:14pm GMT-5
+# [faber_loom_local_vv2] recent context, 2026-06-26 8:07pm GMT-5
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (24,196t read) | 1,376,787t work | 98% savings
+Stats: 50 obs (25,668t read) | 1,576,289t work | 98% savings
 
 ### Jun 25, 2026
-890 4:15p ⚖️ SpaceLoom SL0 Technical Stack Locked: React 18 UMD + pywebview + FastAPI
-897 4:16p 🔵 SL0 SpaceLoom Milestone Evaluation — All Tests Passing
-894 4:19p 🔵 SL0 Frontend Shell Already Implemented: React 18 UMD + Full Brand System
-895 " 🔵 SL0 Backend Confirmed Running: FastAPI + pywebview + SQLite Seed Workspace
-896 " 🔵 SL0 API Contract: Context Layer + Audit Writer Pattern Already Implemented
-898 " ⚖️ SpaceLoom Etapa 1 Build Plan Established (PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1 v1.1)
-899 " 🟣 SL0 Brand Engineering Task: FaberLoom Design System Applied to Frontend
-900 " ⚖️ FaberLoom Brand Canon: Typography, Color, and Iconography Tokens Locked
-901 4:22p 🔵 SL0 Frontend Already Brand-Compliant: Zero Bare Hex in JSX, One in HTML
-902 " 🔴 Fixed Two Brand Token Violations: Hardcoded Hex in Boot SVG and Missing color Inheritance
-903 " 🔵 SL0 Frontend Architecture: React 18 UMD + Babel Standalone, No Build Step
-904 " 🔵 SpaceLoom Context Architecture — Tenant-Scoping Seam Pattern
-905 " 🔵 SpaceLoom Schema — Two-Migration Contract with routine/routine_run Tables
-906 " 🔵 AuditWriter Dual-Write Pattern — SQLite Source of Truth + JSONL Mirror
-907 " 🔵 SpaceLoom SL0 Frontend — No-Op Shell with Explicit Future Seams
-908 " 🔵 SpaceLoom SL0 Test Suite — 6 Tests Covering All DoD Contract Points
-909 4:36p ⚖️ SpaceLoom SL1a: Minimal Router + Chat Architecture Specification
-910 " 🔵 SpaceLoom SL0 Codebase State Before SL1a Implementation
-911 4:37p 🔵 Venv Exists But SDK Install Status Unknown; Policy Blocks Executable Invocations
-915 " ⚖️ SpaceLoom SL1a: Minimal Router + Chat Architecture Defined
-912 " 🔵 LLM Provider SDKs Not Installed in Venv; httpx Available for Ollama HTTP
-918 4:42p ⚖️ SpaceLoom SL1a Router Architecture Designed
-916 " 🔵 venv Missing openai and anthropic SDKs Required for Router
-917 " ✅ models.py Schema Version Bumped to 3 for SL1a Router Tables
-919 4:45p 🔵 SpaceLoom SL0 Codebase Is Already Built and Running
-920 " ⚖️ SpaceLoom Build Plan v1.1 Ratified: SL1a/SL1b Split + Router Minimum Scope
-921 11:07p ⚖️ SpaceLoom SL0 Architecture: Local-First Python/FastAPI Backend with Contract-First Schema
-922 " ⚖️ SpaceLoom Core Data Model: Six Tables with Latent Multi-Tenant Fields from Day 0
-923 " ⚖️ SpaceLoom Security P0 Requirements Baked Into SL0 Architecture
 924 11:08p 🔵 SpaceLoom Backend Already Implements SL0–SL5: 26 Modules, SCHEMA_VERSION=8, Full Test Suite
 925 " 🔵 SpaceLoom SQLite Migration Chain: 8 Versions Covering Full SL0–SL5 Schema Surface
 926 " 🟣 API Security: context_from_request Uses Hardcoded Local Identity in Production, Headers Only in Dev Mode
-927 " 🔵 SpaceLoom Project Has No Git Repository Initialized
 929 " ⚖️ FaberLoom SpaceLoom Etapa 1 Build Plan Established (v1.1)
 930 " ⚖️ FaberLoom Brand and Design System Locked for SL0 Implementation
 931 " 🟣 SL0 Frontend Shell Task Scoped: index.html + main.css + app.jsx + main.py
@@ -125,6 +95,37 @@ Stats: 50 obs (24,196t read) | 1,376,787t work | 98% savings
 942 " 🔵 SL0 Shell Verified: All 4 Static + API Routes Return HTTP 200 via FastAPI TestClient
 943 " ✅ Graphify Code Graph Updated — 1388 Nodes, 4010 Edges, 68 Communities
 944 " 🔵 Final Content Verification Confirmed — Node.js v22 Present, No Local Build Tooling
+945 11:15p ⚖️ SpaceLoom Etapa 1 Build Plan Established (v1.1 with dual-engine review amendments)
+946 " 🔵 SpaceLoom Codebase Structure Mapped: Implementation Already Spans SL0–SL5
+947 " 🔵 Graph Report Confirms Contract-First Seams Are Implemented: Context at 191 Edges, AuditEvent at 55
+948 " 🟣 SL0 Frontend Shell Implemented: React 18 + FaberLoom Brand System + Contract-First UI Markers
+### Jun 26, 2026
+963 3:37p ⚖️ Plan técnico revisado: CRUD de skills/routines + importador faberloom/ en SpaceLoom
+964 3:38p 🔵 Estructura confirmada del proyecto SpaceLoom en faber_loom_local_vv2
+965 " 🔵 API de routines en api.py: endpoints existentes y gaps confirmados
+966 " 🔵 db.py: funciones de routine existentes y ausencia de update_routine
+967 " 🔵 models.py: RoutineCreate definido, RoutineUpdate ausente, esquema DB confirmado
+968 " 🔵 skills.py: parser de SKILL.md reutilizable para faberloom_catalog.py
+969 " 🔵 build.py: pipeline PyInstaller existente sin soporte para assets faberloom/
+970 3:40p 🔵 faberloom/ naming conventions revelan tipos de documentos más allá de skills/agents/templates
+971 " 🔵 app.jsx RoutinesView: helpers API existentes, funcionalidad CRUD ausente
+972 " 🔵 api_create_routine llama compile_skill_md antes de guardar — riesgo de bloqueo para imports faberloom
+973 4:34p ⚖️ Plan Técnico: Rediseño Completo de SpaceLoom hacia FaberLoom Shell
+974 " 🔵 Mapa Completo de Endpoints REST de SpaceLoom (app/src/api.py)
+975 " 🔵 Estado Real del Modelo de Datos y CSS: Gaps Confirmados para el Rediseño
+976 4:35p 🔵 Patrón de Confirmación Explícita en API (confirmation_token) Impacta Diseño HITL
+977 6:32p 🟣 SpaceLoom SL0 UI Phase 2 — Rail, RightRail, BudgetChip, ThemeSwitcher Popover
+978 6:33p 🔵 SpaceLoom API Backend — All Rail Badge Endpoints Confirmed Implemented
+979 6:34p 🔵 SpaceLoom Router Budget Enforcement and WorkLoom Model — Data Contract Details
+980 " 🔵 CommandPalette Nav Commands Out of Sync with New Rail Navigation
+981 " 🔵 SpaceLoom CSS Layout Architecture — Rail, Frame, Accordion, Responsive Breakpoints
+982 6:35p 🔵 SpaceLoom Frontend Architecture — Babel Standalone CDN, No Build Step, Runtime JSX Compilation
+983 6:36p 🔵 SpaceLoom Phase 2 Shell Redesign — Technical Audit Initiated
+984 6:37p 🟣 SpaceLoom Phase 2 Shell Redesign — Full app.jsx Implementation Confirmed
+985 " 🔵 SpaceLoom Graphify Knowledge Graph — Corpus Stats and Import Cycles
+986 6:38p 🔵 foundation.jsx — Phase 2 Primitives Confirmed Complete
+987 " 🔵 main.css — Phase 2 Styles Explicitly Marked and Fully Implemented
+988 " 🔵 Phase 2 Audit Findings — Bugs, Stubs, and Phase Closure Gaps
 
-Access 1377k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1576k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

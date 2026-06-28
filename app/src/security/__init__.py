@@ -1,4 +1,4 @@
-"""SpaceLoom security helpers (injection canaries, input sanitization)."""
+"""FaberLoom security helpers (injection canaries, input sanitization)."""
 
 from .injection import assert_safe_kb_source, sanitize_csv_text
 

@@ -56,7 +56,7 @@ def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
 
     # SL1b: seed an explicit demo KB so users can dogfood drafts immediately.
     # These prices are synthetic fixtures, not real MWT data.
-    demo_kb_md = """# Catálogo demo SpaceLoom (FIXTURE)
+    demo_kb_md = """# Catálogo demo FaberLoom (FIXTURE)
 
 Esta fuente es un fixture de demostración. Los precios no son reales.
 

@@ -1,4 +1,4 @@
-"""SpaceLoom SL2: extractors for PDF and XLSX KB sources.
+"""FaberLoom SL2: extractors for PDF and XLSX KB sources.
 
 Extractors turn binary files into plain text and structured tables so the core
 KB pipeline can chunk and fact-ify them uniformly.  Extraction is deliberately
@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import zipfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,10 @@ import chardet
 import filetype
 import openpyxl
 import pdfplumber
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdftypes import resolve1
+from pdfminer.psparser import PSLiteral
 
 
 MAX_EXTRACTED_CHARS = 500_000
@@ -69,11 +74,49 @@ def _sanitize_table_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return cleaned
 
 
+def _pdf_contains_javascript(file_bytes: bytes) -> bool:
+    """Return True if the PDF catalog declares JavaScript actions."""
+
+    def _name_str(value: Any) -> str:
+        if isinstance(value, PSLiteral):
+            return value.name
+        return str(value)
+
+    def _has_js(value: Any) -> bool:
+        try:
+            resolved = resolve1(value)
+        except Exception:
+            return False
+        if isinstance(resolved, dict):
+            if _name_str(resolved.get("S")) == "JavaScript":
+                return True
+            return any(_has_js(v) for v in resolved.values())
+        if isinstance(resolved, list):
+            return any(_has_js(v) for v in resolved)
+        return False
+
+    try:
+        parser = PDFParser(io.BytesIO(file_bytes))
+        doc = PDFDocument(parser)
+        if _has_js(doc.catalog):
+            return True
+        pages = resolve1(doc.catalog.get("Pages"))
+        if pages and _has_js(pages):
+            return True
+    except Exception:
+        # If we cannot parse the PDF, let the normal extractor report it.
+        return False
+    return False
+
+
 def extract_from_pdf(file_bytes: bytes, file_name: str | None = None) -> ExtractedDocument:
     """Extract text and tables from a PDF.
 
     Raises ValueError for password-protected or unreadable PDFs.
     """
+
+    if _pdf_contains_javascript(file_bytes):
+        raise ValueError("PDF contains JavaScript actions and is not allowed as a KB source.")
 
     warnings: list[str] = []
     text_parts: list[str] = []
@@ -126,11 +169,24 @@ def extract_from_pdf(file_bytes: bytes, file_name: str | None = None) -> Extract
     )
 
 
+def _xlsx_contains_macros(file_bytes: bytes) -> bool:
+    """Return True if an OOXML workbook contains a VBA project."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            return any(name.lower().startswith("xl/") and name.lower().endswith("vbaproject.bin") for name in zf.namelist())
+    except zipfile.BadZipFile:
+        return False
+
+
 def extract_from_xlsx(file_bytes: bytes, file_name: str | None = None) -> ExtractedDocument:
     """Extract text and tables from an Excel workbook.
 
-    Raises ValueError for password-protected or corrupt workbooks.
+    Raises ValueError for password-protected, corrupt, or macro-enabled workbooks.
     """
+
+    if _xlsx_contains_macros(file_bytes):
+        raise ValueError("XLSX contains macros and is not allowed as a KB source.")
 
     warnings: list[str] = []
     text_parts: list[str] = []

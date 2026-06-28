@@ -1,4 +1,4 @@
-"""SpaceLoom auto-update signing and verification primitives.
+"""FaberLoom auto-update signing and verification primitives.
 
 SL1b does not yet ship a packaged desktop app, but the signing/verification seam
 must exist before SL4.  We use Ed25519 for compact signatures and a simple
@@ -184,7 +184,7 @@ def verify_update_manifest(
 
 
 def _rollback_dir(current_path: Path) -> Path:
-    return current_path.parent / ".spaceloom_rollback"
+    return current_path.parent / ".faberloom_rollback"
 
 
 def _prune_rollbacks(rollback_dir: Path, current_name: str) -> None:

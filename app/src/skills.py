@@ -9,6 +9,7 @@ from typing import Any
 import jsonschema
 import yaml
 
+from .security.injection import HIDDEN_INSTRUCTION_RE
 from .router.engine import BudgetExceeded, NoAllowedModel, Router
 from .router.models import CompletionRequest
 from .router.providers import ProviderError
@@ -29,7 +30,15 @@ def _detect_dangerous(skill_md: str) -> list[str]:
         dangers.append("Python import statement")
     if re.search(r"\beval\s*\(", skill_md):
         dangers.append("eval() call")
-    # Excel formula injection: a line starting with = and containing '!'
+    if re.search(r"\bexec\s*\(", skill_md):
+        dangers.append("exec() call")
+    if re.search(r"\b__import__\s*\(", skill_md):
+        dangers.append("__import__() call")
+    if re.search(r"\bsubprocess\b", skill_md):
+        dangers.append("subprocess reference")
+    if HIDDEN_INSTRUCTION_RE.search(skill_md):
+        dangers.append("hidden instruction override")
+    # Excel formula injection: a line starting with = and containing '!'"
     for line in skill_md.splitlines():
         stripped = line.strip()
         if stripped.startswith("=") and "!" in stripped:
@@ -37,6 +46,30 @@ def _detect_dangerous(skill_md: str) -> list[str]:
             break
 
     return dangers
+
+
+# Canonical top-level fields allowed by SCH_FB_SKILL_MANIFEST_v2.
+SKILL_MANIFEST_TOP_LEVEL = {"name", "description", "version", "metadata"}
+
+# Canonical metadata.mwt.* fields declared by SCH_FB_SKILL_MANIFEST_v2.
+# The schema permits free namespaced extensions; this is the subset the compiler emits.
+SKILL_MANIFEST_MWT_FIELDS = {
+    "id",
+    "type",
+    "architectural_archetype",
+    "domain",
+    "archetype",
+    "visibility",
+    "status",
+    "inputs",
+    "depends_on_skills",
+    "skills_imports",
+    "multi_client_mode",
+    "client_resolver",
+    "contract",
+    "state_machine",
+    "golden_samples",
+}
 
 
 def _extract_frontmatter(skill_md: str) -> tuple[dict[str, Any], str]:
@@ -63,45 +96,114 @@ def _extract_frontmatter(skill_md: str) -> tuple[dict[str, Any], str]:
     return frontmatter, body
 
 
+def _coerce_json_field(value: Any) -> Any:
+    """Normalize a frontmatter field that may be a JSON string or a YAML object."""
+
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    return value if isinstance(value, (dict, list)) else {}
+
+
+def _coerce_list_field(value: Any) -> list[Any]:
+    """Normalize a frontmatter field that should be a list."""
+
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            return []
+    return value if isinstance(value, list) else []
+
+
+def _build_manifest_mwt(frontmatter: dict[str, Any], name: str) -> dict[str, Any]:
+    """Build the metadata.mwt.* sub-manifest from SKILL.md frontmatter."""
+
+    mwt: dict[str, Any] = {
+        "id": str(frontmatter.get("id", name)).strip() or name,
+        "type": str(frontmatter.get("type", "skill")).strip() or "skill",
+        "architectural_archetype": str(
+            frontmatter.get("architectural_archetype", "routine")
+        ).strip()
+        or "routine",
+        "domain": str(frontmatter.get("domain", "")).strip(),
+        "archetype": str(frontmatter.get("archetype", "routine")).strip() or "routine",
+        "visibility": str(frontmatter.get("visibility", "INTERNAL")).strip() or "INTERNAL",
+        "status": str(frontmatter.get("status", "SHADOW")).strip() or "SHADOW",
+    }
+
+    # Optional canonical extension fields; only emit when present and non-empty.
+    for field in (
+        "inputs",
+        "depends_on_skills",
+        "skills_imports",
+        "multi_client_mode",
+        "client_resolver",
+        "contract",
+        "state_machine",
+        "golden_samples",
+    ):
+        value = frontmatter.get(field)
+        if value not in (None, {}, [], ""):
+            mwt[field] = value
+
+    return mwt
+
+
 def compile_skill_md(skill_md: str) -> dict[str, Any]:
-    """Parse and validate a SKILL.md document into a normalized skill dict."""
+    """Parse and validate a SKILL.md document into a canonical manifest subset.
+
+    The returned dict is a subset of SCH_FB_SKILL_MANIFEST_v2: it contains only
+    the base frontmatter fields (name, description, version) plus the
+    metadata.mwt.* extension fields declared by the canonical schema. Runtime
+    execution fields (persona, tools, schema_output, triggers, instructions) are
+    available via ``_extract_runtime`` / ``routine_to_skill``.
+    """
 
     dangers = _detect_dangerous(skill_md)
     if dangers:
         raise ValueError("Unsafe SKILL.md content: " + "; ".join(dangers))
 
+    frontmatter, _body = _extract_frontmatter(skill_md)
+
+    name = str(frontmatter.get("name", "")).strip()
+    if not name:
+        raise ValueError("SKILL.md frontmatter must declare a non-empty 'name' field.")
+
+    manifest: dict[str, Any] = {
+        "name": name,
+        "description": str(frontmatter.get("description", "")).strip(),
+        "version": str(frontmatter.get("version", "0.1.0")).strip() or "0.1.0",
+        "metadata": {"mwt": _build_manifest_mwt(frontmatter, name)},
+    }
+    return manifest
+
+
+def _extract_runtime(skill_md: str) -> dict[str, Any]:
+    """Extract runtime execution fields from a SKILL.md document.
+
+    This is the non-canonical runtime contract used by ``execute_skill``. It is
+    intentionally separate from the canonical manifest emitted by
+    ``compile_skill_md``.
+    """
+
     frontmatter, body = _extract_frontmatter(skill_md)
 
-    schema_output = frontmatter.get("schema_output", {})
-    if isinstance(schema_output, str):
-        try:
-            schema_output = json.loads(schema_output)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid schema_output JSON: {exc}") from exc
+    schema_output = _coerce_json_field(frontmatter.get("schema_output", {}))
+    if not isinstance(schema_output, dict):
+        schema_output = {}
 
-    tools = frontmatter.get("tools", [])
-    if isinstance(tools, str):
-        try:
-            tools = json.loads(tools)
-        except json.JSONDecodeError:
-            tools = []
-    if not isinstance(tools, list):
-        tools = []
-
-    triggers = frontmatter.get("triggers", [])
-    if isinstance(triggers, str):
-        try:
-            triggers = json.loads(triggers)
-        except json.JSONDecodeError:
-            triggers = []
-    if not isinstance(triggers, list):
-        triggers = []
+    tools = _coerce_list_field(frontmatter.get("tools", []))
+    triggers = _coerce_list_field(frontmatter.get("triggers", []))
 
     return {
         "name": str(frontmatter.get("name", "")).strip(),
         "persona": str(frontmatter.get("persona", "")).strip(),
         "tools": tools,
-        "schema_output": schema_output if isinstance(schema_output, dict) else {},
+        "schema_output": schema_output,
         "triggers": triggers,
         "instructions": body,
         "skill_md": skill_md,
@@ -181,6 +283,7 @@ def execute_skill(
     router: Router,
     provider_slug: str | None = None,
     model: str | None = None,
+    spent_usd: float = 0.0,
 ) -> dict[str, Any]:
     """Run a compiled skill through the provider router.
 
@@ -213,7 +316,7 @@ def execute_skill(
         model=model,
         temperature=0.2,
         max_tokens=1024,
-        spent_usd=0.0,
+        spent_usd=spent_usd,
     )
 
     try:
@@ -308,10 +411,14 @@ def execute_skill(
 
 
 def routine_to_skill(routine: dict[str, Any]) -> dict[str, Any]:
-    """Re-compile a stored routine row into the skill contract used at runtime.
+    """Re-compile a stored routine row into the runtime skill contract.
 
     The normalized ``tools_allowlist`` column is authoritative for HITL decisions;
     the SKILL.md ``tools`` field only declares which tools the skill may request.
+
+    The canonical manifest is validated via ``compile_skill_md``; runtime fields
+    are extracted separately so the manifest itself remains a subset of
+    SCH_FB_SKILL_MANIFEST_v2.
     """
 
     tools_allowlist: list[str] = []
@@ -325,9 +432,11 @@ def routine_to_skill(routine: dict[str, Any]) -> dict[str, Any]:
     skill_md = routine.get("skill_md", "")
     if skill_md:
         try:
-            skill = compile_skill_md(skill_md)
-            skill["tools_allowlist"] = tools_allowlist
-            return skill
+            manifest = compile_skill_md(skill_md)
+            runtime = _extract_runtime(skill_md)
+            runtime["name"] = manifest["name"]
+            runtime["tools_allowlist"] = tools_allowlist
+            return runtime
         except ValueError:
             pass
 

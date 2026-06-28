@@ -1,4 +1,4 @@
-"""SpaceLoom SL3b: gold loop helpers for low-edit routine runs."""
+"""FaberLoom SL3b: gold loop helpers for low-edit routine runs."""
 
 from __future__ import annotations
 
@@ -16,6 +16,14 @@ from .db import (
     transaction,
     utc_now,
 )
+from .draft_engine import _extract_hard_tokens
+
+
+def _contains_hard_fields(value: dict[str, Any]) -> bool:
+    """Return True when *value* contains prices, SKUs, stock, margins, etc."""
+
+    text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return bool(_extract_hard_tokens(text))
 
 
 def list_gold_candidates(
@@ -24,18 +32,18 @@ def list_gold_candidates(
     routine_id: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Return gold candidate rows for the current workspace.
+    """Return gold candidate rows for the current workspace/tenant.
 
     By default returns all candidates (approved or not). Pass routine_id to
     filter by routine.
     """
 
     workspace_id = ctx.require_scoped_workspace()
-    params: list[Any] = [workspace_id]
+    params: list[Any] = [workspace_id, ctx.tenant_id]
     sql = f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE workspace_id = ?
+        WHERE workspace_id = ? AND tenant_id IS ?
     """
     if routine_id is not None:
         sql += " AND routine_id = ?"
@@ -47,24 +55,61 @@ def list_gold_candidates(
     return [row_to_dict(row) for row in rows]
 
 
+def list_approved_gold_candidates_for_routine(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    routine_id: str,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return promoted (approved) gold candidates for a specific routine.
+
+    These candidates are safe to inject as few-shot examples during skill
+    execution so the gold loop feeds back into generation.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    rows = conn.execute(
+        f"""
+        SELECT {GOLD_CANDIDATE_COLUMNS}
+        FROM gold_candidate
+        WHERE workspace_id = ? AND tenant_id IS ? AND routine_id = ? AND approved = 1
+        ORDER BY use_count ASC, created_at DESC
+        LIMIT ?
+        """,
+        (workspace_id, ctx.tenant_id, routine_id, limit),
+    ).fetchall()
+    return [row_to_dict(row) for row in rows]
+
+
 def promote_gold_candidate(
     ctx: Context,
     conn: sqlite3.Connection,
     candidate_id: str,
     learned_output_json: dict[str, Any],
     approved_by: str | None = None,
+    verified_by: str | None = None,
 ) -> dict[str, Any] | None:
-    """Promote a gold candidate with the learned/canonized output."""
+    """Promote a gold candidate with the learned/canonized output.
+
+    Hard fields (prices, SKUs, stock, margins, lead times, dates) require an
+    independent second gate via *verified_by*. Without it the promotion is
+    rejected to prevent contaminated gold from entering the loop.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     approved_by = approved_by or ctx.resolved_actor_id()
     now = utc_now()
 
+    if _contains_hard_fields(learned_output_json) and not verified_by:
+        raise ValueError(
+            "Hard fields require independent verification; provide verified_by"
+        )
+
     cursor = conn.execute(
         """
         UPDATE gold_candidate
         SET learned_output_json = ?, approved = 1, approved_by = ?, updated_at = ?
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
         (
             json.dumps(learned_output_json, ensure_ascii=False, sort_keys=True),
@@ -72,6 +117,7 @@ def promote_gold_candidate(
             now,
             candidate_id,
             workspace_id,
+            ctx.tenant_id,
         ),
     )
     if cursor.rowcount == 0:
@@ -81,9 +127,9 @@ def promote_gold_candidate(
         f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (candidate_id, workspace_id),
+        (candidate_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -107,9 +153,9 @@ def apply_gold_to_routine(
             f"""
             SELECT {GOLD_CANDIDATE_COLUMNS}
             FROM gold_candidate
-            WHERE id = ? AND workspace_id = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
             """,
-            (candidate_id, workspace_id),
+            (candidate_id, workspace_id, ctx.tenant_id),
         ).fetchone()
         if row is None:
             return None
@@ -155,9 +201,9 @@ def apply_gold_to_routine(
             """
             UPDATE gold_candidate
             SET used = 1, use_count = use_count + 1, updated_at = ?
-            WHERE id = ? AND workspace_id = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
             """,
-            (now, candidate_id, workspace_id),
+            (now, candidate_id, workspace_id, ctx.tenant_id),
         )
 
         updated_routine = get_routine(ctx, conn, routine["id"])
@@ -168,9 +214,9 @@ def apply_gold_to_routine(
             f"""
             SELECT {GOLD_CANDIDATE_COLUMNS}
             FROM gold_candidate
-            WHERE id = ? AND workspace_id = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
             """,
-            (candidate_id, workspace_id),
+            (candidate_id, workspace_id, ctx.tenant_id),
         ).fetchone()
         updated_candidate = row_to_dict(candidate_row) if candidate_row else candidate
 

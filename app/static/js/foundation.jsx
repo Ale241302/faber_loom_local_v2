@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   SpaceLoom · Foundation components
+   FaberLoom · Foundation components
    Base UI primitives: Toggle, Meter, Accordion, Toast, CommandPalette,
    ThemeSwitcher and theme helpers. Loaded before app.jsx.
    ═══════════════════════════════════════════════════════════════ */
@@ -20,7 +20,7 @@ const THEMES = [
 
 function getInitialTheme() {
   try {
-    const saved = localStorage.getItem("spaceloom-theme");
+    const saved = localStorage.getItem("faberloom-theme");
     if (saved) return saved;
   } catch (e) {}
   return "warm";
@@ -29,7 +29,7 @@ function getInitialTheme() {
 function applyTheme(theme) {
   try {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("spaceloom-theme", theme);
+    localStorage.setItem("faberloom-theme", theme);
     const meta = document.querySelector('meta[name="color-scheme"]');
     if (meta) {
       const lightThemes = ["paper", "cloud", "mist"];
@@ -59,8 +59,8 @@ function Meter({ value = 0, max = 100, label, variant }) {
   );
 }
 
-function Accordion({ items, single = true }) {
-  const [open, setOpen] = useState(new Set());
+function Accordion({ items, single = true, defaultOpen = [] }) {
+  const [open, setOpen] = useState(() => new Set(defaultOpen));
   const toggle = (id) => {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -113,17 +113,49 @@ function Toast({ toast, onDismiss }) {
   );
 }
 
+const THEME_ACCENTS = {
+  warm: "#CD6B4A",
+  slate: "#CD6B4A",
+  mono: "#D6724E",
+  paper: "#C96442",
+  cloud: "#C96442",
+  indigo: "#E07A5F",
+  mist: "#C96442",
+};
+
 function ThemeSwitcher({ theme, onChange }) {
-  const current = THEMES.find((t) => t.id === theme) || THEMES[0];
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+  const dark = ["warm", "slate", "mono", "indigo"];
+  const light = ["paper", "cloud", "mist"];
   return (
-    <div className="theme-switcher" aria-label="Cambiar tema">
-      <button type="button" className="ceja" title={current.label} style={{ width: 28, height: 28, borderRadius: 6, background: current.swatch, border: "1px solid var(--border-default)", color: ["paper", "cloud", "mist"].includes(theme) ? "#1A1A1A" : "#F4F1ED" }} onClick={() => {
-        const idx = THEMES.findIndex((t) => t.id === theme);
-        const next = THEMES[(idx + 1) % THEMES.length];
-        onChange(next.id);
-      }} aria-label={current.label}>
-        <Icon name={["paper", "cloud", "mist"].includes(theme) ? "sun" : "moon"} size={14} />
+    <div className="theme-switcher" ref={ref}>
+      <button type="button" className="ceja" title="Estilo visual" onClick={() => setOpen((v) => !v)} aria-label="Cambiar tema">
+        <Icon name="sun" size={18} />
       </button>
+      <div className={cx("theme-pop", open && "open")} role="menu">
+        <div className="theme-pop-header">Oscuros</div>
+        {THEMES.filter((t) => dark.includes(t.id)).map((t) => (
+          <div key={t.id} className={cx("theme-option", theme === t.id && "is-active")} onClick={() => { onChange(t.id); setOpen(false); }} role="menuitem">
+            <span className="swatch" style={{ background: t.swatch }}><span className="accent" style={{ background: THEME_ACCENTS[t.id] }} /></span>
+            <span className="tn">{t.label}</span>
+            <span className="chk">✓</span>
+          </div>
+        ))}
+        <div className="theme-pop-header" style={{ marginTop: 4 }}>Claros</div>
+        {THEMES.filter((t) => light.includes(t.id)).map((t) => (
+          <div key={t.id} className={cx("theme-option", theme === t.id && "is-active")} onClick={() => { onChange(t.id); setOpen(false); }} role="menuitem">
+            <span className="swatch" style={{ background: t.swatch }}><span className="accent" style={{ background: THEME_ACCENTS[t.id] }} /></span>
+            <span className="tn">{t.label}</span>
+            <span className="chk">✓</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -135,13 +167,17 @@ function CommandPalette({ isOpen, onClose, onSelect, workspaces = [], activeWork
 
   const commands = useMemo(() => {
     const list = [];
-    list.push({ id: "nav-space", group: "Navegar", title: "SpaceLoom", subtitle: "Canvas y chat", action: () => onSelect({ type: "nav", value: "space", mode: "operar" }) });
+    list.push({ id: "nav-space", group: "Navegar", title: "FaberLoom", subtitle: "Canvas y chat", action: () => onSelect({ type: "nav", value: "space", mode: "operar" }) });
+    list.push({ id: "nav-inbox", group: "Navegar", title: "Inbox", subtitle: "Entrada operativa", action: () => onSelect({ type: "nav", value: "inbox", mode: "operar" }) });
     list.push({ id: "nav-workloom", group: "Navegar", title: "WorkLoom", subtitle: "Cola HITL", action: () => onSelect({ type: "nav", value: "workloom", mode: "operar" }) });
-    list.push({ id: "nav-mail", group: "Navegar", title: "Correo", subtitle: "IMAP/SMTP HITL", action: () => onSelect({ type: "nav", value: "mail", mode: "operar" }) });
+    list.push({ id: "nav-stackloom", group: "Navegar", title: "StackLoom", subtitle: "Cola de aprendizaje", action: () => onSelect({ type: "nav", value: "stackloom", mode: "aprender" }) });
     list.push({ id: "nav-kb", group: "Navegar", title: "Knowledge Base", subtitle: "Fuentes y citas", action: () => onSelect({ type: "nav", value: "kb", mode: "aprender" }) });
-    list.push({ id: "nav-routines", group: "Navegar", title: "Routine Hub", subtitle: "Skills portables", action: () => onSelect({ type: "nav", value: "routines", mode: "aprender" }) });
-    list.push({ id: "nav-settings", group: "Navegar", title: "Ajustes", subtitle: "Router y proveedores", action: () => onSelect({ type: "nav", value: "settings", mode: "admin" }) });
-    list.push({ id: "nav-audit", group: "Navegar", title: "Auditoría", subtitle: "Editorial history", action: () => onSelect({ type: "nav", value: "audit", mode: "admin" }) });
+    list.push({ id: "nav-gold", group: "Navegar", title: "Gold Samples", subtitle: "Muestras aprobadas", action: () => onSelect({ type: "nav", value: "gold", mode: "aprender" }) });
+    list.push({ id: "nav-skills", group: "Navegar", title: "Skills", subtitle: "Capacidades del tenant", action: () => onSelect({ type: "nav", value: "skills", mode: "admin" }) });
+    list.push({ id: "nav-agents", group: "Navegar", title: "Agentes", subtitle: "Perfiles de agente", action: () => onSelect({ type: "nav", value: "agents", mode: "admin" }) });
+    list.push({ id: "nav-routines", group: "Navegar", title: "Routine Hub", subtitle: "Editor de rutinas", action: () => onSelect({ type: "nav", value: "routines", mode: "admin" }) });
+    list.push({ id: "nav-settings", group: "Navegar", title: "Router / Proveedores", subtitle: "Modelos, keys y presupuesto", action: () => onSelect({ type: "nav", value: "settings", mode: "admin" }) });
+    list.push({ id: "nav-audit", group: "Navegar", title: "Auditoría", subtitle: "Historial de decisiones", action: () => onSelect({ type: "nav", value: "audit", mode: "admin" }) });
     workspaces.forEach((ws) => list.push({ id: "ws-" + ws.id, group: "Workspaces", title: ws.name, subtitle: ws.slug || ws.id, action: () => onSelect({ type: "workspace", value: ws.id }) }));
     THEMES.forEach((t) => list.push({ id: "theme-" + t.id, group: "Tema", title: t.label, action: () => onSelect({ type: "theme", value: t.id }) }));
     return list;
@@ -150,7 +186,11 @@ function CommandPalette({ isOpen, onClose, onSelect, workspaces = [], activeWork
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
-    return commands.filter((c) => (c.title + " " + (c.subtitle || "")).toLowerCase().includes(q));
+    const terms = q.split(/\s+/).filter(Boolean);
+    return commands.filter((c) => {
+      const hay = (c.title + " " + (c.subtitle || "")).toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
   }, [commands, query]);
 
   useEffect(() => { setSelected(0); }, [query]);

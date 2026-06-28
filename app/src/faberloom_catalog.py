@@ -1,4 +1,4 @@
-"""FaberLoom catalog importer for SpaceLoom.
+"""FaberLoom catalog importer for FaberLoom.
 
 Reads Markdown specs/agents/templates from the ``faberloom/`` directory (or the
 bundled ``static/faberloom/`` copy inside a PyInstaller build) and imports them
@@ -251,7 +251,8 @@ def import_catalog_items(
 
     routines: list[dict[str, Any]] = []
     for item in items:
-        existing = get_routine_by_name(ctx, conn, item.name)
+        existing_list = get_routine_by_name(ctx, conn, item.name)
+        existing = existing_list[0] if existing_list else None
         if existing is not None:
             updated = update_routine(
                 ctx,
@@ -264,6 +265,7 @@ def import_catalog_items(
                 trigger_json=item.trigger_json,
                 persona_md=item.persona_md,
                 is_active=0,
+                category=item.category,
                 source_version=item.source_version,
                 approved_by=None,
             )
@@ -281,6 +283,7 @@ def import_catalog_items(
                 trigger_json=item.trigger_json,
                 persona_md=item.persona_md,
                 is_active=0,
+                category=item.category,
                 source_version=item.source_version,
             )
             routines.append(created)
