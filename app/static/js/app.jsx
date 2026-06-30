@@ -396,24 +396,19 @@ function EmptyMessages({ activeWorkspace }) {
 }
 
 const THINKING_STEPS = [
-  { key: "analyze", label: "Analizando tu mensaje" },
+  { key: "reason", label: "Razonando sobre tu consulta" },
   { key: "context", label: "Consultando el contexto del workspace" },
-  { key: "route", label: "Eligiendo el modelo más adecuado" },
+  { key: "route", label: "Seleccionando el modelo" },
   { key: "weave", label: "Tejiendo la respuesta" },
 ];
 
 function ThinkingSteps({ stepIndex }) {
   const safeIndex = Math.min(Math.max(stepIndex, 0), THINKING_STEPS.length - 1);
-  return <div className="thinking-steps" aria-live="polite">
-    {THINKING_STEPS.map((step, idx) => {
-      const isDone = idx < safeIndex;
-      const isActive = idx === safeIndex;
-      return <div key={step.key} className={cx("thinking-step", isDone && "is-done", isActive && "is-active")}>
-        <span className="thinking-dot">{isDone ? "✓" : isActive ? "◐" : "○"}</span>
-        <span className="thinking-label">{step.label}{isActive && "…"}</span>
-      </div>;
-    })}
-  </div>;
+  const step = THINKING_STEPS[safeIndex];
+  return <span className="thinking-current" aria-live="polite">
+    <span className="thinking-spinner" aria-hidden="true"/>
+    {step.label}…
+  </span>;
 }
 
 function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder }) {
