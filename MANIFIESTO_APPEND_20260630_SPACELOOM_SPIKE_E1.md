@@ -41,7 +41,7 @@ Este documento registra un **artefacto de software construido fuera del track ca
 | Atributo | Valor |
 |---|---|
 | Nombre registrado | **SpaceLoom Spike E1** |
-| Repo de trabajo | `Ale241302/faber_loom_local_v2` (pendiente de renombrar a `faberloom-spike-e1`) |
+| Repo de trabajo | `Ale241302/faber_loom_local_v2` (se mantiene; el nombre del *artefacto* es SpaceLoom Spike E1) |
 | Path en VPS | `/opt/faber_loom` (pendiente de renombrar a `/opt/spaceloom-spike`) |
 | Dominio de acceso | `app.faberloom.ai` (pendiente de migrar a `spike.faberloom.ai`) |
 | Plan base | `PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md` |
@@ -147,7 +147,7 @@ A partir de ese momento:
 
 | # | Acción | Responsable | Estado |
 |---|---|---|---|
-| 1 | Renombrar repo `faber_loom_local_v2` → `faberloom-spike-e1` | Alejandro | Pendiente |
+| 1 | Renombrar **artefacto/concepto** a SpaceLoom Spike E1 en documentación interna (el repo `faber_loom_local_v2` se mantiene) | Alejandro | Pendiente |
 | 2 | Renombrar path VPS `/opt/faber_loom` → `/opt/spaceloom-spike` | Alejandro | Pendiente |
 | 3 | Migrar dominio `app.faberloom.ai` → `spike.faberloom.ai` | Alejandro | Pendiente |
 | 4 | Agregar `email_connector_enabled=false` en el código o corregir ledger | Alejandro | Pendiente |

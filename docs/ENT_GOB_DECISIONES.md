@@ -156,7 +156,7 @@ Cada decisión registra: contexto, alternativas evaluadas, decisión tomada, con
   - (a) **Spike de validación / dogfood interno** — elegido: se registra como no canónico, se mantienen aprendizajes, se archiva cuando Foundation Beta entregue reemplazo funcional para MWT.
   - (b) **Pivote desktop-first** — descartado: contradice la inversión y plan firmado en Foundation Beta v1.3.1.
   - (c) **Etapa incremental definitiva** — descartado: el stack SQLite/pywebview no escala al canon Postgres/RLS; no se justifica convertirlo en producto.
-- **Decisión:** El spike se trata como **(A) spike de validación con matiz operativo**: es dogfood interno de MWT mientras Foundation Beta no tenga reemplazo funcional, pero su destino final es archivarse. El track de ejecución canónico único es **FaberLoom Foundation Beta v1.3.1**. El spike se renombra a "SpaceLoom Spike E1", se despliega bajo `spike.faberloom.ai` y se registra en `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md`.
+- **Decisión:** El spike se trata como **(A) spike de validación con matiz operativo**: es dogfood interno de MWT mientras Foundation Beta no tenga reemplazo funcional, pero su destino final es archivarse. El track de ejecución canónico único es **FaberLoom Foundation Beta v1.3.1**. El spike se etiqueta como artefacto "SpaceLoom Spike E1", se despliega bajo `spike.faberloom.ai` y se registra en `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md`. El repo de trabajo (`Ale241302/faber_loom_local_v2`) **se mantiene con su nombre actual**; solo cambia la etiqueta/concepto del spike.
 - **Consecuencias:**
   - No se mergea código SQLite/pywebview al canon.
   - SpaceLoom se reserva como pilar de marca (home cognitivo / canvas), no como nombre de prototipo.
