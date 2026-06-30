@@ -23,6 +23,7 @@ services:
       FABERLOOM_PUBLIC_HOST: app.faberloom.ai
     volumes:
       - ./data:/data
+      - ./.env:/data/.env:ro
     ports:
       - "8200:8000"
     networks:
