@@ -499,6 +499,8 @@ function SpaceView({ activeWorkspace }) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [thinkingStepIndex, setThinkingStepIndex] = useState(0);
+  const [typingTarget, setTypingTarget] = useState(null);
+  const [typedContent, setTypedContent] = useState("");
   const [error, setError] = useState(null);
   const [routerStatus, setRouterStatus] = useState(null);
   const [modelAllowlist, setModelAllowlist] = useState({});
@@ -574,6 +576,31 @@ function SpaceView({ activeWorkspace }) {
     return () => clearInterval(interval);
   }, [busy]);
 
+  // Typewriter reveal for the latest assistant response.
+  useEffect(() => {
+    if (!typingTarget) {
+      setTypedContent("");
+      return;
+    }
+    setTypedContent("");
+    let index = 0;
+    const interval = setInterval(() => {
+      index += 1;
+      setTypedContent(typingTarget.content.slice(0, index));
+      if (index >= typingTarget.content.length) {
+        clearInterval(interval);
+        setTypingTarget(null);
+      }
+    }, 6);
+    return () => clearInterval(interval);
+  }, [typingTarget]);
+
+  // Cancel any running typewriter when the user switches chats.
+  useEffect(() => {
+    setTypingTarget(null);
+    setTypedContent("");
+  }, [activeChatId]);
+
   useEffect(() => {
     const handler = async (e) => {
       const { routine_id, provider_slug, model } = e.detail || {};
@@ -586,7 +613,10 @@ function SpaceView({ activeWorkspace }) {
           body.provider_slug = provider_slug;
           body.model = model;
         }
-        await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/invoke`, body);
+        const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/invoke`, body);
+        if (completion && completion.message) {
+          setTypingTarget({ id: completion.message.id, content: completion.message.content });
+        }
         await loadMessages(activeChatId);
         await loadChats();
         await loadRouter();
@@ -679,7 +709,10 @@ function SpaceView({ activeWorkspace }) {
         body.provider_slug = options.provider_slug;
         body.model = options.model;
       }
-      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
+      const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
+      if (completion && completion.message) {
+        setTypingTarget({ id: completion.message.id, content: completion.message.content });
+      }
       await loadMessages(chatId);
       await loadRouter();
       await loadChats();
@@ -721,7 +754,7 @@ function SpaceView({ activeWorkspace }) {
         {messages.map((msg) => (
           <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
             <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
-            <div className="message-content">{msg.content}</div>
+            <div className="message-content">{msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content}</div>
             {msg.role === "assistant" && msg.route && (() => {
               const r = msg.route;
               const requested = r.requested_provider_slug || r.requested_model
