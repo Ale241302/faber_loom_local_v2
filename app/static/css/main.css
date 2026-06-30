@@ -687,3 +687,12 @@ button { background: none; border: none; cursor: pointer; }
 .message-route span { display: inline-flex; align-items: center; gap: 4px; }
 .message-route svg { color: var(--coral); }
 .route-fallback { background: var(--amber-soft, #f5e6c8); color: var(--text-secondary); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+
+/* ════════ THINKING STEPS ════════ */
+.thinking-steps { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-md); max-width: 420px; }
+.thinking-step { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); transition: color .2s; }
+.thinking-step.is-done { color: var(--text-secondary); }
+.thinking-step.is-active { color: var(--coral); font-weight: 600; }
+.thinking-dot { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+.thinking-step.is-active .thinking-dot { animation: thinking-pulse 1.4s infinite; }
+@keyframes thinking-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }

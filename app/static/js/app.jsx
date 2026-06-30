@@ -1,4 +1,4 @@
-var { useCallback, useEffect, useMemo, useState } = React;
+var { useCallback, useEffect, useMemo, useRef, useState } = React;
 
 const MODES = [
   { id: "operar", label: "Operar" },
@@ -392,10 +392,31 @@ function ChatList({ chats, activeChatId, setActiveChatId, onCreate, onRename, on
 }
 
 function EmptyMessages({ activeWorkspace }) {
-  return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Selecciona un chat o crea uno nuevo para conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
+  return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Escribe abajo para crear un chat nuevo y conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
 }
 
-function Composer({ onSend, disabled, routerStatus, modelAllowlist }) {
+const THINKING_STEPS = [
+  { key: "analyze", label: "Analizando tu mensaje" },
+  { key: "context", label: "Consultando el contexto del workspace" },
+  { key: "route", label: "Eligiendo el modelo más adecuado" },
+  { key: "weave", label: "Tejiendo la respuesta" },
+];
+
+function ThinkingSteps({ stepIndex }) {
+  const safeIndex = Math.min(Math.max(stepIndex, 0), THINKING_STEPS.length - 1);
+  return <div className="thinking-steps" aria-live="polite">
+    {THINKING_STEPS.map((step, idx) => {
+      const isDone = idx < safeIndex;
+      const isActive = idx === safeIndex;
+      return <div key={step.key} className={cx("thinking-step", isDone && "is-done", isActive && "is-active")}>
+        <span className="thinking-dot">{isDone ? "✓" : isActive ? "◐" : "○"}</span>
+        <span className="thinking-label">{step.label}{isActive && "…"}</span>
+      </div>;
+    })}
+  </div>;
+}
+
+function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder }) {
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -424,7 +445,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist }) {
 
   return <form className="composer-shell" onSubmit={submit} aria-label="Composer de chat">
     <div className="composer">
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Escribe tu mensaje… Usa @skill o /run." rows="2" disabled={disabled}/>
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled}/>
       <div className="composer-actions">
         <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor">
           <Icon name="route" size={16}/>{provider ? (PROVIDER_LABELS[provider] || provider) : "Auto"}
@@ -472,11 +493,13 @@ function SpaceView({ activeWorkspace }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [thinkingStepIndex, setThinkingStepIndex] = useState(0);
   const [error, setError] = useState(null);
   const [routerStatus, setRouterStatus] = useState(null);
   const [modelAllowlist, setModelAllowlist] = useState({});
   const [deleteChatTarget, setDeleteChatTarget] = useState(null);
   const [deleteChatToken, setDeleteChatToken] = useState("");
+  const messageAreaRef = useRef(null);
 
   const setActiveChatId = (chatId) => {
     setActiveChatIdLocal(chatId);
@@ -527,6 +550,25 @@ function SpaceView({ activeWorkspace }) {
   useEffect(() => { loadChats(); loadRouter(); }, [activeWorkspace]);
   useEffect(() => { loadMessages(activeChatId); }, [activeChatId]);
 
+  // Auto-scroll to the newest message / thinking indicator.
+  useEffect(() => {
+    if (messageAreaRef.current) {
+      messageAreaRef.current.scrollTop = messageAreaRef.current.scrollHeight;
+    }
+  }, [messages, busy]);
+
+  // Cycle the thinking steps while the telar is busy.
+  useEffect(() => {
+    if (!busy) {
+      setThinkingStepIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setThinkingStepIndex((idx) => (idx + 1) % THINKING_STEPS.length);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [busy]);
+
   useEffect(() => {
     const handler = async (e) => {
       const { routine_id, provider_slug, model } = e.detail || {};
@@ -553,16 +595,23 @@ function SpaceView({ activeWorkspace }) {
   }, [activeWorkspace, activeChatId]);
 
   const createChat = async () => {
-    if (!activeWorkspace) return;
+    if (!activeWorkspace) return null;
     setError(null);
     try {
       const chat = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats`, { title: "Nueva conversación" });
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(chat.id);
       window.dispatchEvent(new CustomEvent("faberloom-refresh"));
+      return chat.id;
     } catch (err) {
       setError(err.message);
+      return null;
     }
+  };
+
+  const ensureActiveChat = async () => {
+    if (activeChatId) return activeChatId;
+    return await createChat();
   };
 
   const renameChat = async (chatId, title) => {
@@ -603,24 +652,38 @@ function SpaceView({ activeWorkspace }) {
   };
 
   const sendMessage = async (text, options = {}) => {
-    if (!activeWorkspace || !activeChatId) return;
+    if (!activeWorkspace) return;
     setBusy(true);
     setError(null);
     try {
+      const chatId = await ensureActiveChat();
+      if (!chatId) return;
+
+      // Optimistically show the user message so the UI feels instant.
+      const tempId = `temp_${Date.now()}`;
+      const tempMessage = {
+        id: tempId,
+        role: "user",
+        content: text,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, tempMessage]);
+
       const body = { message: text };
       if (options.provider_slug && options.model) {
         body.provider_slug = options.provider_slug;
         body.model = options.model;
       }
-      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/completions`, body);
-      await loadMessages(activeChatId);
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
+      await loadMessages(chatId);
       await loadRouter();
+      await loadChats();
       // Auto-title the first user message if the chat still has the default name.
-      const chat = chats.find((c) => c.id === activeChatId);
-      if (chat && chat.title === "Nueva conversación") {
+      const chat = chats.find((c) => c.id === chatId) || { title: "Nueva conversación" };
+      if (chat.title === "Nueva conversación") {
         const words = text.trim().split(/\s+/).slice(0, 6);
         const generated = words.join(" ") + (words.length >= 6 ? "…" : "");
-        if (generated) await renameChat(activeChatId, generated);
+        if (generated) await renameChat(chatId, generated);
       }
     } catch (err) {
       setError(err.message);
@@ -646,7 +709,7 @@ function SpaceView({ activeWorkspace }) {
         <div className="stage-title"><h2>{activeChat ? activeChat.title : "Selecciona o crea un chat"}</h2><p>{activeChat ? "Conversación con el router SL1a." : "Elige un hilo para empezar."}</p></div>
         <span className="pill"><Icon name="loom" size={16}/>SL1a</span>
       </div>
-      <div className="message-area">
+      <div className="message-area" ref={messageAreaRef}>
         {loading && <div style={S.loading}>Cargando…</div>}
         {error && <div style={S.error}>{error}</div>}
         {!activeChat && !loading && <EmptyMessages activeWorkspace={activeWorkspace}/>}
@@ -675,9 +738,12 @@ function SpaceView({ activeWorkspace }) {
             })()}
           </div>
         ))}
-        {busy && <div className="message message-assistant"><div className="message-content"><em>El telar está pensando…</em></div></div>}
+        {busy && <div className="message message-assistant">
+          <div className="message-meta">FaberLoom</div>
+          <div className="message-content"><ThinkingSteps stepIndex={thinkingStepIndex}/></div>
+        </div>}
       </div>
-      <Composer onSend={sendMessage} disabled={busy || !activeChat} routerStatus={routerStatus} modelAllowlist={modelAllowlist}/>
+      <Composer onSend={sendMessage} disabled={busy} placeholder={activeChat ? undefined : "Escribe para crear un chat nuevo…"} routerStatus={routerStatus} modelAllowlist={modelAllowlist}/>
     </section>
     <SeamPanel/>
   </div>;
