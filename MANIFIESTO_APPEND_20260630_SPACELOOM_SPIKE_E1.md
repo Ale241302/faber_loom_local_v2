@@ -5,13 +5,16 @@ status: VIGENTE
 visibility: [INTERNAL]
 domain: Gobernanza (IDX_GOBERNANZA)
 type: MANIFIESTO_APPEND
-stamp: 2026-06-30 -- Registro de spike no canónico para evitar colisión de naming con FaberLoom Foundation Beta
+stamp: VIGENTE — 2026-06-30
 aprobador: CEO
 aplica_a: [FaberLoom, SpaceLoom, MWT]
 relacionado:
   - PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md
   - PLB_FB_FOUNDATION_BETA_v1.md
   - IDX_FB_FOUNDATION_BETA.md
+  - IDX_GOBERNANZA.md (v1.6)
+  - ENT_GOB_DECISIONES.md (v2.3)
+  - ENT_GOB_PENDIENTES.md (v16.0)
   - docs/MANIFIESTO_APPEND_20260501_FOUNDATION_BETA_FIRMADO.md
 supersede: n/a
 run_id: SPIKE-E1-2026-06-30
