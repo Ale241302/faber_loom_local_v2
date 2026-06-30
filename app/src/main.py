@@ -110,7 +110,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="FaberLoom", version=_read_version(), lifespan=lifespan)
     app.add_middleware(LocalhostCSRFMiddleware)
     app.include_router(public_router)
-    app.include_router(auth_router)
+    app.include_router(auth_router, prefix="/api")
     app.include_router(api_router, dependencies=[Depends(get_current_user)])
 
     @app.exception_handler(PermissionError)
