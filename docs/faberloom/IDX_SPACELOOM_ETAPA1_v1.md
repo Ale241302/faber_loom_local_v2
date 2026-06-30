@@ -77,18 +77,18 @@ Este es el índice maestro del track **SpaceLoom Etapa 1**: app de escritorio si
 | `SCH_FB_SKILL_MANIFEST_v2.md` | VIGENTE | Schema de SKILL.md (compartido con Foundation Beta) |
 | `SPEC_FB_E0_5_VALIDATION_SLICE_v1.md` | VIGENTE | Criterios de adopción (compartido con Foundation Beta) |
 
-### Specs/closers por sub-hito (pendientes de producir)
-| Sub-hito | Documento esperado | Status | Bloqueador |
+### Specs/closers por sub-hito
+| Sub-hito | Documento | Status | Evidencia |
 |---|---|---|---|
-| SL0 | `SPEC_SPACELOOM_SL0_v1.md` o `SL0_CLOSER_REPORT_v1.md` | PENDIENTE | Ratificar freeze |
-| SL1a | `SPEC_SPACELOOM_SL1a_v1.md` | PENDIENTE | SL0 |
-| SL1b | `SPEC_SPACELOOM_SL1b_v1.md` | PENDIENTE | SL1a |
-| SL2 | `SPEC_SPACELOOM_SL2_v1.md` | PENDIENTE | SL1b |
-| SL3a | `SPEC_SPACELOOM_SL3a_v1.md` | PENDIENTE | SL2 |
-| SL3b/c | `SPEC_SPACELOOM_SL3bc_v1.md` | PENDIENTE | SL3a |
-| SL3.5 | `SPEC_SPACELOOM_SL3_5_v1.md` | PENDIENTE | SL3 |
-| SL5 | `SPEC_SPACELOOM_SL5_v1.md` | DIFERIDO | SL3.5 + credenciales IMAP |
-| SL4 | `SPEC_SPACELOOM_SL4_v1.md` | PENDIENTE | SL3.5 (o SL5 si no se difiere) |
+| SL0 | `SPEC_SPACELOOM_SL0_v1.md` | VIGENTE v1.0 | 6 tests; app vacía corre + seed idempotente |
+| SL1a | `SPEC_SPACELOOM_SL1a_v1.md` | VIGENTE v1.0 | 34 tests; router OpenAI/Kimi + fallback + gestión chats |
+| SL1b | `SPEC_SPACELOOM_SL1b_v1.md` | VIGENTE v1.0 | 29 tests; HITL + edit_pct promedio 3.66% |
+| SL2 | `SPEC_SPACELOOM_SL2_v1.md` | VIGENTE v1.0 | 25 tests; KB multi-formato + herencia + canarios |
+| SL3a | `SPEC_SPACELOOM_SL3a_v1.md` | VIGENTE v1.0 | 39 tests; @cotizador + authoring HITL + manifest |
+| SL3b/c | `SPEC_SPACELOOM_SL3bc_v1.md` | VIGENTE v1.0 | 19 tests; WorkLoom + gold loop + segundo gate |
+| SL3.5 | `SPEC_SPACELOOM_SL3_5_v1.md` | VIGENTE v1.0 | 17 tests; SQLCipher + HMAC + fuga = 0 |
+| SL5 | `SPEC_SPACELOOM_SL5_v1.md` | DIFERIDO v1.0 | Correo recortable; `email_connector_enabled=false` |
+| SL4 | `SPEC_SPACELOOM_SL4_v1.md` | VIGENTE v1.0 | 11 tests; .exe Windows + installer + auto-update |
 
 > **Nota:** en `harness/reports/` ya existen closers informales (`SL1b_CLOSER_REPORT_v1.md`, `SL2_CLOSER_REPORT_v1.md`, etc.) producto del build. La tabla de arriba se refiere a specs formales en `docs/faberloom/`.
 
@@ -133,6 +133,6 @@ Este es el índice maestro del track **SpaceLoom Etapa 1**: app de escritorio si
 ## Pendientes de este índice
 
 1. Ratificar `DEC_FB_SPACELOOM_FREEZE_SCOPE_v1.md`.
-2. Generar specs/closers formales por SL en `docs/faberloom/`.
-3. Decidir si `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md` se mueve a `docs/faberloom/` o se deja en raíz.
-4. Actualizar `IDX_GOBERNANZA.md` cuando este índice pase a VIGENTE.
+2. Decidir si `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md` se mueve a `docs/faberloom/` o se deja en raíz.
+3. Actualizar `IDX_GOBERNANZA.md` cuando este índice pase a VIGENTE.
+4. Reactivar `SPEC_SPACELOOM_SL5_v1.md` si el CEO decide que el correo entra en Etapa 1.
