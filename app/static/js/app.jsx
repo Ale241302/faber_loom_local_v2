@@ -443,9 +443,19 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder 
     setModel("");
   };
 
+  const handleKeyDown = (event) => {
+    if (event.key !== "Enter") return;
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl/Cmd + Enter inserts a newline (default textarea behaviour).
+      return;
+    }
+    event.preventDefault();
+    submit(event);
+  };
+
   return <form className="composer-shell" onSubmit={submit} aria-label="Composer de chat">
     <div className="composer">
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled}/>
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled}/>
       <div className="composer-actions">
         <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor">
           <Icon name="route" size={16}/>{provider ? (PROVIDER_LABELS[provider] || provider) : "Auto"}
