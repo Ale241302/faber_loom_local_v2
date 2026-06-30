@@ -2278,6 +2278,7 @@ function Canvas({ nav, activeWorkspace, status }) {
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -2289,25 +2290,81 @@ function LoginScreen({ onLogin }) {
       const res = await apiPost("/api/auth/login", { email, password });
       onLogin(res.email, res.access_token);
     } catch (err) {
-      setError("Credenciales inválidas");
+      setError("Correo o contraseña incorrectos");
     }
     setBusy(false);
   };
 
-  return <div className="login-shell">
-    <form className="login-card" onSubmit={submit}>
-      <div className="login-brand"><BrandMark/><span>FaberLoom</span></div>
-      <p className="login-lead">Inicia sesión para continuar</p>
-      {error && <div className="login-error">{error}</div>}
-      <label style={S.label}>Correo
-        <input type="email" style={S.input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@empresa.com" required autoFocus/>
-      </label>
-      <label style={S.label}>Contraseña
-        <input type="password" style={S.input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required/>
-      </label>
-      <button type="submit" style={{ ...S.buttonPrimary, width: "100%", marginTop: 8 }} disabled={busy || !email || !password}>{busy ? "Entrando…" : "Entrar"}</button>
-    </form>
-  </div>;
+  return (
+    <div className="login-shell">
+      <div className="login-bg" aria-hidden="true" />
+      <form className="login-card" onSubmit={submit}>
+        <div className="login-mark"><BrandMark /></div>
+        <h1 className="login-title">FaberLoom</h1>
+        <p className="login-tagline">La IA prepara. Vos tejés.</p>
+
+        {error && <div className="login-error"><Icon name="shield" size={16} />{error}</div>}
+
+        <div className="login-field">
+          <label htmlFor="login-email">Correo electrónico</label>
+          <input
+            id="login-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tu@empresa.com"
+            required
+            autoFocus
+            autoComplete="email"
+          />
+        </div>
+
+        <div className="login-field">
+          <label htmlFor="login-password">Contraseña</label>
+          <div className="login-password-wrap">
+            <input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="login-password-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              tabIndex={-1}
+            >
+              <Icon name={showPassword ? "eye-off" : "eye"} size={18} />
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="login-button"
+          disabled={busy || !email || !password}
+        >
+          {busy ? (
+            <>
+              <span className="login-spinner" aria-hidden="true" />
+              Entrando…
+            </>
+          ) : (
+            <>
+              Entrar
+              <Icon name="arrow-up" size={16} />
+            </>
+          )}
+        </button>
+
+        <p className="login-hint">Solo usuarios autorizados.</p>
+      </form>
+    </div>
+  );
 }
 
 function AuthGate() {
