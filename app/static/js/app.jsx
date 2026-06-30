@@ -306,11 +306,14 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
       </>}
     </div>
-    <div className="userfoot" style={{ cursor: "pointer" }} onClick={onLogout} title="Cerrar sesión">
+    <div className="userfoot" onClick={onLogout} title="Cerrar sesión">
       <div className="avatar">{(user?.email || "U").slice(0, 2).toUpperCase()}</div>
-      <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-        <div style={{ color: "var(--text-primary)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email || "Usuario"}</div>
-        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>ADMIN · FaberLoom</div>
+      <div className="userfoot-meta">
+        <div className="userfoot-email">{user?.email || "Usuario"}</div>
+        <div className="userfoot-role">ADMIN · FaberLoom</div>
+      </div>
+      <div className="userfoot-logout">
+        <Icon name="log-out" size={18} />
       </div>
     </div>
   </aside>;

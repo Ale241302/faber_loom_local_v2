@@ -624,6 +624,11 @@ button { background: none; border: none; cursor: pointer; }
 /* User foot */
 .userfoot { border-top: 1px solid var(--border-subtle); margin: 8px 8px 0; padding: 10px 8px 4px; display: flex; gap: 9px; align-items: center; cursor: pointer; border-radius: var(--r-sm); transition: background .16s; color: var(--text-secondary); font-size: 12px; }
 .userfoot:hover { background: var(--bg-hover); color: var(--text-primary); }
+.userfoot-meta { line-height: 1.2; min-width: 0; flex: 1; }
+.userfoot-email { color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userfoot-role { font-size: 10px; color: var(--text-muted); }
+.userfoot-logout { margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--text-muted); transition: color .16s, background .16s; }
+.userfoot:hover .userfoot-logout { color: var(--coral); background: var(--coral-soft); }
 .avatar { width: 28px; height: 28px; min-width: 28px; border-radius: 50%; background: var(--bg-raised); display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--coral); }
 
 /* ════════ RESPONSIVE ════════ */
