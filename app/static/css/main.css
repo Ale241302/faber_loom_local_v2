@@ -535,7 +535,7 @@ button { background: none; border: none; cursor: pointer; }
 .message-user { align-self: flex-end; }
 .message-assistant { align-self: flex-start; }
 .message-meta { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); }
-.message-content { padding: 12px 14px; border-radius: var(--r-md); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.message-content { padding: 12px 14px; border-radius: var(--r-md); font-size: 13px; line-height: 1.55; white-space: pre-wrap; user-select: text; cursor: text; }
 .message-user .message-content { background: var(--coral-soft); border: 1px solid var(--coral-deep); color: var(--text-primary); border-bottom-right-radius: 4px; }
 .message-assistant .message-content { background: var(--bg-raised); border: 1px solid var(--border-default); color: var(--text-primary); border-bottom-left-radius: 4px; }
 .empty-state { max-width: 520px; display: grid; justify-items: center; text-align: center; padding: 28px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); box-shadow: var(--shadow-sm); margin: auto; }
