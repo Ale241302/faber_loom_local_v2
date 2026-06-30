@@ -19,6 +19,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request
 from pydantic import BaseModel
 
 from .audit import audit_writer
+from .auth import get_current_user
 from .context import SYSTEM_WORKSPACE_ID, Context, system_context
 from .connectors.imap import fetch_unread_messages, send_message
 from .db import (
@@ -167,6 +168,7 @@ class PromoteGoldCandidateRequest(BaseModel):
 
 
 router = APIRouter(prefix="/api", tags=["api"])
+public_router = APIRouter(prefix="/api", tags=["public"])
 
 
 def _confirmation_token(resource_id: str) -> str:
@@ -195,10 +197,14 @@ _SYSTEM_PROMPT = (
 
 
 def context_from_request(request: Request, workspace_id: str | None = None) -> Context:
-    # SL1a is local single-user. By default we use constant actor identity so the
-    # future multi-tenant costura is not polluted by client-controlled headers.
-    # Headers are honored only when FABERLOOM_DEV_TRUST_HEADERS is set.
-    if os.getenv("FABERLOOM_DEV_TRUST_HEADERS"):
+    # Authenticated user takes precedence when auth is active.
+    user = getattr(request.state, "user", None)
+    if user:
+        tenant_id = None
+        user_id = user.get("sub") or "local"
+        actor_id = user_id
+        actor_role = user.get("role") or "owner"
+    elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS"):
         tenant_id = request.headers.get("x-tenant-id") or None
         user_id = request.headers.get("x-user-id") or "local"
         actor_id = request.headers.get("x-actor-id") or user_id
@@ -276,7 +282,7 @@ def get_workspace_db(
         data_conn.close()
 
 
-@router.get("/health", response_model=HealthRead)
+@public_router.get("/health", response_model=HealthRead)
 def health() -> HealthRead:
     return HealthRead(
         status="ok",

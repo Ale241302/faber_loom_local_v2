@@ -88,10 +88,14 @@ function readBootstrap() {
   return { workspaces, activeWorkspaceId: boot.activeWorkspaceId || boot.active_workspace_id || (workspaces[0] && workspaces[0].id) || null };
 }
 
-const API_HEADERS = { "Content-Type": "application/json", "x-user-id": "local" };
+function authHeaders() {
+  const token = localStorage.getItem("faberloom_token");
+  if (token) return { "Authorization": `Bearer ${token}` };
+  return { "x-user-id": "local" };
+}
 
 async function apiGet(path) {
-  const res = await fetch(path, { headers: { "x-user-id": "local" } });
+  const res = await fetch(path, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -100,7 +104,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path, { method: "POST", headers: API_HEADERS, body: JSON.stringify(body || {}) });
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -110,7 +114,7 @@ async function apiPost(path, body) {
 }
 
 async function apiPatch(path, body) {
-  const res = await fetch(path, { method: "PATCH", headers: API_HEADERS, body: JSON.stringify(body || {}) });
+  const res = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -119,7 +123,7 @@ async function apiPatch(path, body) {
 }
 
 async function apiDelete(path) {
-  const res = await fetch(path, { method: "DELETE", headers: API_HEADERS });
+  const res = await fetch(path, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -180,7 +184,7 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden }) {
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout }) {
   const [counts, setCounts] = useState({});
 
   const loadCounts = useCallback(async () => {
@@ -302,10 +306,11 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
       </>}
     </div>
-    <div className="userfoot"><div className="avatar">AA</div>
-      <div style={{ lineHeight: 1.2 }}>
-        <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>Usuario</div>
-        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>OWNER · FaberLoom</div>
+    <div className="userfoot" style={{ cursor: "pointer" }} onClick={onLogout} title="Cerrar sesión">
+      <div className="avatar">{(user?.email || "U").slice(0, 2).toUpperCase()}</div>
+      <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+        <div style={{ color: "var(--text-primary)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email || "Usuario"}</div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>ADMIN · FaberLoom</div>
       </div>
     </div>
   </aside>;
@@ -2270,7 +2275,79 @@ function Canvas({ nav, activeWorkspace, status }) {
   </main>;
 }
 
-function App() {
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiPost("/api/auth/login", { email, password });
+      onLogin(res.email, res.access_token);
+    } catch (err) {
+      setError("Credenciales inválidas");
+    }
+    setBusy(false);
+  };
+
+  return <div className="login-shell">
+    <form className="login-card" onSubmit={submit}>
+      <div className="login-brand"><BrandMark/><span>FaberLoom</span></div>
+      <p className="login-lead">Inicia sesión para continuar</p>
+      {error && <div className="login-error">{error}</div>}
+      <label style={S.label}>Correo
+        <input type="email" style={S.input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@empresa.com" required autoFocus/>
+      </label>
+      <label style={S.label}>Contraseña
+        <input type="password" style={S.input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required/>
+      </label>
+      <button type="submit" style={{ ...S.buttonPrimary, width: "100%", marginTop: 8 }} disabled={busy || !email || !password}>{busy ? "Entrando…" : "Entrar"}</button>
+    </form>
+  </div>;
+}
+
+function AuthGate() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("faberloom_token");
+    const email = localStorage.getItem("faberloom_user");
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    apiGet("/api/workspaces")
+      .then(() => setUser({ email }))
+      .catch(() => {
+        localStorage.removeItem("faberloom_token");
+        localStorage.removeItem("faberloom_user");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleLogin = (email, token) => {
+    localStorage.setItem("faberloom_token", token);
+    localStorage.setItem("faberloom_user", email);
+    setUser({ email });
+  };
+
+  const logout = () => {
+    localStorage.removeItem("faberloom_token");
+    localStorage.removeItem("faberloom_user");
+    setUser(null);
+  };
+
+  if (loading) return <div className="app-shell" style={{ display: "grid", placeItems: "center" }}><div className="loading">Cargando…</div></div>;
+  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  return <App user={user} onLogout={logout} />;
+}
+
+function App({ user, onLogout }) {
   const boot = useMemo(readBootstrap, []);
   const [mode, setMode] = useState("operar");
   const [nav, setNav] = useState("space");
@@ -2297,8 +2374,7 @@ function App() {
   useEffect(() => {
     if (boot && boot.workspaces.length) return;
     let cancelled = false;
-    fetch("/api/workspaces", { headers: { "x-user-id": "local" } })
-      .then((response) => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); })
+    apiGet("/api/workspaces")
       .then((payload) => {
         if (cancelled) return;
         const list = Array.isArray(payload) ? payload : (payload.workspaces || []);
@@ -2337,7 +2413,7 @@ function App() {
     <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
-      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen}/>
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout}/>
       <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>
@@ -2345,4 +2421,4 @@ function App() {
   </div>;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(<AuthGate/>);

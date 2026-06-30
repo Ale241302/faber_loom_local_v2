@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -16,7 +16,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from urllib.parse import urlparse
 
-from .api import router as api_router
+from .api import public_router, router as api_router
+from .auth import auth_router, get_current_user
 from .db import db_session, initialize_database
 from .router.config_store import load_env_file
 from .seed import seed_demo_workspace
@@ -108,7 +109,9 @@ def _read_version() -> str:
 def create_app() -> FastAPI:
     app = FastAPI(title="FaberLoom", version=_read_version(), lifespan=lifespan)
     app.add_middleware(LocalhostCSRFMiddleware)
-    app.include_router(api_router)
+    app.include_router(public_router)
+    app.include_router(auth_router)
+    app.include_router(api_router, dependencies=[Depends(get_current_user)])
 
     @app.exception_handler(PermissionError)
     def permission_error_handler(request, exc):  # noqa: ARG001
