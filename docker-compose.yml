@@ -1,0 +1,40 @@
+# ════════════════════════════════════════════════════════════════════
+# FaberLoom · VPS docker-compose
+# Replaces the old FastAPI + Next.js + Postgres stack with the new
+# FastAPI + static React (UMD) + SQLite stack.
+#
+# The mwt nginx proxy routes app.faberloom.ai to the faberloom-api
+# container on the shared mwt_default network.
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: faberloom-api
+    env_file:
+      - .env
+    environment:
+      FABERLOOM_HOST: 0.0.0.0
+      FABERLOOM_PORT: 8000
+      FABERLOOM_CONFIG_DIR: /data
+      FABERLOOM_DB_PATH: /data/faberloom.sqlite3
+      FABERLOOM_PUBLIC_HOST: app.faberloom.ai
+    volumes:
+      - ./data:/data
+    ports:
+      - "8200:8000"
+    networks:
+      - mwt_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  mwt_default:
+    external: true

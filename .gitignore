@@ -30,6 +30,7 @@ ENV/
 
 # Application runtime data
 app/data/
+data/
 app/dist/
 app/build/
 app/graphify-out/

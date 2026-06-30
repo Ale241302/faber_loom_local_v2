@@ -50,22 +50,47 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def _trusted_hosts() -> set[str | None]:
+    """Return the set of hostnames allowed for mutating browser requests.
+
+    Localhost is always trusted.  Add extra hosts via ``FABERLOOM_CSRF_HOSTS``
+    (comma-separated hostnames) or a single ``FABERLOOM_PUBLIC_HOST``.
+    """
+
+    hosts: set[str | None] = {None, "localhost", "127.0.0.1"}
+    if os.getenv("FABERLOOM_PUBLIC_HOST"):
+        hosts.add(os.getenv("FABERLOOM_PUBLIC_HOST"))
+    extra = os.getenv("FABERLOOM_CSRF_HOSTS", "")
+    for host in extra.split(","):
+        host = host.strip()
+        if host:
+            hosts.add(host)
+    return hosts
+
+
 class LocalhostCSRFMiddleware(BaseHTTPMiddleware):
     """Reject cross-origin mutating requests against the local API.
 
-    The UI is served from http://127.0.0.1:<port>.  Browsers send an Origin
-    header on cross-origin POST/PUT/PATCH/DELETE; if it is present and not
-    localhost/127.0.0.1 we block it.  Requests with no Origin (e.g. the test
-    client or a same-origin fetch) are allowed so the local-first UX keeps
-    working without a separate auth token.
+    The UI is served from http://127.0.0.1:<port> locally.  Browsers send an
+    Origin header on cross-origin POST/PUT/PATCH/DELETE; if it is present and
+    not in the trusted host list we block it.  Requests with no Origin (e.g.
+    the test client or a same-origin fetch) are allowed so the local-first UX
+    keeps working without a separate auth token.
+
+    For VPS deployments, set ``FABERLOOM_PUBLIC_HOST`` (e.g.
+    ``app.faberloom.ai``) or ``FABERLOOM_CSRF_HOSTS``.
     """
+
+    def __init__(self, app, trusted_hosts: set[str | None] | None = None):
+        super().__init__(app)
+        self.trusted_hosts = trusted_hosts or _trusted_hosts()
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("origin") or request.headers.get("referer") or ""
             if origin:
                 parsed = urlparse(origin)
-                if parsed.hostname not in (None, "localhost", "127.0.0.1"):
+                if parsed.hostname not in self.trusted_hosts:
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "Cross-origin request rejected"},
