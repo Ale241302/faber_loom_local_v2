@@ -2626,7 +2626,6 @@ def api_get_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPConfigRead:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2643,7 +2642,6 @@ def api_update_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPConfigRead:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2673,7 +2671,6 @@ def api_test_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPTestResponse:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2718,7 +2715,6 @@ def api_list_imap_configs(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> list[EmailAccountRead]:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2732,7 +2728,6 @@ def api_create_imap_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> EmailAccountRead:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2761,7 +2756,6 @@ def api_update_imap_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> EmailAccountRead:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2795,7 +2789,6 @@ def api_delete_imap_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> None:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2809,7 +2802,6 @@ def api_get_email_signature(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> dict[str, str]:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2823,7 +2815,6 @@ def api_update_email_signature(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceRead:
-    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")

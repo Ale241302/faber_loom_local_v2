@@ -57,6 +57,43 @@ def test_mail_endpoints_return_404_when_feature_disabled(client: TestClient) -> 
     assert client.get(f"/api/workspaces/{workspace_id}/mail").status_code == 404
     assert client.post(f"/api/workspaces/{workspace_id}/mail/sync").status_code == 404
     assert client.post(f"/api/workspaces/{workspace_id}/mail/msg_draft/draft").status_code == 404
-    assert client.get(f"/api/workspaces/{workspace_id}/admin/smtp-config").status_code == 404
-    assert client.get(f"/api/workspaces/{workspace_id}/admin/imap-config").status_code == 404
-    assert client.get(f"/api/workspaces/{workspace_id}/email-signature").status_code == 404
+
+
+def test_admin_email_config_is_editable_when_feature_disabled(client: TestClient) -> None:
+    workspace_id = _create_workspace(client, "Mail Admin")
+    # SMTP config may be missing, but the endpoint must not be gated by the feature flag.
+    smtp_get = client.get(f"/api/workspaces/{workspace_id}/admin/smtp-config")
+    assert smtp_get.status_code in (200, 404), smtp_get.text
+    imap_get = client.get(f"/api/workspaces/{workspace_id}/admin/imap-config")
+    assert imap_get.status_code == 200, imap_get.text
+    assert imap_get.json() == []
+    sig_get = client.get(f"/api/workspaces/{workspace_id}/email-signature")
+    assert sig_get.status_code == 200, sig_get.text
+    assert sig_get.json()["email_signature"] == ""
+
+    # Updating the signature must succeed.
+    sig_put = client.put(
+        f"/api/workspaces/{workspace_id}/email-signature",
+        json={"email_signature": "Saludos,\nEquipo"},
+    )
+    assert sig_put.status_code == 200, sig_put.text
+    assert sig_put.json()["email_signature"] == "Saludos,\nEquipo"
+
+    # Creating an IMAP account must succeed.
+    imap_post = client.post(
+        f"/api/workspaces/{workspace_id}/admin/imap-config",
+        json={
+            "label": "Principal",
+            "provider": "imap",
+            "host": "imap.ejemplo.com",
+            "port": 993,
+            "username": "user@example.com",
+            "password": "secret",
+            "folders_json": '["INBOX"]',
+            "auth_type": "password",
+            "read_only": 1,
+            "is_default": 1,
+        },
+    )
+    assert imap_post.status_code == 201, imap_post.text
+    assert imap_post.json()["host"] == "imap.ejemplo.com"

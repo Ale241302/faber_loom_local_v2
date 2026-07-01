@@ -2394,14 +2394,12 @@ function AuditView({ activeWorkspace, features }) {
 
   if (!activeWorkspace) return <WorkspaceRequired icon="audit" title="Auditoría"/>;
 
-  const tabs = emailEnabled
-    ? [
-        { id: "audit", label: "Auditoría" },
-        { id: "imap", label: "IMAP" },
-        { id: "smtp", label: "SMTP" },
-        { id: "signature", label: "Firma" },
-      ]
-    : [{ id: "audit", label: "Auditoría" }];
+  const tabs = [
+    { id: "audit", label: "Auditoría" },
+    { id: "imap", label: "IMAP" },
+    { id: "smtp", label: "SMTP" },
+    { id: "signature", label: "Firma" },
+  ];
 
   return <div className="classic" style={S.view}>
     <div className="vhead">
@@ -2413,10 +2411,9 @@ function AuditView({ activeWorkspace, features }) {
       </div>
     </div>
     {tab === "audit" && <AuditHistoryPanel activeWorkspace={activeWorkspace}/>}
-    {emailEnabled && tab === "imap" && <IMAPConfigPanel activeWorkspace={activeWorkspace}/>}
-    {emailEnabled && tab === "smtp" && <SMTPConfigPanel activeWorkspace={activeWorkspace}/>}
-    {emailEnabled && tab === "signature" && <EmailSignaturePanel activeWorkspace={activeWorkspace}/>}
-    {!emailEnabled && tab !== "audit" && <div style={S.empty}>El conector de correo está deshabilitado. Actívalo con la variable de entorno FABERLOOM_ENABLE_EMAIL_CONNECTOR=true.</div>}
+    {tab === "imap" && <IMAPConfigPanel activeWorkspace={activeWorkspace}/>}
+    {tab === "smtp" && <SMTPConfigPanel activeWorkspace={activeWorkspace}/>}
+    {tab === "signature" && <EmailSignaturePanel activeWorkspace={activeWorkspace}/>}
   </div>;
 }
 
