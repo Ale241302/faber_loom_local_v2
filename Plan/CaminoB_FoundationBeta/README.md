@@ -88,17 +88,17 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 
 ## 6. Checklist consolidado
 
-### M16 Tenant Isolation
-- [ ] Esquema Postgres con `tenant_id NOT NULL` en tablas aislables
-- [ ] RLS `FORCE` + policies `USING (tenant_id = current_setting('app.tenant_id')::uuid)`
-- [ ] Middleware Django setea `app.tenant_id` en cada request
-- [ ] Redis keys con prefijo `tenant:{tenant_id}:`
-- [ ] Celery `with_tenant_session` + `DISCARD ALL` + assert
-- [ ] MinIO paths `/tenants/{tenant_id}/...` con anti path-traversal
-- [ ] pgvector partición por tenant para N2+
-- [ ] LiteLLM Proxy recibe `tenant_id` en metadata
-- [ ] Letta namespace por tenant
-- [ ] 5 tests cross-tenant pasan en CI
+### M16 Tenant Isolation ✅ SPINE gate verde
+- [x] Esquema Postgres con `tenant_id NOT NULL` en tablas aislables
+- [x] RLS `FORCE` + policies `USING (tenant_id = current_setting('app.tenant_id')::uuid)`
+- [x] Middleware Django setea `app.tenant_id` en cada request
+- [x] Redis keys con prefijo `tenant:{tenant_id}:`
+- [x] Celery `TenantTask` + `RESET app.tenant_id` + assert
+- [x] MinIO paths `/tenants/{tenant_id}/...` con anti path-traversal
+- [ ] pgvector partición por tenant para N2+ (helper listo; partición E2+)
+- [x] LiteLLM Proxy recibe `tenant_id` en metadata
+- [x] Letta namespace por tenant
+- [x] Tests cross-tenant pasan en VPS (`pytest -q --create-db` → 12 passed)
 
 ### M08 Auth Session
 - [ ] Modelo `User` con hash argon2id
@@ -172,6 +172,7 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 | Eventos E1 | Subset de 6 eventos | M15 especifica scope E1 |
 | pgvector | Partición por tenant para todo N2+ | Simplifica operación y cumple M16 |
 | Outbox retención | 7 días publicados / stream 24h | Recuperación sin acumulación infinita |
+| App DB role | No superuser, `CREATEDB` solo en tests | Superusers bypass RLS; el dueño de la tabla debe estar sujeto a `FORCE RLS` |
 
 ## 9. Archivos generados
 
