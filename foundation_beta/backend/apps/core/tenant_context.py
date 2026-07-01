@@ -21,7 +21,8 @@ def clear_db_tenant() -> None:
     from django.db import connection
 
     with connection.cursor() as cursor:
-        cursor.execute("DISCARD ALL")
+        # RESET works inside or outside a transaction, unlike DISCARD ALL.
+        cursor.execute("RESET app.tenant_id")
     tenant_ctx.set(None)
 
 

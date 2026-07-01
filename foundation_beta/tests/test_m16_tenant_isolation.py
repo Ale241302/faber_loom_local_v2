@@ -83,7 +83,7 @@ def test_redis_key_isolated_by_tenant_prefix(tenant_a, tenant_b):
 
     # A non-prefixed key is rejected outright.
     with pytest.raises(ValueError):
-        tenant_key(tenant_a.id, "../../global")
+        require_tenant_prefix("global:session:123", tenant_a.id)
 
 
 # ---------------------------------------------------------------------------
