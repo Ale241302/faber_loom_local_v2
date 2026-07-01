@@ -1,0 +1,582 @@
+case_id: case_sf_07
+industry: safety_footwear
+severity: medium
+description: |
+  RFQ por 100 pares Marluvas BC-7240 + 50 pares Tecmater BC-3120 + 30 pares
+  TC-5500 · cliente quiere split en 2 entregas (Saltillo + Querétaro).
+  Sistema debe propuesta con consolidación · split flete.
+
+setup:
+  vertical_spec_object: safety_footwear
+  catalog:
+    - sku: "BC-7240"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera composite · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "composite"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240-2025-007"
+            expiry_date: "2026-04-15"
+            lab_acreditado: "Intertek Brasil"
+      stock:
+        available: 400
+        warehouses:
+          - location: "CDMX Hub"
+            qty: 400
+            reserved: 50
+        freshness_seconds: 120
+      pricing:
+        list_price: 68.50
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.4
+      sku_status: "active"
+      margin_calculated: 0.28
+    - sku: "BC-3120"
+      brand: "Tecmater"
+      description: "Calzado agro industrial · puntera acero · plantilla kevlar · suela PU · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "I/75 C/75"
+        protection:
+          toe: "steel"
+          midsole: "kevlar"
+          outsole: "PU antideslizante"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho"]
+        applications: ["agricola", "ganadero", "industrial ligero"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC3120-2025-001"
+            expiry_date: "2026-03-10"
+            lab_acreditado: "SGS Brasil"
+      stock:
+        available: 250
+        warehouses:
+          - location: "CDMX Hub"
+            qty: 250
+            reserved: 30
+        freshness_seconds: 120
+      pricing:
+        list_price: 55.00
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.2
+      sku_status: "active"
+      margin_calculated: 0.32
+    - sku: "TC-5500"
+      brand: "Genérico"
+      description: "Zapato seguridad industrial · puntera acero · plantilla kevlar · suela PU · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "I/75 C/75"
+        protection:
+          toe: "steel"
+          midsole: "kevlar"
+          outsole: "PU"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho"]
+        applications: ["industrial ligero", "logística"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-TC5500-2025-001"
+            expiry_date: "2026-02-28"
+            lab_acreditado: "SGS Brasil"
+      stock:
+        available: 600
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 600
+            reserved: 80
+        freshness_seconds: 120
+      pricing:
+        list_price: 32.00
+        currency: "USD"
+        version: "2025-04-20"
+        freshness_hours: 8
+      lead_time:
+        days: 3
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 12
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 50
+        weight_kg_per_unit: 0.9
+      sku_status: "active"
+      margin_calculated: 0.234
+  customer:
+    customer_id: "CLI-MX-007"
+    name: "Agroindustrias del Norte S.A. de C.V."
+    country: "MX"
+    city: "Saltillo"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "AIN-4567890123"
+    vertical: "agroindustria_mexicana"
+    delivery_sites:
+      - site_name: "Planta Saltillo"
+        address: "Saltillo, Coahuila"
+        primary: true
+      - site_name: "Sucursal Querétaro"
+        address: "Querétaro, QRO"
+        primary: false
+    historical_data:
+      last_order_date: "2025-04-18"
+      avg_order_value_usd: 6500
+      orders_ytd: 3
+      complaints_12m: 0
+      preferred_delivery: "CDMX Hub"
+    regulatory_context:
+      requires_astm_f2413: true
+      max_cert_age_days: 365
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_PRICING_CALCULATOR"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_MX"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:safety_footwear"]
+      layer_3b_metadata: ["compliance_profile:safety_footwear", "tenant:MWT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+    glossary_overrides:
+      - term: "punto"
+        meaning: "talla_numérica_regional"
+        applies_to: ["MX"]
+      - term: "calzado agro"
+        meaning: "safety_footwear_agricola"
+        applies_to: ["MX", "CO"]
+
+input:
+  channel: email
+  from:
+    name: "C.P. Ana López"
+    email: "a.lopez@agronorte.mx"
+    role: "Gerente de Compras"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización mixta calzado safety — 180 pares split Saltillo/Querétaro"
+  body_text: |
+    Estimados,
+
+    Solicitamos cotización para pedido mixto de calzado safety:
+
+    - 100 pares bota dieléctrica Marluvas BC-7240 talla 26 (8 punto),
+      ancho normal, puntera composite, plantilla acero
+    - 50 pares calzado agro Tecmater BC-3120 talla 28 (10 punto),
+      ancho normal, puntera acero, plantilla kevlar
+    - 30 pares zapato seguridad TC-5500 talla 24 (6 punto),
+      ancho normal, puntera acero, plantilla kevlar
+
+    Split de entrega:
+    - Saltillo (planta principal): 120 pares total
+    - Querétaro (sucursal): 60 pares total
+
+    Detalle split no definido — ustedes sugieran distribución óptima.
+
+    Entrega DDP. Plazo 7 días. Certificaciones vigentes.
+
+    Quedo atenta.
+
+    C.P. Ana López
+    Gerente de Compras
+    Agroindustrias del Norte
+  attachments: []
+  thread_id: null
+  timestamp: "2025-05-02T10:30:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["mixed_order", "split_delivery", "multiple_sku"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.90
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "BC-7240"
+          qty: 100
+        - type: "product"
+          value: "BC-3120"
+          qty: 50
+        - type: "product"
+          value: "TC-5500"
+          qty: 30
+        - type: "variant_sizing"
+          value: "talla 24, 26, 28 (MX)"
+        - type: "delivery_split"
+          value: "Saltillo 120 / Querétaro 60"
+        - type: "incoterm"
+          value: "DDP"
+      latency_ms_max: 1200
+      triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-MX-007", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-AGN-2025-Q1"
+      delivery_sites: ["Saltillo", "Querétaro"]
+      freshness: "2025-05-02T10:28:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: BC-7240, BC-3120, TC-5500"
+      - "qty_breakdown: {BC-7240:100, BC-3120:50, TC-5500:30}"
+    expected_output:
+      items:
+        - sku: "BC-7240"
+          warehouse: "CDMX Hub"
+          available: 400
+          reserved: 50
+          fulfillable_qty: 350
+        - sku: "BC-3120"
+          warehouse: "CDMX Hub"
+          available: 250
+          reserved: 30
+          fulfillable_qty: 220
+        - sku: "TC-5500"
+          warehouse: "Bogotá Principal"
+          available: 600
+          reserved: 80
+          fulfillable_qty: 520
+      total_fulfillable: 1090
+      freshness: "2025-05-02T10:25:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "safety_footwear"
+      tenant: "MWT"
+      items: ["BC-7240", "BC-3120", "TC-5500"]
+      certifications_required: ["ASTM F2413-18"]
+      customer_country: "MX"
+      use_case: "agroindustria split delivery"
+    expected_output:
+      pass: true
+      warnings:
+        - code: "PEDIDO_MIXTO"
+          severity: "low"
+          message: "Pedido con 3 SKU de diferentes subclases (EH + I/75 + I/75). Requiere nota de uso específico por site."
+      blocking_issues: []
+      pii_detected: false
+      policies_violated: []
+    latency_ms_max: 1200
+    triggered: true
+    parallel_group: "A"
+
+  - step: 5
+    sub_agent: "AG_SUB_PRICING_CALCULATOR"
+    inputs:
+      items:
+        - sku: "BC-7240"
+          qty: 100
+          list_price: 68.50
+        - sku: "BC-3120"
+          qty: 50
+          list_price: 55.00
+        - sku: "TC-5500"
+          qty: 30
+          list_price: 32.00
+      customer_tier: "silver"
+      payment_terms: "Net 30"
+      incoterm: "DDP"
+      delivery_split: true
+      sites: ["Saltillo", "Querétaro"]
+    expected_output:
+      base_subtotal: 10450.00
+      margin_calculated: 0.28
+      delivery_split_analysis:
+        - site: "Saltillo"
+          suggested_items:
+            - BC-7240: 70
+            - BC-3120: 30
+            - TC-5500: 20
+          site_subtotal: 7285.00
+        - site: "Querétaro"
+          suggested_items:
+            - BC-7240: 30
+            - BC-3120: 20
+            - TC-5500: 10
+          site_subtotal: 3165.00
+      split_cost: 0
+      note: "Sin costo adicional por split (mismo pedido, múltiples destinos DDP)"
+    latency_ms_max: 800
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "draft_proforma"
+      recipient_role: "cliente"
+      context:
+        customer: "Agroindustrias del Norte"
+        rfq_items: "180 pares mixto BC-7240 + BC-3120 + TC-5500"
+        delivery_split: "Saltillo 120 / Querétaro 60"
+        severity: "medium"
+        vertical: "safety_footwear"
+    expected_output:
+      draft_type: "proforma_draft"
+      subject: "Proforma calzado safety mixto — Agroindustrias del Norte"
+      body: |
+        Estimada C.P. López,
+
+        Agradecemos su solicitud. Preparamos proforma para 180 pares
+        de calzado safety con split de entrega:
+
+        LÍNEAS:
+        - BC-7240 (Marluvas): 100 pares × $68.50 = $6,850
+        - BC-3120 (Tecmater): 50 pares × $55.00 = $2,750
+        - TC-5500 (Genérico): 30 pares × $32.00 = $960
+        Subtotal: $10,450 USD
+
+        SPLIT SUGERIDO (optimizado por stock y flete):
+        - Saltillo: 120 pares (BC-7240:70, BC-3120:30, TC-5500:20)
+        - Querétaro: 60 pares (BC-7240:30, BC-3120:20, TC-5500:10)
+
+        Sin costo adicional por split. Entrega DDP 7 días.
+        Certificaciones ASTM F2413-18 vigentes en todos.
+
+        Quedo atenta a su confirmación.
+      tone: "professional"
+      internal_note: "Pedido mixto 3 SKU. Silver cliente. Split sin costo. Proforma generable con AM review."
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs:
+      - "items: 3 SKU mixed"
+      - "delivery_split: Saltillo/Querétaro"
+      - "approval: AM_review"
+    expected_output:
+      status: "DRAFT_GENERATED"
+      draft_type: "proforma_mixed_order_split"
+      total_value: 10450.00
+      line_items:
+        - sku: "BC-7240"
+          qty: 100
+          unit_price: 68.50
+          subtotal: 6850.00
+        - sku: "BC-3120"
+          qty: 50
+          unit_price: 55.00
+          subtotal: 2750.00
+        - sku: "TC-5500"
+          qty: 30
+          unit_price: 32.00
+          subtotal: 960.00
+      delivery_split:
+        - site: "Saltillo"
+          items:
+            - BC-7240: 70
+            - BC-3120: 30
+            - TC-5500: 20
+        - site: "Querétaro"
+          items:
+            - BC-7240: 30
+            - BC-3120: 20
+            - TC-5500: 10
+    latency_ms_max: 6000
+    triggered: true
+
+expected_outputs:
+  primary_output:
+    type: "draft_proforma"
+    content:
+      status: "DRAFT_GENERATED"
+      reason: "PEDIDO_MIXTO con split delivery"
+      customer_notified: true
+      proforma_generated: true
+      draft_type: "proforma_mixed_order_split"
+      approval_pending: true
+    glosses_required:
+      - "3 SKU mixto: Marluvas + Tecmater + Genérico"
+      - "Split Saltillo 120 / Querétaro 60 — sin costo adicional"
+      - "Valor total: $10,450 USD"
+      - "Certificaciones ASTM vigentes en todos"
+      - "Requiere AM review antes de envío final"
+  evidence_bundle:
+    per_line:
+      - sku: "BC-7240"
+        qty: 100
+        pricing_list: 68.50
+        margin_estimated: 0.28
+      - sku: "BC-3120"
+        qty: 50
+        pricing_list: 55.00
+        margin_estimated: 0.32
+      - sku: "TC-5500"
+        qty: 30
+        pricing_list: 32.00
+        margin_estimated: 0.234
+    per_quote:
+      status: "DRAFT_GENERATED"
+      exception_codes: ["PEDIDO_MIXTO"]
+      aprobador: "AM"
+      hash: null
+    audit_view:
+      source_precio: "2025-04-15"
+      version_lista: "2025-04-15"
+      timestamp_stock: "2025-05-02T10:25:00-06:00"
+      technical_spec_rule: "safety_footwear_mixed_order"
+      margen_calculado: 0.28
+      aprobador: "AM (mixed order review)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "vigente"
+      country_rule_applied: null
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=24/24/12, packaging=12/box"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-AGN-2025-Q1"
+      exception_codes: ["PEDIDO_MIXTO"]
+      vertical_spec_object: "safety_footwear"
+      tenant: "MWT"
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email_standard"
+        sla_minutes: 240
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_DRAFT_MIXED_ORDER"
+        severity: "medium"
+        trace_id: "TRACE-caseSF07-20250502"
+        tenant: "MWT"
+  exceptions_raised:
+    - "PEDIDO_MIXTO"
+  hitl_gate_triggered: true
+  output_destination: "draft_approval"
+
+edge_cases:
+  - description: "Cliente redefine split 150/30 en vez de 120/60 — proforma re-calcula sin costo"
+    expected_behavior: "Proforma ajustada. Split flexible sin costo adicional.",
+    variant_data:
+      client_split: "Saltillo:150, Querétaro:30"
+      expected_action: "recalculate_split"
+  - description: "Stock TC-5500 solo 20 unidades (10 faltan) — stock parcial en pedido mixto"
+    expected_behavior: "Escalamiento High. TC-5500 shortfall 33%. Backorder 3 días o sustitución BC-3120.",
+    variant_data:
+      tc5500_stock: 20
+      tc5500_shortfall: 10
+      expected_escalation: "High"
+  - description: "Cliente pide split en 3 sitios (add Monterrey) — sistema verifica cobertura flete"
+    expected_behavior: "Proforma con 3 splits. Si flete Monterrey no cotizado → FLETE_NO_COTIZADO.",
+    variant_data:
+      additional_site: "Monterrey"
+      expected_exception: "FLETE_NO_COTIZADO"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'PEDIDO_MIXTO'"
+    - "output.primary_output.status == 'DRAFT_GENERATED'"
+    - "output.primary_output.proforma_generated == true"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 240"
+    - "evidence_bundle.per_quote.aprobador == 'AM'"
+    - "expected_pipeline[4].expected_output.delivery_split_analysis exists"
+    - "expected_pipeline[6].expected_output.delivery_split contains Saltillo and Querétaro"
+  must_not_do:
+    - "output contains proforma sin split detail"
+    - "system charges extra for split delivery"
+    - "system ignores mixed SKU categories and bundles as single item"
+    - "agente solo envía proforma sin AM review"
+    - "system promises all items from same warehouse when split by geography"
+
+severity_weight_validation:
+  expected_severity: "medium"
+  if_misclassified_as_lower: |
+    Si clasificado como Low: pedido mixto podría procesarse sin
+    split detail ni AM review. Consecuencia: 180 pares enviados a
+    un solo destino, obligando al cliente a re-distribuir internamente.
+    Costo logístico adicional para cliente = insatisfacción y posible
+    pérdida de cuenta. Además, mezcla de EH + I/75 requiere nota de
+    uso específico por site que AM debe validar.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico Agroindustrias del Norte MX. No promovible.
+    Patrón abstracto (pedido mixto multi-SKU con split delivery)
+    puede promoverse a GLOBAL_PROMOTABLE tras anonimización.
+
+gaps_detected: []

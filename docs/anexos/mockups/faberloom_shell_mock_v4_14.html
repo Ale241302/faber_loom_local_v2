@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FaberLoom — v4.14 · Copiloto B2B · HITL seguro + grounding + compliance</title>
+<!--
+  ════════════════════════════════════════════════════════════════════
+  FaberLoom v4.14 — Copiloto de backoffice comercial B2B (MWT)
+  Alineado con PLAN_DESARROLLO_FABERLOOM_v4.md
+  Single file · vanilla HTML/CSS/JS · sin frameworks ni imágenes externas
+  Mapa de milestones (buscar "// E1a", "// E1b", "// E2", "// E3", "// E4")
+  ════════════════════════════════════════════════════════════════════
+-->
+<style>
+  :root{
+    /* ── Superficies (dark mode con elevación, no grises planos) ── */
+    --bg-canvas:#1A1815; --bg-surface:#23201C; --bg-raised:#2D2924; --bg-hover:#2A2722;
+    --bg-sunken:#151310;
+    --elev-top:rgba(255,247,237,.035);              /* luz cenital sutil para elevación */
+    --text-primary:#F4F1ED; --text-secondary:#D2CCC1; --text-muted:#9A9488; --text-faint:#6E685E;
+    --border-subtle:#363129; --border-default:#48423A; --border-strong:#5A5349;
+
+    /* ── Color funcional (semántico) ── */
+    --coral:#E8896A;       --coral-deep:#9A4A2E;  --coral-soft:rgba(232,137,106,.13);  /* acción / IA */
+    --sage:#74BE92;        --sage-deep:#2F6B49;   --sage-soft:rgba(116,190,146,.14);   /* éxito / aprobado / trazado */
+    --amber:#E3B25F;       --amber-deep:#8A6420;  --amber-soft:rgba(227,178,95,.14);   /* advertencia / espera / asumido */
+    --vino:#E0786A;        --vino-deep:#7E342B;   --vino-soft:rgba(224,120,106,.13);   /* error / bloqueo */
+    --slate:#9DB0C0;       --slate-soft:rgba(157,176,192,.12);                          /* neutro / delegado */
+
+    --ease:cubic-bezier(.25,.8,.25,1);
+    --shadow:0 6px 28px rgba(0,0,0,.40);
+    --shadow-sm:0 2px 8px rgba(0,0,0,.30);
+    --r-lg:16px; --r-md:11px; --r-sm:8px;
+    --font-title:Georgia,"Times New Roman",serif;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+
+  /* ════════════════ ESTILOS ALTERNATIVOS (data-theme) ════════════════
+     El default (:root) es "Faber Warm". Cada tema reescribe sólo tokens. */
+
+  /* ── Slate Pro · enterprise frío, acento azul, esquinas marcadas ── */
+  [data-theme="slate"]{
+    --bg-canvas:#13161B; --bg-surface:#1B1F26; --bg-raised:#242933; --bg-hover:#212630; --bg-sunken:#0E1115;
+    --elev-top:rgba(214,228,247,.045);
+    --text-primary:#ECF1F8; --text-secondary:#BEC8D6; --text-muted:#858F9F; --text-faint:#586272;
+    --border-subtle:#272D37; --border-default:#39414E; --border-strong:#4B5462;
+    --coral:#5E9CE8; --coral-deep:#2D5896; --coral-soft:rgba(94,156,232,.13);
+    --sage:#4FC2A0; --sage-deep:#236F58; --sage-soft:rgba(79,194,160,.14);
+    --amber:#E2B65E; --amber-deep:#896420; --amber-soft:rgba(226,182,94,.14);
+    --vino:#E2727E; --vino-deep:#7C3038; --vino-soft:rgba(226,114,126,.13);
+    --slate:#9FB0C4; --slate-soft:rgba(159,176,196,.12);
+    --shadow:0 8px 30px rgba(0,0,0,.45); --shadow-sm:0 2px 8px rgba(0,0,0,.32);
+    --r-lg:10px; --r-md:8px; --r-sm:6px;
+    --font-title:"Segoe UI",system-ui,sans-serif;
+  }
+  [data-theme="slate"] .logo .name{font-weight:700;letter-spacing:-.2px}
+  [data-theme="slate"] .vtitle,[data-theme="slate"] .ctxname,[data-theme="slate"] .dtitle{font-weight:700;letter-spacing:-.3px}
+
+  /* ── Paper · modo claro, papel cálido + tinta ── */
+  [data-theme="paper"]{
+    --bg-canvas:#F1EBE0; --bg-surface:#FAF6EE; --bg-raised:#FFFFFF; --bg-hover:#ECE5D8; --bg-sunken:#E7E0D2;
+    --elev-top:rgba(255,255,255,.55);
+    --text-primary:#2B2620; --text-secondary:#5B5247; --text-muted:#8C8273; --text-faint:#ABA08E;
+    --border-subtle:#E2D9C9; --border-default:#D2C7B3; --border-strong:#BBAE96;
+    --coral:#CF6238; --coral-deep:#A8441F; --coral-soft:rgba(207,98,56,.12);
+    --sage:#3C9A6B; --sage-deep:#2A744E; --sage-soft:rgba(60,154,107,.13);
+    --amber:#BD8224; --amber-deep:#8C6015; --amber-soft:rgba(189,130,36,.15);
+    --vino:#BC4E3D; --vino-deep:#963829; --vino-soft:rgba(188,78,61,.1);
+    --slate:#5D7085; --slate-soft:rgba(93,112,133,.12);
+    --shadow:0 8px 28px rgba(86,64,40,.16); --shadow-sm:0 2px 8px rgba(86,64,40,.10);
+  }
+  [data-theme="paper"] ::selection{background:var(--coral-soft);color:var(--coral-deep)}
+
+  /* ── Mono Contrast · casi negro + un acento vivo, muy crujiente ── */
+  [data-theme="mono"]{
+    --bg-canvas:#0B0B0C; --bg-surface:#151517; --bg-raised:#1E1E21; --bg-hover:#1B1B1E; --bg-sunken:#060607;
+    --elev-top:rgba(255,255,255,.055);
+    --text-primary:#F6F6F7; --text-secondary:#C6C6CB; --text-muted:#83838B; --text-faint:#56565D;
+    --border-subtle:#222225; --border-default:#37373C; --border-strong:#4B4B52;
+    --coral:#FF6A3D; --coral-deep:#BE3D1B; --coral-soft:rgba(255,106,61,.14);
+    --sage:#54D08C; --sage-deep:#247A4A; --sage-soft:rgba(84,208,140,.13);
+    --amber:#F0BE45; --amber-deep:#977116; --amber-soft:rgba(240,190,69,.14);
+    --vino:#F26B6B; --vino-deep:#8C2F2F; --vino-soft:rgba(242,107,107,.13);
+    --slate:#A7ADBA; --slate-soft:rgba(167,173,186,.12);
+    --shadow:0 10px 34px rgba(0,0,0,.6); --shadow-sm:0 2px 8px rgba(0,0,0,.4);
+    --r-lg:8px; --r-md:6px; --r-sm:5px;
+    --font-title:"Segoe UI",system-ui,sans-serif;
+  }
+  [data-theme="mono"] .vtitle,[data-theme="mono"] .ctxname,[data-theme="mono"] .dtitle,[data-theme="mono"] .logo .name{font-weight:800;letter-spacing:-.4px}
+
+  /* ── Indigo Night · violeta profundo, acento lila/menta ── */
+  [data-theme="indigo"]{
+    --bg-canvas:#15131F; --bg-surface:#1E1B2D; --bg-raised:#272338; --bg-hover:#231F34; --bg-sunken:#100E18;
+    --elev-top:rgba(204,194,255,.05);
+    --text-primary:#EFECF8; --text-secondary:#C6BFE0; --text-muted:#8D85A8; --text-faint:#615977;
+    --border-subtle:#2B2640; --border-default:#3C3556; --border-strong:#4E4668;
+    --coral:#B07CF0; --coral-deep:#6C3EAF; --coral-soft:rgba(176,124,240,.15);
+    --sage:#5FD0B0; --sage-deep:#26795F; --sage-soft:rgba(95,208,176,.14);
+    --amber:#E6C15C; --amber-deep:#8A6E1E; --amber-soft:rgba(230,193,92,.14);
+    --vino:#F07A98; --vino-deep:#893048; --vino-soft:rgba(240,122,152,.13);
+    --slate:#9AA8D0; --slate-soft:rgba(154,168,208,.13);
+    --shadow:0 10px 34px rgba(10,4,30,.55); --shadow-sm:0 2px 10px rgba(10,4,30,.4);
+  }
+
+  /* ── Cloud · claro neutro frío, acento coral, sans (SaaS limpio) ── */
+  [data-theme="cloud"]{
+    --bg-canvas:#EBEEF2; --bg-surface:#F6F8FA; --bg-raised:#FFFFFF; --bg-hover:#E7EBF0; --bg-sunken:#E1E5EA;
+    --elev-top:rgba(255,255,255,.5);
+    --text-primary:#1E2530; --text-secondary:#48515F; --text-muted:#79828F; --text-faint:#A3AAB4;
+    --border-subtle:#E1E4EA; --border-default:#CFD4DC; --border-strong:#B4BAC4;
+    --coral:#DE6F49; --coral-deep:#B4482A; --coral-soft:rgba(222,111,73,.12);
+    --sage:#2F9E6A; --sage-deep:#1F7350; --sage-soft:rgba(47,158,106,.13);
+    --amber:#C0871F; --amber-deep:#8C6212; --amber-soft:rgba(192,135,31,.15);
+    --vino:#C84F49; --vino-deep:#9A352F; --vino-soft:rgba(200,79,73,.1);
+    --slate:#5A6B80; --slate-soft:rgba(90,107,128,.1);
+    --shadow:0 8px 28px rgba(30,40,60,.13); --shadow-sm:0 2px 8px rgba(30,40,60,.08);
+    --font-title:"Segoe UI",system-ui,sans-serif;
+  }
+  [data-theme="cloud"] .vtitle,[data-theme="cloud"] .ctxname,[data-theme="cloud"] .dtitle,[data-theme="cloud"] .logo .name{font-weight:700;letter-spacing:-.3px}
+  [data-theme="cloud"] ::selection{background:var(--coral-soft);color:var(--coral-deep)}
+
+  /* ── Mist · claro azulado, acento azul calmo (enterprise) ── */
+  [data-theme="mist"]{
+    --bg-canvas:#E7EDF4; --bg-surface:#F3F7FB; --bg-raised:#FFFFFF; --bg-hover:#E1E9F2; --bg-sunken:#DCE4EE;
+    --elev-top:rgba(255,255,255,.5);
+    --text-primary:#1A2532; --text-secondary:#43536A; --text-muted:#74859B; --text-faint:#9FACBE;
+    --border-subtle:#DCE3EC; --border-default:#C7D1DD; --border-strong:#ABB7C7;
+    --coral:#3B7AD0; --coral-deep:#22569E; --coral-soft:rgba(59,122,208,.11);
+    --sage:#2C9B72; --sage-deep:#1D7254; --sage-soft:rgba(44,155,114,.13);
+    --amber:#BC8420; --amber-deep:#896013; --amber-soft:rgba(188,132,32,.15);
+    --vino:#CB534F; --vino-deep:#9B3733; --vino-soft:rgba(203,83,79,.1);
+    --slate:#5E7088; --slate-soft:rgba(94,112,136,.11);
+    --shadow:0 8px 28px rgba(24,42,72,.14); --shadow-sm:0 2px 8px rgba(24,42,72,.09);
+    --font-title:"Segoe UI",system-ui,sans-serif;
+  }
+  [data-theme="mist"] .vtitle,[data-theme="mist"] .ctxname,[data-theme="mist"] .dtitle,[data-theme="mist"] .logo .name{font-weight:700;letter-spacing:-.3px}
+  [data-theme="mist"] ::selection{background:var(--coral-soft);color:var(--coral-deep)}
+
+  /* ── Theme switcher UI ── */
+  .themeBtn{position:relative}
+  .themePop{position:absolute;top:46px;right:8px;width:218px;background:var(--bg-raised);border:1px solid var(--border-default);
+    border-radius:var(--r-md);box-shadow:var(--shadow);z-index:80;padding:7px;opacity:0;pointer-events:none;
+    transform:translateY(-6px) scale(.98);transition:all .2s var(--ease);max-height:78vh;overflow-y:auto}
+  .themePop.open{opacity:1;pointer-events:auto;transform:none}
+  .themePop .tph{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);padding:6px 8px 7px}
+  .themeOpt{display:flex;align-items:center;gap:10px;padding:8px;border-radius:var(--r-sm);cursor:pointer;transition:background .15s}
+  .themeOpt:hover{background:var(--bg-hover)}
+  .themeOpt.on{background:var(--coral-soft)}
+  .themeOpt .sw{width:30px;height:22px;border-radius:6px;flex-shrink:0;position:relative;overflow:hidden;border:1px solid var(--border-default)}
+  .themeOpt .sw .acc{position:absolute;right:3px;bottom:3px;width:9px;height:9px;border-radius:50%}
+  .themeOpt .tn{font-size:12.5px;color:var(--text-secondary)}
+  .themeOpt.on .tn{color:var(--text-primary);font-weight:600}
+  .themeOpt .chk{margin-left:auto;color:var(--coral);font-size:12px;opacity:0}
+  .themeOpt.on .chk{opacity:1}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg-canvas);color:var(--text-primary);
+    font:13.5px/1.55 "Segoe UI",system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+  ::selection{background:var(--coral-deep);color:var(--text-primary)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--border-subtle);border-radius:5px;border:2px solid var(--bg-canvas)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-default)}
+  button{font-family:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--coral);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+  /* ════════ TOPBAR ════════ */
+  .topbar{height:54px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;
+    padding:0 14px;gap:12px;flex-shrink:0;z-index:60;background:linear-gradient(var(--elev-top),transparent),var(--bg-canvas)}
+  .ceja{width:34px;height:34px;border:none;background:none;border-radius:var(--r-sm);cursor:pointer;
+    display:grid;place-items:center;color:var(--text-muted);transition:background .18s,color .18s;flex-shrink:0}
+  .ceja:hover{background:var(--bg-surface);color:var(--text-primary)}
+  .ceja svg{width:18px;height:18px}
+  .ceja.mobile-only{display:none}
+  .logo{display:flex;align-items:center;gap:9px;margin-right:6px}
+  .logo .mark{width:28px;height:28px;min-width:28px;border-radius:8px;
+    background:linear-gradient(150deg,var(--coral),var(--coral-deep));display:grid;
+    place-items:center;color:#1A1815;font-family:var(--font-title);font-weight:700;font-size:16px;box-shadow:var(--shadow-sm)}
+  .logo .name{font-family:var(--font-title);font-size:17px;white-space:nowrap;line-height:1.1}
+  .logo small{font-size:9.5px;color:var(--text-muted);display:block;font-family:"Segoe UI",sans-serif;letter-spacing:.3px}
+
+  .cmdk{flex:1;max-width:420px;margin:0 auto;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-radius:10px;padding:8px 12px;color:var(--text-muted);font-size:12.5px;display:flex;gap:8px;align-items:center;
+    cursor:pointer;transition:border-color .2s,background .2s;white-space:nowrap;overflow:hidden}
+  .cmdk .cmdk-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .cmdk:hover{border-color:var(--border-default);background:var(--bg-hover)}
+  .cmdk kbd{margin-left:auto;border:1px solid var(--border-default);border-radius:4px;padding:1px 6px;font-size:10px;font-family:inherit}
+  .topRight{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .budgetChip{display:flex;align-items:center;gap:7px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-radius:9px;padding:5px 10px;font-size:11px;color:var(--text-secondary);cursor:pointer;transition:border-color .2s;
+    white-space:nowrap;flex-shrink:0}
+  .budgetChip .bnum{font-variant-numeric:tabular-nums}
+
+  /* ── SpaceLoom empty state (centro guiado) ── */
+  .spaceEmpty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    padding:24px 16px;gap:18px;animation:viewIn .4s var(--ease)}
+  .spaceEmpty .seMark{width:60px;height:60px;border-radius:18px;background:linear-gradient(150deg,var(--coral),var(--coral-deep));
+    display:grid;place-items:center;color:#1A1815;font-family:var(--font-title);font-size:30px;box-shadow:var(--shadow)}
+  .spaceEmpty h3{font-family:var(--font-title);font-size:21px;color:var(--text-primary);font-weight:400}
+  .spaceEmpty p{font-size:13px;color:var(--text-muted);max-width:420px;line-height:1.55;margin-top:-8px}
+  .seChips{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;max-width:560px;margin-top:4px}
+  .seChip{display:flex;align-items:center;gap:9px;background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);
+    border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:10px 14px;font-size:12.5px;color:var(--text-secondary);
+    cursor:pointer;transition:all .18s var(--ease);text-align:left}
+  .seChip:hover{border-color:var(--border-default);transform:translateY(-2px);box-shadow:var(--shadow-sm);color:var(--text-primary)}
+  .seChip .seDot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .seChip b{color:var(--text-primary);font-weight:600}
+  .seChip small{color:var(--text-muted);font-size:10.5px;display:block}
+  .seSafe{font-size:11px;color:var(--text-faint);display:flex;align-items:center;gap:7px;margin-top:6px}
+  .seSafe .lk{color:var(--sage)}
+  .budgetChip:hover{border-color:var(--border-default)}
+  .budgetChip .bbar{width:46px;height:5px;border-radius:3px;background:var(--bg-sunken);overflow:hidden}
+  .budgetChip .bfill{height:100%;width:27%;background:var(--sage);border-radius:3px}
+
+  .frame{flex:1;display:flex;min-height:0;position:relative}
+
+  /* ════════ RAIL 1 (IZQUIERDA) ════════ */
+  .rail1{width:262px;min-width:200px;max-width:400px;border-right:1px solid var(--border-subtle);display:flex;
+    flex-direction:column;padding:10px 0 8px;overflow:hidden;background:var(--bg-canvas);position:relative;
+    transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s var(--ease),opacity .25s}
+  .rail1.hidden{width:0;min-width:0;padding:10px 0;opacity:0;pointer-events:none;border-right-color:transparent}
+  .rail1 .resize-handle{position:absolute;right:0;top:0;bottom:0;width:4px;cursor:col-resize;z-index:50;transition:background .2s}
+  .rail1 .resize-handle:hover,.rail1.resizing .resize-handle{background:var(--coral);opacity:.6}
+  .navwrap{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 8px}
+
+  .navmode{display:none}
+  .navmode.on{display:block;animation:viewIn .25s var(--ease)}
+  .modebar-2{display:flex;gap:4px;margin:0 8px 12px;padding:0}
+  .modebar-2 button{flex:1;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:9px;
+    color:var(--text-muted);font-size:11.5px;font-weight:600;padding:9px 4px;cursor:pointer;transition:all .2s var(--ease);
+    display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}
+  .modebar-2 button:hover{border-color:var(--border-default);color:var(--text-secondary)}
+  .modebar-2 button.on{background:linear-gradient(var(--elev-top),transparent),var(--bg-raised);border-color:var(--border-default);color:var(--text-primary);box-shadow:var(--shadow-sm)}
+  .modebar-2 button .ico{font-size:13px}
+
+  .acc{margin-bottom:3px}
+  .accHead{display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:var(--r-sm);cursor:pointer;
+    color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;
+    transition:background .15s,color .15s;user-select:none}
+  .accHead:hover{background:var(--bg-hover);color:var(--text-secondary)}
+  .accHead .chev{font-size:9px;transition:transform .2s var(--ease);display:inline-block;width:10px;text-align:center}
+  .accHead .chev.rot{transform:rotate(90deg)}
+  .accHead .cnt{margin-left:auto;font-size:9.5px;background:var(--bg-raised);border-radius:6px;padding:0 6px;color:var(--text-muted)}
+  .accBody{max-height:0;overflow:hidden;transition:max-height .25s var(--ease),opacity .2s;opacity:0}
+  .accBody.open{max-height:460px;opacity:1}
+  .it{display:flex;align-items:center;gap:9px;padding:7px 8px 7px 22px;border-radius:var(--r-sm);color:var(--text-secondary);
+    font-size:12.5px;cursor:pointer;margin-bottom:1px;position:relative;white-space:nowrap;
+    transition:background .16s,color .16s}
+  .it:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .it:active{transform:scale(.985)}
+  .it.active{background:var(--bg-raised);color:var(--text-primary);box-shadow:inset 2px 0 0 var(--coral)}
+  .it .ico{font-size:13px;width:15px;text-align:center;flex-shrink:0}
+  .it .b{margin-left:auto;font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px;
+    background:var(--bg-raised);color:var(--text-secondary)}
+  .it .b.op{background:var(--amber);color:#1A1815}
+  .it .b.crit{background:var(--coral);color:#1A1815}
+  .it .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+  .userfoot{border-top:1px solid var(--border-subtle);margin:8px 8px 0;padding:10px 8px 4px;display:flex;
+    gap:9px;align-items:center;cursor:pointer;border-radius:var(--r-sm);transition:background .16s}
+  .userfoot:hover{background:var(--bg-hover)}
+  .avatar{width:28px;height:28px;min-width:28px;border-radius:50%;background:var(--bg-raised);display:grid;
+    place-items:center;font-size:10px;font-weight:700;color:var(--coral)}
+
+  /* ════════ CANVAS ════════ */
+  .canvas{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;overflow:hidden}
+  .view{display:none;flex:1;min-height:0;overflow-y:auto}
+  .view.on{display:flex;flex-direction:column;animation:viewIn .3s var(--ease)}
+  @keyframes viewIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .grow{flex:1}
+  @keyframes itemIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+  /* ── Context strip: el CEO sabe en <2s dónde está (// E1a) ── */
+  .ctxstrip{display:flex;align-items:center;gap:14px;padding:11px 22px;border-bottom:1px solid var(--border-subtle);
+    background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);flex-shrink:0;flex-wrap:wrap}
+  .ctxstrip .ctxdot{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 4px var(--bg-canvas)}
+  .ctxstrip .ctxname{font-family:var(--font-title);font-size:16px;color:var(--text-primary);line-height:1.1}
+  .ctxstrip .ctxsub{font-size:11px;color:var(--text-muted)}
+  .ctxstrip .ctxtype{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+    border:1px solid var(--border-default);color:var(--text-secondary);padding:2px 8px;border-radius:7px}
+  .ctxstrip .ctxmeta{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ctxstrip .agentpill{display:flex;align-items:center;gap:6px;background:var(--coral-soft);border:1px solid var(--coral-deep);
+    border-radius:8px;padding:4px 10px;font-size:11.5px;color:var(--coral);font-weight:600;white-space:nowrap}
+  .ctxstrip .modelpill{display:flex;align-items:center;gap:6px;background:var(--bg-raised);border:1px solid var(--border-default);
+    border-radius:8px;padding:4px 10px;font-size:11px;color:var(--text-secondary);white-space:nowrap}
+
+  .spaceClean{display:flex;flex-direction:column;flex:1;min-height:0;max-width:860px;margin:0 auto;width:100%;padding:0 22px}
+  .spaceThread{flex:1;overflow-y:auto;padding:22px 0 8px;display:flex;flex-direction:column;min-height:0}
+  .qmsg{margin-bottom:20px;animation:itemIn .3s var(--ease) backwards}
+  .qmsg .who{font-size:11px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .qmsg .bub{border-radius:14px;padding:12px 16px;max-width:86%;font-size:14px;line-height:1.62;display:inline-block}
+  /* mensaje del usuario */
+  .qmsg.me{display:flex;flex-direction:column;align-items:flex-end}
+  .qmsg.me .who{flex-direction:row-reverse}
+  .qmsg.me .bub{background:var(--coral-soft);border:1px solid var(--coral-deep);color:var(--text-primary)}
+  /* mensaje de IA */
+  .qmsg.ai .who{color:var(--coral)}
+  .qmsg.ai .bub{background:none;padding:3px 2px;color:var(--text-secondary);max-width:94%}
+  .qmsg .msgmeta{font-size:10px;color:var(--text-faint);margin-top:7px;display:flex;gap:10px;flex-wrap:wrap}
+  .qmsg .msgmeta b{color:var(--text-muted);font-weight:600}
+  .typing{display:inline-flex;gap:4px;padding:8px 4px}
+  .typing i{width:7px;height:7px;border-radius:50%;background:var(--text-muted);animation:tp 1.3s infinite}
+  .typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+  @keyframes tp{0%,60%,100%{transform:none;opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+
+  /* ════════ DRAFT CARD v2 (HITL) — // E1b ════════ */
+  .draft{background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);border:1px solid var(--border-default);
+    border-radius:var(--r-lg);overflow:hidden;margin-bottom:18px;box-shadow:var(--shadow-sm);
+    animation:itemIn .35s var(--ease) backwards}
+  .draft.is-review{border-color:var(--amber-deep)}
+  .draft.is-approved{border-color:var(--sage-deep)}
+  .draft .dhead{padding:13px 18px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .state{font-size:10px;font-weight:700;color:#1A1815;background:var(--amber);padding:3px 11px;border-radius:9px;
+    text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .state.approved{background:var(--sage)}
+  .dtitle{font-family:var(--font-title);font-size:15.5px;color:var(--text-primary)}
+  .dclass{margin-left:auto;font-size:10px;border:1px solid var(--slate);color:var(--slate);padding:2px 9px;border-radius:8px;white-space:nowrap}
+  .draft .dbody{padding:16px 18px;font-size:14px;color:var(--text-secondary);line-height:1.62}
+
+  /* Provenance: 100% trazado vs asumido (// E2) */
+  .prov{border-top:1px solid var(--border-subtle);padding:6px 18px 12px}
+  .prov-h{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);padding:11px 0 7px;
+    display:flex;align-items:center;gap:8px}
+  .prov-h .legend{margin-left:auto;display:flex;gap:12px;font-size:9.5px;letter-spacing:.3px}
+  .prov-h .legend span{display:flex;align-items:center;gap:4px}
+  .prov-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-subtle);font-size:12.5px}
+  .prov-row:last-child{border-bottom:none}
+  .prov-mark{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;font-size:10px;flex-shrink:0;font-weight:700}
+  .prov-mark.t{background:var(--sage-soft);color:var(--sage)}
+  .prov-mark.a{background:var(--amber-soft);color:var(--amber)}
+  .prov-label{color:var(--text-muted);min-width:118px}
+  .prov-val{color:var(--text-primary);font-weight:600}
+  .prov-src{margin-left:auto;font-size:10.5px;color:var(--text-secondary);background:var(--bg-sunken);
+    border:1px solid var(--border-subtle);border-radius:6px;padding:2px 8px;white-space:nowrap;max-width:46%;overflow:hidden;text-overflow:ellipsis}
+  .prov-src.assumed{color:var(--amber);border-color:var(--amber-deep);background:var(--amber-soft)}
+
+  /* Evidence bundle escaneable */
+  .evbundle{border-top:1px solid var(--border-subtle);padding:12px 18px}
+  .evbundle .evh{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+  .evbundle .evh .sha{margin-left:auto;font-size:10px;color:var(--sage);display:flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0}
+  .evgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px}
+  .evcard{background:var(--bg-sunken);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:9px 10px;
+    cursor:pointer;transition:border-color .18s,transform .18s}
+  .evcard:hover{border-color:var(--border-default);transform:translateY(-1px)}
+  .evcard .evt{font-size:11.5px;color:var(--text-primary);font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:3px}
+  .evcard .evt .lv{margin-left:auto;font-size:9px;font-weight:700;background:var(--bg-raised);border-radius:5px;padding:1px 5px;color:var(--text-muted)}
+  .evcard .evd{font-size:10.5px;color:var(--text-muted)}
+
+  /* meta: routing / cost cap / confidence (// E4) */
+  .dmeta{border-top:1px solid var(--border-subtle);padding:12px 18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .meterwrap{display:flex;flex-direction:column;gap:5px;min-width:150px}
+  .meterlab{font-size:10px;color:var(--text-muted);display:flex;justify-content:space-between;gap:8px}
+  .meterlab b{color:var(--text-secondary);font-weight:600}
+  .meter{height:6px;border-radius:4px;background:var(--bg-sunken);overflow:hidden}
+  .meter i{display:block;height:100%;border-radius:4px}
+  .meter i.conf{background:var(--amber)}
+  .meter i.conf.hi{background:var(--sage)}
+  .meter i.cost{background:var(--sage)}
+  .meter i.cost.near{background:var(--amber)}
+  .meter i.cost.over{background:var(--vino)}
+  .modeltag{font-size:11px;color:var(--text-secondary);background:var(--bg-raised);border:1px solid var(--border-default);
+    border-radius:7px;padding:4px 10px;display:flex;align-items:center;gap:6px}
+
+  /* Transfer-basis / PII warning (// E4 compliance) */
+  .complbanner{margin:0 18px 12px;border-radius:var(--r-md);padding:10px 13px;font-size:11.5px;display:flex;align-items:flex-start;gap:9px;line-height:1.5}
+  .complbanner.warn{background:var(--amber-soft);border:1px solid var(--amber-deep);color:var(--text-secondary)}
+  .complbanner.block{background:var(--vino-soft);border:1px solid var(--vino-deep);color:var(--text-secondary)}
+  .complbanner .ci{font-size:14px;line-height:1;flex-shrink:0;margin-top:1px}
+  .complbanner b{color:var(--text-primary)}
+  .complbanner .fix{margin-left:auto;white-space:nowrap;background:none;border:1px solid currentColor;border-radius:6px;
+    padding:3px 9px;font-size:10.5px;cursor:pointer;color:var(--amber);opacity:.9}
+  .complbanner.block .fix{color:var(--vino)}
+  .complbanner .fix:hover{opacity:1}
+
+  /* HITL actions — Aprobar SEPARADO de Enviar (// E1b) */
+  .hitl{padding:13px 18px;border-top:1px solid var(--border-subtle);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn{border:none;border-radius:var(--r-sm);padding:9px 18px;font-size:12.5px;font-weight:600;cursor:pointer;
+    transition:all .16s var(--ease);display:inline-flex;align-items:center;gap:7px}
+  .btn:active{transform:scale(.96)}
+  .btn.ok{background:var(--sage);color:#1A1815}.btn.ok:hover{background:#88cda3}
+  .btn.send{background:var(--coral);color:#1A1815}.btn.send:hover{background:#ef9c80}
+  .btn.send:disabled{background:var(--bg-raised);color:var(--text-faint);cursor:not-allowed}
+  .btn.iter{background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default)}
+  .btn.iter:hover{background:var(--bg-hover)}
+  .btn.no{background:none;color:var(--vino);border:1px solid var(--vino-deep)}
+  .btn.no:hover{background:var(--vino-soft)}
+  .btn.ghost{background:none;color:var(--text-muted);border:1px solid var(--border-default)}
+  .boost{margin-left:auto;font-size:11.5px;color:var(--coral);background:none;border:1px dashed var(--coral-deep);
+    border-radius:var(--r-sm);padding:7px 12px;cursor:pointer;transition:all .18s}
+  .boost:hover{background:var(--coral-soft)}
+  .stepnote{font-size:10.5px;color:var(--text-muted);width:100%;display:flex;align-items:center;gap:6px}
+  .stepnote .lock{color:var(--amber)}
+  .spinner{width:13px;height:13px;border:2px solid rgba(26,24,21,.3);border-top-color:#1A1815;border-radius:50%;
+    display:inline-block;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Composer */
+  .composer{padding:14px 0 calc(16px + var(--safe-b));background:linear-gradient(transparent,var(--bg-canvas) 32%);flex-shrink:0}
+  .box{background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);border:1px solid var(--border-default);
+    border-radius:var(--r-lg);padding:14px 16px;transition:border-color .2s,box-shadow .2s}
+  .box.focus{border-color:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-soft)}
+  .box textarea{width:100%;background:none;border:none;color:var(--text-primary);font:14px/1.5 inherit;
+    outline:none;resize:none;height:24px;max-height:140px}
+  .box .row{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:10.5px;color:var(--text-muted);flex-wrap:wrap}
+  .pedal{display:flex;background:var(--bg-sunken);border:1px solid var(--border-subtle);border-radius:9px;overflow:hidden}
+  .pedal button{background:none;border:none;color:var(--text-muted);font-size:11px;padding:6px 11px;cursor:pointer;transition:all .18s}
+  .pedal button.on{background:var(--coral-deep);color:#FBF4EF}
+  .send-btn{margin-left:auto;width:34px;height:34px;border-radius:9px;background:var(--bg-raised);border:none;
+    color:var(--text-muted);font-size:15px;cursor:pointer;transition:all .2s var(--ease);flex-shrink:0}
+  .send-btn.ready{background:var(--coral);color:#1A1815}
+  .send-btn.ready:hover{transform:scale(1.07)}
+  .hintc{text-align:center;font-size:10.5px;color:var(--text-muted);margin-top:9px}
+
+  /* ════════ VISTAS "CLÁSICAS" ════════ */
+  .classic{padding:22px 26px 26px;max-width:1000px;margin:0 auto;width:100%}
+  .vhead{margin-bottom:18px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+  .vtitle{font-family:var(--font-title);font-size:23px;margin-bottom:3px}
+  .vsub{font-size:12px;color:var(--text-muted)}
+  .vhead .vactions{margin-left:auto;display:flex;gap:8px}
+  .seg{display:flex;gap:2px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:9px;padding:3px}
+  .seg button{background:none;border:none;color:var(--text-muted);font-size:11px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer;transition:all .18s}
+  .seg button.on{background:var(--bg-raised);color:var(--text-primary)}
+
+  /* ── INBOX v2 (// E1a) ── */
+  .inboxToolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .filterchip{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:5px 11px;
+    font-size:11px;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .18s}
+  .filterchip:hover{border-color:var(--border-default)}
+  .filterchip.on{background:var(--coral-soft);border-color:var(--coral-deep);color:var(--coral)}
+  .filterchip .n{font-size:9.5px;background:var(--bg-raised);border-radius:5px;padding:0 5px}
+  .mailgroup{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted);
+    padding:14px 4px 8px;display:flex;align-items:center;gap:8px}
+  .maillist{display:flex;flex-direction:column;gap:6px}
+  .mailrow{display:flex;align-items:center;gap:12px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-left:3px solid var(--border-default);border-radius:var(--r-md);padding:11px 14px;cursor:pointer;
+    transition:all .18s var(--ease);animation:itemIn .3s var(--ease) backwards}
+  .mailrow:hover{border-color:var(--border-default);transform:translateX(2px)}
+  .mailrow.cls-rfq{border-left-color:var(--coral)}
+  .mailrow.cls-seg{border-left-color:var(--sage)}
+  .mailrow.cls-cob{border-left-color:var(--amber)}
+  .mailrow.cls-sop{border-left-color:var(--slate)}
+  .mailrow.cls-spam{border-left-color:var(--vino);opacity:.62}
+  .clsbadge{font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;border-radius:6px;padding:3px 7px;flex-shrink:0;white-space:nowrap}
+  .clsbadge.rfq{background:var(--coral-soft);color:var(--coral)}
+  .clsbadge.seg{background:var(--sage-soft);color:var(--sage)}
+  .clsbadge.cob{background:var(--amber-soft);color:var(--amber)}
+  .clsbadge.sop{background:var(--slate-soft);color:var(--slate)}
+  .clsbadge.spam{background:var(--vino-soft);color:var(--vino)}
+  .mailbody{flex:1;min-width:0}
+  .mailbody .from{font-size:11px;color:var(--text-muted);margin-bottom:2px}
+  .mailbody .subj{font-size:13px;color:var(--text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mailbody .mmeta{font-size:10.5px;color:var(--text-faint);margin-top:2px}
+  .mailroute{font-size:10.5px;color:var(--sage);white-space:nowrap;display:flex;align-items:center;gap:4px}
+  .mailacts{display:flex;gap:5px;flex-shrink:0}
+  .qa{background:var(--bg-raised);border:1px solid var(--border-default);border-radius:7px;padding:5px 9px;
+    font-size:10.5px;color:var(--text-secondary);cursor:pointer;transition:all .16s;white-space:nowrap}
+  .qa:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .qa.go{background:var(--coral);color:#1A1815;border:none;font-weight:600}
+  .qa.go:hover{background:#ef9c80}
+  .qa.spam:hover{background:var(--vino-soft);color:var(--vino);border-color:var(--vino-deep)}
+
+  /* ── WORKLOOM v2 (// E1b) ── */
+  .kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+  .col{min-width:0}
+  .col h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;padding:4px 4px 11px;display:flex;gap:7px;align-items:center;color:var(--text-secondary)}
+  .col .cnt{font-size:10px;background:var(--bg-raised);border-radius:8px;padding:0 7px;margin-left:auto}
+  .card-k{background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);border:1px solid var(--border-subtle);
+    border-left:3px solid var(--border-default);border-radius:var(--r-md);padding:12px 13px;margin-bottom:9px;font-size:12px;
+    cursor:pointer;transition:all .18s var(--ease);animation:itemIn .35s var(--ease) backwards}
+  .card-k:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.3);border-color:var(--border-default)}
+  .card-k .ktop{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .card-k .cli{font-weight:600;font-size:13px;color:var(--text-primary);flex:1;min-width:0}
+  .urgtag{font-size:8.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;border-radius:5px;padding:2px 6px;flex-shrink:0}
+  .urgtag.crit{background:var(--coral-soft);color:var(--coral)}
+  .urgtag.wait{background:var(--amber-soft);color:var(--amber)}
+  .urgtag.del{background:var(--slate-soft);color:var(--slate)}
+  .urgtag.err{background:var(--vino-soft);color:var(--vino)}
+  .card-k .meta{font-size:10.5px;color:var(--text-muted);margin-bottom:7px}
+  .card-k .desc{color:var(--text-secondary);margin-bottom:10px;line-height:1.5}
+  .confline{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .confline .clab{font-size:9.5px;color:var(--text-muted);white-space:nowrap}
+  .confline .cmeter{flex:1;height:5px;border-radius:3px;background:var(--bg-sunken);overflow:hidden}
+  .confline .cmeter i{display:block;height:100%;border-radius:3px}
+  .confline .cval{font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kacts{display:flex;gap:6px;align-items:center}
+  .kopen{flex:1;background:var(--bg-raised);border:1px solid var(--border-default);border-radius:7px;padding:6px;
+    font-size:11px;color:var(--text-secondary);cursor:pointer;transition:all .16s;text-align:center;font-weight:600}
+  .kopen:hover{background:var(--coral);color:#1A1815;border-color:var(--coral)}
+  .c-crit{border-left-color:var(--coral)}.c-wait{border-left-color:var(--amber)}
+  .c-del{border-left-color:var(--slate)}.c-err{border-left-color:var(--vino)}
+
+  /* ── Empty states ── */
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    padding:60px 20px;color:var(--text-muted);gap:10px}
+  .empty .eico{width:54px;height:54px;border-radius:14px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    display:grid;place-items:center;font-size:24px;color:var(--text-faint)}
+  .empty h5{font-family:var(--font-title);font-size:16px;color:var(--text-secondary);font-weight:400}
+  .empty p{font-size:12px;max-width:320px;line-height:1.5}
+
+  /* ════════ RAIL 3 (DERECHA) — Toolset ════════ */
+  .rail3{width:268px;min-width:200px;max-width:420px;border-left:1px solid var(--border-subtle);display:flex;
+    flex-direction:column;padding:10px 10px;overflow:hidden;background:var(--bg-canvas);position:relative;
+    transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s var(--ease),opacity .25s}
+  .rail3.hidden{width:0;min-width:0;padding:10px 0;opacity:0;pointer-events:none;border-left-color:transparent}
+  .rail3 .resize-handle{position:absolute;left:0;top:0;bottom:0;width:4px;cursor:col-resize;z-index:50;transition:background .2s}
+  .rail3 .resize-handle:hover,.rail3.resizing .resize-handle{background:var(--coral);opacity:.6}
+  .toolwrap{flex:1;overflow-y:auto;overflow-x:hidden;padding-right:2px}
+  .toolHint{font-size:10.5px;color:var(--text-muted);padding:9px 11px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-radius:var(--r-sm);margin-bottom:10px;line-height:1.5}
+  .toolTabs{display:flex;gap:2px;background:var(--bg-surface);border-radius:10px;padding:3px;margin-bottom:12px}
+  .toolTabs button{background:none;border:none;color:var(--text-muted);font-size:11px;font-weight:600;
+    padding:7px 8px;border-radius:8px;cursor:pointer;transition:all .2s var(--ease);white-space:nowrap;flex:1}
+  .toolTabs button:hover{color:var(--text-secondary)}
+  .toolTabs button.on{background:var(--bg-raised);color:var(--text-primary);box-shadow:var(--shadow-sm)}
+  .toolPanel{display:none}
+  .toolPanel.on{display:block;animation:viewIn .25s var(--ease)}
+
+  .toolGroup{margin-bottom:14px}
+  .toolGroupHead{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;
+    padding:6px 4px 6px;display:flex;align-items:center;gap:6px}
+  .toolGroupHead .seal{font-size:9px;color:var(--amber);text-transform:none;letter-spacing:0;margin-left:auto}
+
+  .toggle{position:relative;display:inline-block;width:30px;height:17px;margin-right:4px;flex-shrink:0}
+  .toggle input{opacity:0;width:0;height:0}
+  .slider{position:absolute;cursor:pointer;inset:0;background:var(--bg-raised);border-radius:16px;transition:.2s;border:1px solid var(--border-default)}
+  .slider:before{position:absolute;content:"";height:11px;width:11px;left:2px;bottom:2px;background:var(--text-muted);border-radius:50%;transition:.2s}
+  .toggle input:checked + .slider{background:var(--coral-soft);border-color:var(--coral-deep)}
+  .toggle input:checked + .slider:before{background:var(--coral);transform:translateX(13px)}
+
+  .toolItem{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:var(--r-sm);color:var(--text-secondary);
+    font-size:12.5px;cursor:pointer;margin-bottom:2px;transition:all .16s;position:relative}
+  .toolItem:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .toolItem.on{background:var(--coral-soft);border:1px solid var(--coral-deep);color:var(--text-primary)}
+  .toolItem.disabled{opacity:.5;cursor:not-allowed}
+  .toolItem.disabled:hover{background:none;color:var(--text-secondary)}
+  .toolItem .ico{width:21px;height:21px;border-radius:6px;background:var(--bg-raised);display:grid;place-items:center;
+    font-size:11px;color:var(--text-muted);flex-shrink:0}
+  .toolItem.on .ico{background:var(--coral);color:#1A1815}
+  .toolItem .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toolItem .tag{font-size:9.5px;color:var(--text-muted);background:var(--bg-raised);border-radius:5px;padding:1px 6px;white-space:nowrap}
+  .toolItem .tag.ok{background:var(--sage-soft);color:var(--sage)}
+  .toolItem .tag.warn{background:var(--amber-soft);color:var(--amber)}
+  .toolItem .tag.err{background:var(--vino-soft);color:var(--vino)}
+  .toolItem .tag.block{background:var(--vino-soft);color:var(--vino)}
+  .knowItem{display:flex;align-items:center;gap:7px;padding:6px 8px;font-size:11.5px;color:var(--text-secondary);
+    border-radius:6px;cursor:pointer;transition:padding-left .2s}
+  .knowItem:hover{padding-left:13px;color:var(--text-primary)}
+  .knowItem .lvl{margin-left:auto;font-size:9.5px;color:var(--text-muted);background:var(--bg-raised);border-radius:5px;padding:1px 6px}
+  .knowItem .lvl.warn{color:var(--amber)}
+  .goldItem{display:flex;align-items:center;gap:7px;padding:6px 8px;font-size:11.5px;color:var(--text-secondary);
+    border-radius:6px;cursor:pointer;transition:padding-left .2s}
+  .goldItem:hover{padding-left:13px;color:var(--text-primary)}
+  .goldItem .num{margin-left:auto;font-size:9.5px;color:var(--text-muted)}
+
+  /* ════════ ROUTING FACTORY (// E3/E4) ════════ */
+  .r-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+  .r-metric{background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:13px;text-align:center}
+  .r-mval{font-family:var(--font-title);font-size:21px;color:var(--text-primary);display:block}
+  .r-mlab{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+  .r-tabs{display:flex;gap:2px;background:var(--bg-surface);border-radius:10px;padding:3px;margin-bottom:18px;max-width:560px}
+  .r-tabs button{background:none;border:none;color:var(--text-muted);font-size:11px;font-weight:600;
+    padding:8px 12px;border-radius:8px;cursor:pointer;transition:all .2s var(--ease);white-space:nowrap;flex:1}
+  .r-tabs button:hover{color:var(--text-secondary)}
+  .r-tabs button.on{background:var(--bg-raised);color:var(--text-primary);box-shadow:var(--shadow-sm)}
+  .r-panel{display:none}
+  .r-panel.on{display:block;animation:viewIn .3s var(--ease)}
+  .r-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .r-card{background:linear-gradient(var(--elev-top),transparent),var(--bg-surface);border:1px solid var(--border-subtle);border-radius:13px;padding:16px}
+  .r-card h4{font-family:var(--font-title);font-size:15px;margin-bottom:12px;color:var(--text-primary)}
+
+  .r-key-item{padding:12px;border:1px solid var(--border-subtle);border-radius:var(--r-md);margin-bottom:9px;background:var(--bg-sunken)}
+  .r-key-item.blocked{border-color:var(--vino-deep);background:var(--vino-soft)}
+  .r-key-provider{font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .r-key-provider b{color:var(--text-primary)}
+  .r-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .r-region{font-size:9.5px;font-weight:700;letter-spacing:.4px;border:1px solid var(--border-default);border-radius:5px;padding:1px 6px;color:var(--text-muted)}
+  .r-region.us{color:var(--amber);border-color:var(--amber-deep)}
+  .r-region.eu{color:var(--sage);border-color:var(--sage-deep)}
+  .r-blockbadge{margin-left:auto;font-size:10px;font-weight:700;background:var(--vino-soft);color:var(--vino);
+    border:1px solid var(--vino-deep);border-radius:6px;padding:3px 9px;display:flex;align-items:center;gap:5px}
+  .r-key-status{font-size:10.5px;margin-top:6px}
+  .r-key-status.ok{color:var(--sage)}
+  .r-key-status.warn{color:var(--amber)}
+  .r-key-status.block{color:var(--vino)}
+  .r-key-usage{font-size:10px;color:var(--text-muted);margin-top:3px}
+  .r-arq-item{display:flex;align-items:center;gap:10px;padding:11px;border-radius:var(--r-md);
+    border:1px solid var(--border-subtle);margin-bottom:8px;cursor:pointer;transition:all .2s;background:var(--bg-sunken)}
+  .r-arq-item:hover{background:var(--bg-hover)}
+  .r-arq-item.on{border-color:var(--sage);background:var(--sage-soft)}
+  .r-arq-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:14px;color:#1A1815;flex-shrink:0}
+  .r-arq-info{flex:1;font-size:12px;color:var(--text-secondary)}
+  .r-arq-info b{color:var(--text-primary);font-size:13px}
+  .r-meta{font-size:10px;color:var(--text-muted);display:block;margin-top:2px}
+  .r-pill{background:var(--bg-raised);border:1px solid var(--border-default);border-radius:7px;padding:5px 11px;
+    font-size:11px;color:var(--text-secondary);cursor:pointer;transition:all .2s}
+  .r-pill:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .r-pill.go{background:var(--coral);color:#1A1815;border:none;font-weight:600}
+  .r-pill.go:hover{background:#ef9c80}
+  .r-form{display:flex;flex-direction:column;gap:13px}
+  .r-field label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block}
+  .r-field input,.r-field select,.r-field textarea{width:100%;background:var(--bg-sunken);border:1px solid var(--border-default);
+    border-radius:8px;padding:9px 11px;color:var(--text-primary);font-size:12.5px;outline:none;resize:vertical;font-family:inherit}
+  .r-field input:focus,.r-field select:focus,.r-field textarea:focus{border-color:var(--coral)}
+  .r-caprow{display:flex;align-items:center;gap:10px}
+  .r-caprow input{width:120px}
+  .r-estimate{font-size:11.5px;color:var(--text-secondary);padding:10px 12px;background:var(--bg-sunken);
+    border-radius:8px;border:1px solid var(--border-subtle)}
+  .r-estimate b{color:var(--text-primary)}
+  .r-rule-item{padding:13px;border:1px solid var(--border-subtle);border-radius:var(--r-md);margin-bottom:9px;background:var(--bg-sunken)}
+  .r-rule-flow{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary)}
+  .r-rule-flow b{color:var(--text-primary)}
+  .r-rule-arrow{color:var(--coral);font-size:15px}
+  .r-badge{background:var(--bg-raised);border:1px solid var(--border-default);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text-secondary)}
+  .r-rule-meta{font-size:10px;color:var(--text-muted);margin-bottom:9px}
+  .r-rule-actions{display:flex;gap:6px}
+  .r-table{width:100%;border-collapse:collapse;font-size:12px}
+  .r-table th{text-align:left;padding:9px;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border-subtle)}
+  .r-table td{padding:9px;color:var(--text-secondary);border-bottom:1px solid var(--border-subtle)}
+  .r-table tr:hover td{background:var(--bg-hover);color:var(--text-primary)}
+  .r-sim-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-subtle)}
+  .r-sim-label{font-size:11px;color:var(--text-muted)}
+  .r-sim-val{font-size:12.5px;color:var(--text-primary);font-weight:600}
+
+  /* ════════ MODALES ════════ */
+  .modal-bg{position:fixed;inset:0;background:rgba(12,10,8,.66);backdrop-filter:blur(4px);z-index:90;
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  .modal-bg.open{opacity:1;pointer-events:auto}
+  .palette{position:fixed;top:14%;left:50%;width:min(520px,92vw);transform:translateX(-50%) translateY(-8px) scale(.98);
+    background:var(--bg-raised);border:1px solid var(--border-default);border-radius:var(--r-lg);box-shadow:var(--shadow);
+    z-index:95;opacity:0;pointer-events:none;transition:all .22s var(--ease);overflow:hidden}
+  .palette.open{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
+  .palette input{width:100%;background:none;border:none;border-bottom:1px solid var(--border-subtle);
+    color:var(--text-primary);font:14px inherit;padding:15px 18px;outline:none}
+  .palette .res{max-height:320px;overflow-y:auto;padding:8px}
+  .pgrp{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-faint);padding:9px 12px 5px}
+  .pres{display:flex;gap:11px;align-items:center;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;
+    color:var(--text-secondary);transition:background .12s}
+  .pres:hover,.pres.sel{background:var(--bg-hover);color:var(--text-primary)}
+  .pres .pico{width:26px;height:26px;border-radius:7px;background:var(--bg-sunken);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+  .pres kbd{margin-left:auto;border:1px solid var(--border-default);border-radius:4px;padding:0 6px;font-size:10px}
+
+  /* Send confirmation — doble confirmación, imposible de saltar (// E1b) */
+  .sendModal{position:fixed;top:50%;left:50%;width:min(440px,92vw);transform:translate(-50%,-46%) scale(.97);
+    background:var(--bg-raised);border:1px solid var(--border-default);border-radius:var(--r-lg);box-shadow:var(--shadow);
+    z-index:96;opacity:0;pointer-events:none;transition:all .24s var(--ease);overflow:hidden}
+  .sendModal.open{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+  .sendModal .smhead{padding:18px 20px 14px;border-bottom:1px solid var(--border-subtle)}
+  .sendModal .smtitle{font-family:var(--font-title);font-size:18px;display:flex;align-items:center;gap:9px}
+  .sendModal .smtitle .warnico{width:26px;height:26px;border-radius:7px;background:var(--coral-soft);color:var(--coral);display:grid;place-items:center;font-size:14px}
+  .sendModal .smsub{font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5}
+  .sendModal .smbody{padding:16px 20px}
+  .sm-recipient{background:var(--bg-sunken);border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px}
+  .sm-recipient .srlab{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px}
+  .sm-recipient .srval{font-size:13.5px;color:var(--text-primary);font-weight:600}
+  .sm-recipient .srfile{font-size:11px;color:var(--text-secondary);margin-top:4px}
+  .sm-check{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--border-default);
+    border-radius:var(--r-md);cursor:pointer;margin-bottom:10px;transition:all .18s}
+  .sm-check:hover{border-color:var(--border-strong)}
+  .sm-check.checked{border-color:var(--sage-deep);background:var(--sage-soft)}
+  .sm-check .cb{width:20px;height:20px;border-radius:6px;border:2px solid var(--border-strong);flex-shrink:0;display:grid;place-items:center;font-size:12px;color:transparent;transition:all .18s}
+  .sm-check.checked .cb{background:var(--sage);border-color:var(--sage);color:#1A1815}
+  .sm-check .ct{font-size:12px;color:var(--text-secondary);line-height:1.45}
+  .sm-check .ct b{color:var(--text-primary)}
+  .sm-foot{padding:14px 20px 18px;display:flex;gap:10px;align-items:center;border-top:1px solid var(--border-subtle)}
+  .sm-cancel{background:none;border:1px solid var(--border-default);color:var(--text-secondary);border-radius:var(--r-sm);padding:9px 16px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .sm-send{flex:1;background:var(--coral);color:#1A1815;border:none;border-radius:var(--r-sm);padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .18s}
+  .sm-send:disabled{background:var(--bg-surface);color:var(--text-faint);cursor:not-allowed}
+  .sm-send .cd{font-variant-numeric:tabular-nums}
+
+  .toast{position:fixed;bottom:calc(26px + var(--safe-b));right:26px;background:var(--bg-raised);border:1px solid var(--border-default);
+    border-left:3px solid var(--sage);border-radius:12px;padding:13px 18px;font-size:12.5px;color:var(--text-secondary);
+    box-shadow:var(--shadow);z-index:99;transform:translateY(20px);opacity:0;transition:all .3s var(--ease);max-width:340px}
+  .toast.show{transform:none;opacity:1}
+  .toast b{color:var(--text-primary)}
+  .toast.warn{border-left-color:var(--amber)}
+  .toast.err{border-left-color:var(--vino)}
+
+  /* Mobile drawer backdrop */
+  .drawerbg{position:fixed;inset:0;background:rgba(12,10,8,.55);backdrop-filter:blur(2px);z-index:55;opacity:0;pointer-events:none;transition:opacity .22s}
+  .drawerbg.open{opacity:1;pointer-events:auto}
+
+  /* ════════════════════ RESPONSIVE ════════════════════ */
+  /* Tablet: ocultar rail derecho por defecto, accesible por botón */
+  @media (max-width:1080px){
+    .rail3{position:absolute;right:0;top:0;bottom:0;z-index:58;box-shadow:var(--shadow);width:300px}
+    .rail3.hidden{box-shadow:none}
+    .r-metrics{grid-template-columns:repeat(3,1fr)}
+    .r-grid2{grid-template-columns:1fr}
+  }
+  /* Móvil <768: rails como drawers, composer bottom sheet, HITL full-width */
+  @media (max-width:767px){
+    .ceja.mobile-only{display:grid}
+    .ceja.desk-only{display:none}
+    .cmdk{max-width:none;flex:1}
+    .cmdk .cmdk-label{display:none}
+    .budgetChip{display:none}
+    .topRight .toolsbtn{display:grid}
+
+    .rail1{position:absolute;left:0;top:0;bottom:0;z-index:58;width:84vw;max-width:320px;box-shadow:var(--shadow);
+      transform:translateX(-102%);transition:transform .28s var(--ease)}
+    .rail1.hidden{transform:translateX(-102%);width:84vw;max-width:320px;padding:10px 0;opacity:1;pointer-events:none}
+    .rail1.drawer-open{transform:translateX(0);opacity:1;pointer-events:auto;border-right:1px solid var(--border-subtle)}
+    .rail1 .resize-handle{display:none}
+    .rail3{width:88vw;max-width:340px;transform:translateX(102%);transition:transform .28s var(--ease)}
+    .rail3.hidden{transform:translateX(102%)}
+    .rail3.drawer-open{transform:translateX(0)}
+    .rail3 .resize-handle{display:none}
+
+    .ctxstrip{padding:10px 16px;gap:10px}
+    .ctxstrip .ctxmeta{width:100%;margin-left:0}
+    .spaceClean{padding:0 14px}
+    .classic{padding:16px 14px 22px}
+    .qmsg .bub{max-width:92%}
+
+    /* WorkLoom vertical: scroll-snap horizontal por columnas (// E1b mobile) */
+    .kanban{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:12px;margin:0 -14px;padding:0 14px 8px}
+    .col{scroll-snap-align:start;min-width:78vw;flex-shrink:0}
+
+    .r-metrics{grid-template-columns:repeat(2,1fr)}
+    .r-tabs{overflow-x:auto}
+
+    .mailrow{flex-wrap:wrap}
+    .mailacts{width:100%;justify-content:flex-end}
+
+    /* Composer fijo abajo como bottom sheet */
+    .composer{position:sticky;bottom:0}
+    .box{border-radius:var(--r-lg) var(--r-lg) 0 0}
+
+    /* HITL en móvil: botones a ancho completo, grandes (>=44px) */
+    .hitl{gap:8px}
+    .hitl .btn{flex:1;justify-content:center;min-height:46px}
+    .boost{margin-left:0;width:100%;justify-content:center;min-height:44px}
+
+    .sendModal{top:auto;bottom:0;left:0;transform:translateY(100%);width:100%;border-radius:var(--r-lg) var(--r-lg) 0 0;max-width:none}
+    .sendModal.open{transform:translateY(0)}
+    .sm-send{min-height:50px}
+    .toast{left:16px;right:16px;max-width:none}
+  }
+  .topRight .toolsbtn{display:none}
+</style>
+</head>
+<body>
+
+<!-- ════════ TOPBAR ════════ -->
+<div class="topbar">
+  <button class="ceja desk-only" id="cejaL" onclick="toggleL()" ondblclick="focusMode()" title="Panel izquierdo ([)">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+  </button>
+  <button class="ceja mobile-only" onclick="openDrawer('rail1')" title="Menú" aria-label="Abrir menú">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+  </button>
+
+  <div class="logo"><div class="mark">F</div>
+    <div><span class="name">Faber<span style="color:var(--coral)">*</span>loom</span>
+    <small>tenant · MWT</small></div></div>
+
+  <div class="cmdk" onclick="openPalette()" tabindex="0" role="button" aria-label="Buscar o ejecutar"><span>&#8981;</span> <span class="cmdk-label">Buscar o ejecutar…</span> <kbd>&#8984;K</kbd></div>
+
+  <div class="topRight">
+    <!-- Cost cap visible (// E4) -->
+    <div class="budgetChip" onclick="setMode('admin');go('routing')" title="Presupuesto del tenant">
+      <div class="bbar"><div class="bfill"></div></div>
+      <span class="bnum">$12.40 / $45</span>
+    </div>
+    <button class="ceja toolsbtn" onclick="openDrawer('rail3')" title="Toolset" aria-label="Abrir toolset">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+    </button>
+    <div class="themeBtn">
+      <button class="ceja" onclick="toggleThemePop(event)" title="Estilo visual" aria-label="Cambiar estilo">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 2v12M2.7 5h10.6M2.7 11h10.6"/></svg>
+      </button>
+      <div class="themePop" id="themePop">
+        <div class="tph">Oscuros</div>
+        <div class="themeOpt on" data-theme="warm" onclick="setTheme('warm')"><span class="sw" style="background:#1C1A17"><span class="acc" style="background:#E8896A"></span></span><span class="tn">Faber Warm</span><span class="chk">&#10003;</span></div>
+        <div class="themeOpt" data-theme="slate" onclick="setTheme('slate')"><span class="sw" style="background:#1B1F26"><span class="acc" style="background:#5E9CE8"></span></span><span class="tn">Slate Pro</span><span class="chk">&#10003;</span></div>
+        <div class="themeOpt" data-theme="mono" onclick="setTheme('mono')"><span class="sw" style="background:#0B0B0C"><span class="acc" style="background:#FF6A3D"></span></span><span class="tn">Mono Contrast</span><span class="chk">&#10003;</span></div>
+        <div class="themeOpt" data-theme="indigo" onclick="setTheme('indigo')"><span class="sw" style="background:#1E1B2D"><span class="acc" style="background:#B07CF0"></span></span><span class="tn">Indigo Night</span><span class="chk">&#10003;</span></div>
+        <div class="tph" style="margin-top:4px">Claros</div>
+        <div class="themeOpt" data-theme="paper" onclick="setTheme('paper')"><span class="sw" style="background:#F1EBE0"><span class="acc" style="background:#CF6238"></span></span><span class="tn">Paper (cálido)</span><span class="chk">&#10003;</span></div>
+        <div class="themeOpt" data-theme="cloud" onclick="setTheme('cloud')"><span class="sw" style="background:#EBEEF2"><span class="acc" style="background:#DE6F49"></span></span><span class="tn">Cloud (neutro)</span><span class="chk">&#10003;</span></div>
+        <div class="themeOpt" data-theme="mist" onclick="setTheme('mist')"><span class="sw" style="background:#E7EDF4"><span class="acc" style="background:#3B7AD0"></span></span><span class="tn">Mist (azulado)</span><span class="chk">&#10003;</span></div>
+      </div>
+    </div>
+    <button class="ceja desk-only" id="cejaR" onclick="toggleR()" ondblclick="focusMode()" title="Panel derecho (])">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="frame">
+
+<!-- ════════ RAIL 1 (IZQUIERDA) — navegación contextual por modo ════════ -->
+<aside class="rail1" id="rail1">
+  <div class="resize-handle" data-resize="rail1"></div>
+  <div class="navwrap">
+
+    <!-- Modo Operar / Aprender / Admin -->
+    <div class="modebar-2" id="modebar">
+      <button class="on" data-m="operar" onclick="setMode('operar')"><span class="ico">&#9707;</span>Operar</button>
+      <button data-m="aprender" onclick="setMode('aprender')"><span class="ico">&#9719;</span>Aprender</button>
+      <button data-m="admin" onclick="setMode('admin')"><span class="ico">&#9881;</span>Admin</button>
+    </div>
+
+    <!-- ░░ MODO OPERAR ░░ (// E1a navegación) -->
+    <div class="navmode on" id="nm-operar">
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev rot">&#9656;</span>SpaceLoom<span class="cnt">1</span></div>
+        <div class="accBody open">
+          <div class="it active" data-v="space" onclick="go('space')"><span class="ico">&#10047;</span>SpaceLoom</div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev rot">&#9656;</span>Entrada<span class="cnt">2</span></div>
+        <div class="accBody open">
+          <div class="it" data-v="inbox" onclick="go('inbox')"><span class="ico">&#9993;</span>Inbox<span class="b op">12</span></div>
+          <div class="it" data-v="workloom" onclick="go('workloom')"><span class="ico">&#9707;</span>WorkLoom<span class="b crit">1</span></div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev">&#9656;</span>My Workspaces<span class="cnt">4</span></div>
+        <div class="accBody">
+          <div class="it" onclick="setContext('sondel')" id="ctx-sondel"><span class="dot" style="background:var(--coral)"></span>Sondel SA</div>
+          <div class="it" onclick="setContext('industrias')" id="ctx-industrias"><span class="dot" style="background:var(--amber)"></span>Industrias Norte</div>
+          <div class="it" onclick="setContext('rana')" id="ctx-rana"><span class="dot" style="background:var(--sage)"></span>Rana Walk</div>
+          <div class="it" onclick="setContext('tema')" id="ctx-tema"><span class="dot" style="background:var(--slate)"></span>Precios dieléctrica</div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev">&#9656;</span>Shared Workspaces<span class="cnt">2</span></div>
+        <div class="accBody">
+          <div class="it" onclick="setContext('shared-lic')" id="ctx-shared-lic"><span class="dot" style="background:var(--vino)"></span>Licitación Q3 · Construx</div>
+          <div class="it" onclick="setContext('shared-corp')" id="ctx-shared-corp"><span class="dot" style="background:var(--slate)"></span>Corporativo MWT</div>
+        </div>
+      </div>
+      <div class="acc" id="historial-acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev">&#9656;</span>Historial<span class="cnt" id="hist-cnt">3</span></div>
+        <div class="accBody" id="hist-body">
+          <div class="it"><span class="dot" style="background:var(--coral)"></span>PF_2468 · cotización</div>
+          <div class="it"><span class="dot" style="background:var(--amber)"></span>RFQ 500 pares</div>
+          <div class="it"><span class="dot" style="background:var(--slate)"></span>Condiciones DDP</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ░░ MODO APRENDER ░░ -->
+    <div class="navmode" id="nm-aprender">
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev rot">&#9656;</span>Cola<span class="cnt">5</span></div>
+        <div class="accBody open">
+          <div class="it active" data-v="aprender" onclick="go('aprender')"><span class="ico">&#9636;</span>StackLoom<span class="b op">5</span></div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev">&#9656;</span>Conocimiento<span class="cnt">19</span></div>
+        <div class="accBody">
+          <div class="it"><span class="ico">&#128218;</span>Conocimiento L0-L4</div>
+          <div class="it"><span class="ico">&#9998;</span>Señales HITL<span class="b">3</span></div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev">&#9656;</span>Gold Samples<span class="cnt">42</span></div>
+        <div class="accBody">
+          <div class="it"><span class="ico">&#9673;</span>Cotización · Sondel</div>
+          <div class="it"><span class="ico">&#9673;</span>Cobranza · F-1102</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ░░ MODO ADMIN ░░ -->
+    <div class="navmode" id="nm-admin">
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev rot">&#9656;</span>Capacidades<span class="cnt">23</span></div>
+        <div class="accBody open">
+          <div class="it" data-v="skills" onclick="go('skills')"><span class="ico">&#9881;</span>Skills<span class="b">16</span></div>
+          <div class="it" data-v="agentes" onclick="go('agentes')"><span class="ico">&#9670;</span>Agentes<span class="b">7</span></div>
+        </div>
+      </div>
+      <div class="acc">
+        <div class="accHead" onclick="toggleAcc(this)"><span class="chev rot">&#9656;</span>Tenant<span class="cnt">4</span></div>
+        <div class="accBody open">
+          <div class="it active" data-v="routing" onclick="go('routing')"><span class="ico">&#127899;</span>IA: modelos y ruteo</div>
+          <div class="it" data-v="audit" onclick="go('audit')"><span class="ico">&#9998;</span>Audit</div>
+          <div class="it" data-v="usuarios" onclick="go('usuarios')"><span class="ico">&#9787;</span>Usuarios<span class="b">12</span></div>
+          <div class="it" data-v="config" onclick="go('config')"><span class="ico">&#9881;</span>Configuración</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="userfoot"><div class="avatar">AA</div>
+    <div style="font-size:12px;line-height:1.2">Alvaro<span style="color:var(--text-muted);display:block;font-size:10px">OWNER · MWT</span></div></div>
+</aside>
+
+<!-- ════════ CANVAS ════════ -->
+<main class="canvas" id="canvas">
+
+  <!-- ░░░░ SPACELOOM (// E1a + E1b + E2) ░░░░ -->
+  <section class="view on" id="v-space">
+    <!-- Context strip: el CEO sabe en <2s qué cliente/contexto está activo -->
+    <div class="ctxstrip" id="ctxstrip">
+      <span class="ctxdot" id="ctxDot" style="background:var(--text-muted)"></span>
+      <div>
+        <div class="ctxname" id="ctxName">Sin contexto</div>
+        <div class="ctxsub" id="ctxSub">KB tenant · cross-workspace</div>
+      </div>
+      <span class="ctxtype" id="ctxType">Global</span>
+      <div class="ctxmeta">
+        <span class="agentpill"><span>&#9670;</span><span id="ctxAgent">@cotizador</span></span>
+        <span class="modelpill" id="ctxModel"><span>&#9707;</span>Eco · haiku</span>
+      </div>
+    </div>
+
+    <div class="spaceClean">
+      <div class="spaceThread" id="spaceThread">
+        <div class="spaceEmpty" id="welcomeMsg">
+          <div class="seMark">F</div>
+          <div><h3>SpaceLoom · chat universal</h3>
+            <p>Empezá por un pendiente real o escribí abajo. Todo se ancla al contexto del workspace y nada se envía sin tu aprobación.</p></div>
+          <div class="seChips">
+            <div class="seChip" onclick="setContext('sondel');loadDraft()"><span class="seDot" style="background:var(--coral)"></span><span><b>Cotizar RFQ · Sondel SA</b><small>500 pares 50S5BR · DDP</small></span></div>
+            <div class="seChip" onclick="setContext('sondel');loadDraft()"><span class="seDot" style="background:var(--amber)"></span><span><b>Revisar cobranza F-1102</b><small>interna · 31d vencida</small></span></div>
+            <div class="seChip" onclick="setContext('rana');go('space')"><span class="seDot" style="background:var(--sage)"></span><span><b>Seguimiento · Rana Walk</b><small>reposición FBA Q3</small></span></div>
+            <div class="seChip" onclick="setMode('operar');go('inbox')"><span class="seDot" style="background:var(--slate)"></span><span><b>Ver inbox</b><small>12 sin procesar</small></span></div>
+          </div>
+          <div class="seSafe"><span class="lk">&#128274;</span> HITL obligatorio · ningún correo sale sin tu doble confirmación</div>
+        </div>
+      </div>
+
+      <div class="composer"><div class="box" id="box">
+        <textarea id="ta" rows="1" placeholder="Iterá, investigá, o pedí a un agente… (@agente para invocar)"></textarea>
+        <div class="row"><div class="pedal"><button onclick="pedal(this,'Eco · haiku')">Eco</button>
+          <button class="on" onclick="pedal(this,'Balanceado · sonnet')">Balanceado</button><button onclick="pedal(this,'Sport+ · opus')">Sport+</button></div>
+          <span><b style="color:var(--coral)">@cotizador</b> activo</span>
+          <button class="send-btn" id="sendBtn" onclick="sendMsg()" aria-label="Enviar mensaje">&#8593;</button></div></div>
+        <div class="hintc">Chat universal · cada workspace lo hereda · toolset en el panel derecho</div></div>
+    </div>
+  </section>
+
+  <!-- ░░░░ INBOX v2 (// E1a — usable desde 375px) ░░░░ -->
+  <section class="view" id="v-inbox">
+    <div class="classic">
+      <div class="vhead">
+        <div><div class="vtitle">Inbox</div>
+        <div class="vsub">Entrada global · clasificada · asigná, marcá o creá draft</div></div>
+      </div>
+      <div class="inboxToolbar">
+        <div class="filterchip on" onclick="filterInbox(this,'all')">Todos<span class="n">12</span></div>
+        <div class="filterchip" onclick="filterInbox(this,'rfq')">RFQ<span class="n">4</span></div>
+        <div class="filterchip" onclick="filterInbox(this,'seg')">Seguimiento<span class="n">3</span></div>
+        <div class="filterchip" onclick="filterInbox(this,'cob')">Cobranza<span class="n">2</span></div>
+        <div class="filterchip" onclick="filterInbox(this,'sop')">Soporte<span class="n">2</span></div>
+        <div class="filterchip" onclick="filterInbox(this,'spam')">Spam<span class="n">1</span></div>
+      </div>
+
+      <div class="mailgroup"><span class="dot" style="background:var(--sage)"></span> Ruteados automáticamente</div>
+      <div class="maillist" id="mailRouted">
+        <div class="mailrow cls-rfq" data-cls="rfq" onclick="setContext('sondel');go('space');loadDraft()">
+          <span class="clsbadge rfq">RFQ</span>
+          <div class="mailbody"><div class="from">compras@sondel.cr</div>
+            <div class="subj">RFQ 500 pares 50S5BR — entrega Alajuela DDP</div>
+            <div class="mmeta">10:41 · vinculado a Sondel SA</div></div>
+          <span class="mailroute">&#10003; Sondel SA</span>
+          <div class="mailacts"><button class="qa go" onclick="event.stopPropagation();setContext('sondel');go('space');loadDraft()">Abrir en SpaceLoom</button></div>
+        </div>
+        <div class="mailrow cls-seg" data-cls="seg" onclick="setContext('rana');go('space')">
+          <span class="clsbadge seg">SEGUIM.</span>
+          <div class="mailbody"><div class="from">karla@ranawalk.com</div>
+            <div class="subj">Re: reposición FBA Q3 — confirmación de fechas</div>
+            <div class="mmeta">09:58 · vinculado a Rana Walk</div></div>
+          <span class="mailroute">&#10003; Rana Walk</span>
+          <div class="mailacts"><button class="qa" onclick="event.stopPropagation();setContext('rana');go('space')">Abrir</button></div>
+        </div>
+        <div class="mailrow cls-cob" data-cls="cob" onclick="setContext('sondel');go('space');loadDraft()">
+          <span class="clsbadge cob">COBRANZA</span>
+          <div class="mailbody"><div class="from">pagos@sondel.cr</div>
+            <div class="subj">F-1102 · 31 días vencida — recordatorio interno</div>
+            <div class="mmeta">08:12 · cobranza interna · post-dictamen</div></div>
+          <span class="mailroute">&#10003; Sondel SA</span>
+          <div class="mailacts"><button class="qa" onclick="event.stopPropagation();setContext('sondel');go('space');loadDraft()">Revisar</button></div>
+        </div>
+      </div>
+
+      <div class="mailgroup"><span class="dot" style="background:var(--amber)"></span> Sin asignar · requiere tu criterio (3)</div>
+      <div class="maillist" id="mailUnsorted">
+        <div class="mailrow cls-rfq" data-cls="rfq">
+          <span class="clsbadge rfq">RFQ</span>
+          <div class="mailbody"><div class="from">proveeduria@grupoconstrux.gt</div>
+            <div class="subj">Solicitud catálogo EPP + condiciones licitación Q3</div>
+            <div class="mmeta">08:30 · cliente nuevo · Guatemala</div></div>
+          <div class="mailacts">
+            <button class="qa go" onclick="setContext('shared-lic');go('space')">+ Asignar workspace</button>
+            <button class="qa" onclick="toast('Draft de respuesta creado · pendiente de tu aprobación')">Crear draft</button>
+          </div>
+        </div>
+        <div class="mailrow cls-sop" data-cls="sop">
+          <span class="clsbadge sop">SOPORTE</span>
+          <div class="mailbody"><div class="from">jose.mora@distcomtek.com</div>
+            <div class="subj">Consulta: certificación dieléctrica modelo BC-7240</div>
+            <div class="mmeta">07:45 · sin vincular</div></div>
+          <div class="mailacts">
+            <button class="qa go" onclick="toast('Asigná un workspace para continuar')">+ Asignar</button>
+            <button class="qa" onclick="toast('Draft de respuesta creado · pendiente de tu aprobación')">Crear draft</button>
+          </div>
+        </div>
+        <div class="mailrow cls-spam" data-cls="spam">
+          <span class="clsbadge spam">SPAM?</span>
+          <div class="mailbody"><div class="from">newsletter@promo-epp.net</div>
+            <div class="subj">★★★ OFERTA limitada calzado industrial -70% ★★★</div>
+            <div class="mmeta">06:20 · clasificado spam · confianza 0.93</div></div>
+          <div class="mailacts">
+            <button class="qa spam" onclick="markSpam(this)">Marcar spam</button>
+          </div>
+        </div>
+      </div>
+      <div class="grow"></div>
+    </div>
+  </section>
+
+  <!-- ░░░░ WORKLOOM v2 (// E1b) ░░░░ -->
+  <section class="view" id="v-workloom">
+    <div class="classic">
+      <div class="vhead">
+        <div><div class="vtitle">WorkLoom</div>
+        <div class="vsub">Qué necesita tu criterio hoy · la resolución vive en el workspace</div></div>
+        <div class="vactions"><span class="vsub" style="align-self:center;display:none" id="wlHint">← deslizá entre columnas →</span></div>
+      </div>
+      <div class="kanban">
+        <div class="col"><h4><span class="dot" style="background:var(--coral)"></span> Tu criterio <span class="cnt">1</span></h4>
+          <div class="card-k c-crit">
+            <div class="ktop"><span class="cli">Industrias del Norte</span><span class="urgtag crit">Urgente</span></div>
+            <div class="meta">&#8594; @cotizador · descuento platinum requiere override</div>
+            <div class="desc">240 pares BC-7240 · margen bajo floor sin tu aprobación</div>
+            <div class="confline"><span class="clab">Confianza</span><span class="cmeter"><i style="width:96%;background:var(--sage)"></i></span><span class="cval" style="color:var(--sage)">0.96</span></div>
+            <div class="kacts"><button class="kopen" onclick="setContext('industrias');go('space');loadDraft()">Resolver en SpaceLoom &#8594;</button></div>
+          </div>
+        </div>
+        <div class="col"><h4><span class="dot" style="background:var(--amber)"></span> Esperando <span class="cnt">2</span></h4>
+          <div class="card-k c-wait">
+            <div class="ktop"><span class="cli">Sondel SA</span><span class="urgtag wait">Revisar</span></div>
+            <div class="meta">&#8594; @cotizador · 22m · PF_2468 v1</div>
+            <div class="desc">500 pares 50S5BR DDP · curva de tallas asumida</div>
+            <div class="confline"><span class="clab">Confianza</span><span class="cmeter"><i style="width:78%;background:var(--amber)"></i></span><span class="cval" style="color:var(--amber)">0.78</span></div>
+            <div class="kacts"><button class="kopen" onclick="setContext('sondel');go('space');loadDraft()">Abrir en SpaceLoom &#8594;</button></div>
+          </div>
+          <div class="card-k c-wait">
+            <div class="ktop"><span class="cli">Cobranza F-1102</span><span class="urgtag wait">2.º aviso</span></div>
+            <div class="meta">&#8594; @cobranza · 2h · 31d vencida · interna</div>
+            <div class="desc">Mensaje listo · tono firme · cobranza interna (post-dictamen)</div>
+            <div class="confline"><span class="clab">Confianza</span><span class="cmeter"><i style="width:55%;background:var(--amber)"></i></span><span class="cval" style="color:var(--amber)">0.55</span></div>
+            <div class="kacts"><button class="kopen" onclick="setContext('sondel');go('space');loadDraft()">Abrir en SpaceLoom &#8594;</button></div>
+          </div>
+        </div>
+        <div class="col"><h4><span class="dot" style="background:var(--slate)"></span> Delegado <span class="cnt">1</span></h4>
+          <div class="card-k c-del">
+            <div class="ktop"><span class="cli">Distribuidora Comtek</span><span class="urgtag del">Externo</span></div>
+            <div class="meta">&#8594; [AF] Alejandro · esperando specs del fabricante</div>
+            <div class="desc">Bloqueado hasta recibir ficha técnica</div>
+            <div class="confline"><span class="clab">Confianza</span><span class="cmeter"><i style="width:41%;background:var(--slate)"></i></span><span class="cval" style="color:var(--slate)">0.41</span></div>
+            <div class="kacts"><button class="kopen" onclick="toast('Delegado a Alejandro · sin acción tuya pendiente')">Ver detalle</button></div>
+          </div>
+        </div>
+        <div class="col"><h4><span class="dot" style="background:var(--vino)"></span> Error <span class="cnt">1</span></h4>
+          <div class="card-k c-err">
+            <div class="ktop"><span class="cli">Parser Excel · precios T2</span><span class="urgtag err">E-07</span></div>
+            <div class="meta">&#8594; @kb_ingest · 12 filas no parseadas</div>
+            <div class="desc">Requiere revisión manual de formato</div>
+            <div class="kacts"><button class="kopen" onclick="toast('Abriendo log del error E-07')">Ver detalle del error &#8594;</button></div>
+          </div>
+        </div>
+      </div><div class="grow"></div>
+    </div>
+  </section>
+
+  <!-- ░░░░ APRENDER ░░░░ -->
+  <section class="view" id="v-aprender">
+    <div class="classic">
+      <div class="vhead"><div><div class="vtitle">Aprendizaje</div>
+      <div class="vsub">Cola epistémica · curación de lo que el sistema propone</div></div></div>
+      <div class="mailgroup"><span class="dot" style="background:var(--amber)"></span> Candidatos a indexar (3)</div>
+      <div class="draft is-review">
+        <div class="dhead"><span class="state">Candidato</span>
+          <span class="dtitle">"Sondel acepta entregas parciales"</span>
+          <span class="dclass">&#8594; L3 · Sondel</span></div>
+        <div class="dbody">Detectado en SpaceLoom con contexto Sondel. Aparece en 3 hilos distintos del último trimestre.</div>
+        <div class="hitl">
+          <button class="btn ok" onclick="toast('Indexado a L3 · Sondel')">Aprobar a L3</button>
+          <button class="btn iter">Iterar</button><button class="btn no">Descartar</button></div>
+      </div>
+      <div class="grow"></div>
+    </div>
+  </section>
+
+  <!-- ░░░░ ROUTING · Factory de IAs (// E3 + E4 compliance) ░░░░ -->
+  <section class="view" id="v-routing">
+    <div class="classic">
+      <div class="vhead"><div><div class="vtitle">Routing · Factory de IAs</div>
+      <div class="vsub">Keys, arquetipos, presets, compliance y costo/outcome por tarea</div></div></div>
+
+      <div class="r-metrics">
+        <div class="r-metric"><span class="r-mval">$45.00</span><span class="r-mlab">Presupuesto/mes</span></div>
+        <div class="r-metric"><span class="r-mval">$12.40</span><span class="r-mlab">Usado · 27%</span></div>
+        <div class="r-metric"><span class="r-mval">$0.50</span><span class="r-mlab">Cap por draft</span></div>
+        <div class="r-metric"><span class="r-mval">94.2%</span><span class="r-mlab">Outcome est.</span></div>
+        <div class="r-metric"><span class="r-mval">2,847</span><span class="r-mlab">Calls/mes</span></div>
+      </div>
+
+      <div class="r-tabs">
+        <button class="on" onclick="showRTab(this,'r-keys')">Keys & Compliance</button>
+        <button onclick="showRTab(this,'r-arquetipos')">Arquetipos</button>
+        <button onclick="showRTab(this,'r-reglas')">Reglas</button>
+        <button onclick="showRTab(this,'r-simulador')">Simulador</button>
+      </div>
+
+      <!-- KEYS & COMPLIANCE — DeepSeek bloqueado, regiones, transfer_basis (// E4) -->
+      <div class="r-panel on" id="r-keys">
+        <div class="r-grid2">
+          <div class="r-card">
+            <h4>Proveedores & Keys</h4>
+            <div class="r-key-item">
+              <div class="r-key-provider"><span class="r-dot" style="background:var(--sage)"></span><b>Anthropic</b> · Claude<span class="r-region us">US</span></div>
+              <div class="r-key-status ok">&#10003; Activa · sk-ant-•••• · transfer_basis: SCC firmado</div>
+              <div class="r-key-usage">1,126 calls · $6.80 este mes</div>
+            </div>
+            <div class="r-key-item">
+              <div class="r-key-provider"><span class="r-dot" style="background:var(--sage)"></span><b>OpenAI</b> · GPT-4o<span class="r-region us">US</span></div>
+              <div class="r-key-status warn">&#9888; Activa · requiere transfer_basis para PII · ver banner en drafts</div>
+              <div class="r-key-usage">892 calls · $4.10 este mes</div>
+            </div>
+            <div class="r-key-item">
+              <div class="r-key-provider"><span class="r-dot" style="background:var(--sage)"></span><b>Google</b> · Gemini<span class="r-region us">US</span></div>
+              <div class="r-key-status ok">&#10003; Activa · transfer_basis: SCC firmado</div>
+              <div class="r-key-usage">829 calls · $1.50 este mes</div>
+            </div>
+            <!-- DeepSeek BLOQUEADO para PII (regla dura del plan v4) -->
+            <div class="r-key-item blocked">
+              <div class="r-key-provider"><span class="r-dot" style="background:var(--vino)"></span><b>DeepSeek</b><span class="r-region" style="color:var(--vino);border-color:var(--vino-deep)">CN</span>
+                <span class="r-blockbadge">&#9888; Bloqueado para PII</span></div>
+              <div class="r-key-status block">Sólo metadata anonimizada · no enrutar drafts con datos de cliente</div>
+              <div class="r-key-usage">Deshabilitado por política de transferencia de datos</div>
+            </div>
+          </div>
+
+          <div class="r-card">
+            <h4>Reglas de compliance activas</h4>
+            <div class="complbanner block" style="margin:0 0 12px">
+              <span class="ci">&#9888;</span>
+              <div><b>Cobranza a terceros · bloqueada</b><br>Sólo cobranza interna y recordatorios suaves hasta dictamen legal (E2.5).</div>
+            </div>
+            <div class="complbanner warn" style="margin:0 0 12px">
+              <span class="ci">&#9888;</span>
+              <div><b>PII + proveedor US</b><br>Todo draft con PII que use OpenAI/Google/Anthropic exige <b>transfer_basis</b> verificado antes de enviar.</div>
+            </div>
+            <div class="complbanner block" style="margin:0 0 12px">
+              <span class="ci">&#9760;</span>
+              <div><b>DeepSeek &amp; región MX</b><br>No disponibles para PII. Aparecen deshabilitados o con advertencia "sólo metadata anonimizada".</div>
+            </div>
+            <div class="r-field" style="margin-top:4px">
+              <label>Cost cap por draft / routing</label>
+              <div class="r-caprow"><input type="text" value="$0.50"><span class="vsub">Por defecto · alerta al 80%</span></div>
+            </div>
+            <div class="complbanner warn" style="margin:12px 0 0">
+              <span class="ci">&#128274;</span>
+              <div><b>No auto-send</b><br>Ningún correo sale sin aprobación humana visible y doble confirmación.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARQUETIPOS -->
+      <div class="r-panel" id="r-arquetipos">
+        <div class="r-grid2">
+          <div class="r-card">
+            <h4>Arquetipos activos</h4>
+            <div class="r-arq-item on">
+              <div class="r-arq-icon" style="background:var(--sage)">E</div>
+              <div class="r-arq-info"><b>Eco</b> · haiku · costo mínimo<span class="r-meta">$0.003/call · 1,204 calls · 89% OK</span></div>
+              <button class="r-pill" onclick="toast('Editando Eco')">Editar</button>
+            </div>
+            <div class="r-arq-item">
+              <div class="r-arq-icon" style="background:var(--amber)">B</div>
+              <div class="r-arq-info"><b>Balanceado</b> · sonnet · default<span class="r-meta">$0.018/call · 892 calls · 94% OK</span></div>
+              <button class="r-pill" onclick="toast('Editando Balanceado')">Editar</button>
+            </div>
+            <div class="r-arq-item">
+              <div class="r-arq-icon" style="background:var(--coral)">S</div>
+              <div class="r-arq-info"><b>Sport+</b> · opus · máxima calidad<span class="r-meta">$0.18/call · 156 calls · 98% OK</span></div>
+              <button class="r-pill" onclick="toast('Editando Sport+')">Editar</button>
+            </div>
+            <div class="r-arq-item">
+              <div class="r-arq-icon" style="background:var(--slate)">L</div>
+              <div class="r-arq-info"><b>Legal</b> · gpt-4o · especializado<span class="r-meta">$0.05/call · 78 calls · 96% OK</span></div>
+              <button class="r-pill" onclick="toast('Editando Legal')">Editar</button>
+            </div>
+            <button class="r-pill go" style="margin-top:10px" onclick="toast('Crear nuevo arquetipo')">+ Nuevo arquetipo</button>
+          </div>
+          <div class="r-card">
+            <h4>Builder de arquetipo</h4>
+            <div class="r-form">
+              <div class="r-field"><label>Nombre</label><input type="text" placeholder="ej: Ultra-Fast"></div>
+              <div class="r-field"><label>Modelo base</label>
+                <select><option>haiku</option><option>sonnet</option><option>opus</option><option>gpt-4o</option><option>gpt-4o-mini</option><option>gemini-1.5</option><option disabled>deepseek (bloqueado · PII)</option></select>
+              </div>
+              <div class="r-field"><label>Temperatura</label><input type="range" min="0" max="100" value="30"></div>
+              <div class="r-field"><label>Max tokens</label><input type="number" value="2048" style="width:120px"></div>
+              <div class="r-field"><label>System prompt</label><textarea placeholder="Instrucciones base…" rows="3"></textarea></div>
+              <div class="r-estimate">Estimado: <b>$0.015/call</b> · <b>~450ms</b> latency · dentro del cap $0.50</div>
+              <button class="btn ok" style="margin-top:4px" onclick="toast('Arquetipo guardado')">Guardar arquetipo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REGLAS -->
+      <div class="r-panel" id="r-reglas">
+        <div class="r-card" style="max-width:680px">
+          <h4>Reglas de routing</h4>
+          <div class="r-rule-item">
+            <div class="r-rule-flow">SI <b>cliente</b> = <span class="r-badge">platinum</span> <span class="r-rule-arrow">&#8594;</span> arquetipo = <span class="r-badge" style="background:var(--coral-soft);color:var(--coral)">Sport+</span></div>
+            <div class="r-rule-meta">Hits: 234 · Último: 2h</div>
+            <div class="r-rule-actions"><button class="r-pill" onclick="toast('Editando regla')">Editar</button><button class="r-pill" onclick="toast('Regla desactivada')">Desactivar</button></div>
+          </div>
+          <div class="r-rule-item">
+            <div class="r-rule-flow">SI <b>contiene PII</b> + proveedor <b>US</b> <span class="r-rule-arrow">&#8594;</span> exigir <span class="r-badge" style="background:var(--amber-soft);color:var(--amber)">transfer_basis</span></div>
+            <div class="r-rule-meta">Hits: 156 · Compliance · siempre activa</div>
+            <div class="r-rule-actions"><button class="r-pill" onclick="toast('Regla de compliance · no editable')">Bloqueada</button></div>
+          </div>
+          <div class="r-rule-item">
+            <div class="r-rule-flow">SI <b>costo est.</b> &gt; <span class="r-badge">$0.40</span> <span class="r-rule-arrow">&#8594;</span> <b>avisar</b> · cerca del cap</div>
+            <div class="r-rule-meta">Hits: 12 · Último: 3d</div>
+            <div class="r-rule-actions"><button class="r-pill" onclick="toast('Editando regla')">Editar</button><button class="r-pill" onclick="toast('Regla desactivada')">Desactivar</button></div>
+          </div>
+          <div class="r-rule-item">
+            <div class="r-rule-flow">SI <b>destino</b> = <span class="r-badge">DeepSeek / MX</span> + PII <span class="r-rule-arrow">&#8594;</span> <span class="r-badge" style="background:var(--vino-soft);color:var(--vino)">bloquear</span></div>
+            <div class="r-rule-meta">Hits: 0 · Compliance · siempre activa</div>
+            <div class="r-rule-actions"><button class="r-pill" onclick="toast('Regla de compliance · no editable')">Bloqueada</button></div>
+          </div>
+          <button class="r-pill go" style="margin-top:6px" onclick="toast('Nueva regla')">+ Nueva regla</button>
+        </div>
+      </div>
+
+      <!-- SIMULADOR -->
+      <div class="r-panel" id="r-simulador">
+        <div class="r-grid2">
+          <div class="r-card">
+            <h4>Simular tarea</h4>
+            <div class="r-form">
+              <div class="r-field"><label>Tipo de tarea</label><select><option>Cotización RFQ</option><option>Cobranza interna</option><option>Seguimiento</option><option>Soporte técnico</option></select></div>
+              <div class="r-field"><label>Cliente</label><select><option>Sondel SA (B2B)</option><option>Industrias Norte (platinum)</option><option>Rana Walk (marca)</option></select></div>
+              <div class="r-field"><label>¿Contiene PII?</label><select><option>Sí · nombre + email</option><option>No · sólo metadata</option></select></div>
+              <button class="btn ok" onclick="runSimulation()">Ejecutar simulación</button>
+            </div>
+          </div>
+          <div class="r-card">
+            <h4>Resultado estimado</h4>
+            <div class="r-sim-row"><span class="r-sim-label">Arquetipo elegido</span><span class="r-sim-val">Balanceado · sonnet</span></div>
+            <div class="r-sim-row"><span class="r-sim-label">Proveedor</span><span class="r-sim-val">Anthropic · US</span></div>
+            <div class="r-sim-row"><span class="r-sim-label">Costo estimado</span><span class="r-sim-val" style="color:var(--sage)">$0.018 · bajo cap</span></div>
+            <div class="r-sim-row"><span class="r-sim-label">Outcome estimado</span><span class="r-sim-val">94.2%</span></div>
+            <div class="r-sim-row"><span class="r-sim-label">transfer_basis</span><span class="r-sim-val" style="color:var(--sage)">&#10003; SCC firmado</span></div>
+            <div class="complbanner warn" style="margin:14px 0 0"><span class="ci">&#9888;</span><div>Con PII, DeepSeek queda excluido automáticamente.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vistas admin placeholder con empty states -->
+  <section class="view" id="v-skills"><div class="classic"><div class="vhead"><div><div class="vtitle">Skills</div><div class="vsub">Capacidades versionadas del tenant</div></div></div>
+    <div class="empty"><div class="eico">&#9881;</div><h5>Gestión de skills</h5><p>Activá o versioná skills desde el toolset (panel derecho) o creá nuevas aquí.</p></div></div></section>
+  <section class="view" id="v-agentes"><div class="classic"><div class="vhead"><div><div class="vtitle">Agentes</div><div class="vsub">@cotizador, @cobranza, @research…</div></div></div>
+    <div class="empty"><div class="eico">&#9670;</div><h5>Espacios de agentes</h5><p>Cada agente tiene su workspace con tareas y resoluciones. Abrílos desde el toolset.</p></div></div></section>
+  <section class="view" id="v-audit"><div class="classic"><div class="vhead"><div><div class="vtitle">Audit</div><div class="vsub">Trazabilidad de envíos y aprobaciones</div></div></div>
+    <div class="empty"><div class="eico">&#9998;</div><h5>Registro de auditoría</h5><p>Cada aprobación y envío queda sellado con SHA-256 y timestamp. Sin actividad reciente.</p></div></div></section>
+  <section class="view" id="v-usuarios"><div class="classic"><div class="vhead"><div><div class="vtitle">Usuarios</div><div class="vsub">12 miembros · roles y permisos</div></div></div>
+    <div class="empty"><div class="eico">&#9787;</div><h5>Equipo MWT</h5><p>Gestioná roles (OWNER, editor, lector) y accesos por workspace.</p></div></div></section>
+  <section class="view" id="v-config"><div class="classic"><div class="vhead"><div><div class="vtitle">Configuración</div><div class="vsub">Tenant MWT</div></div></div>
+    <div class="empty"><div class="eico">&#9881;</div><h5>Ajustes del tenant</h5><p>Marca, dominios, integraciones de correo y políticas de retención.</p></div></div></section>
+
+</main>
+
+<!-- ════════ RAIL 3 (DERECHA) — Toolset ════════ -->
+<aside class="rail3" id="rail3">
+  <div class="resize-handle" data-resize="rail3"></div>
+  <div class="toolwrap">
+    <div class="toolHint">Toolset del contexto activo · agentes, skills, KB y gold heredados por el workspace.</div>
+    <div class="toolTabs">
+      <button class="on" onclick="showToolTab(this,'t-agents')">Agentes</button>
+      <button onclick="showToolTab(this,'t-skills')">Skills</button>
+      <button onclick="showToolTab(this,'t-know')">KB</button>
+      <button onclick="showToolTab(this,'t-gold')">Gold</button>
+    </div>
+
+    <div class="toolPanel on" id="t-agents">
+      <div class="toolGroup"><div class="toolGroupHead">My Agents</div>
+        <div class="toolItem on" onclick="openAgentWorkspace('cotizador')"><span class="ico">&#9670;</span><span class="lbl">@cotizador</span><span class="tag ok">Activo</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Shared Agents</div>
+        <div class="toolItem" onclick="openAgentWorkspace('cobranza')"><span class="ico">&#9670;</span><span class="lbl">@cobranza</span><span class="tag">Idle</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Library Agents <span class="seal">&#128275; sealed</span></div>
+        <div class="toolItem" onclick="openAgentWorkspace('research')"><span class="ico">&#9670;</span><span class="lbl">@research</span><span class="tag">Idle</span></div>
+      </div>
+    </div>
+
+    <div class="toolPanel" id="t-skills">
+      <div class="toolGroup" style="border-left:2px solid var(--coral);padding-left:8px;margin-left:-4px">
+        <div class="toolGroupHead" style="color:var(--coral)">Medular · Aprendiendo de vos</div>
+        <div class="toolItem"><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label><span class="ico" style="background:var(--coral-soft);color:var(--coral)">&#9881;</span><span class="lbl">Ajustar voz</span><span class="tag ok">Activo</span></div>
+        <div style="font-size:10px;color:var(--text-muted);padding:2px 8px 8px">Aprende de tus interacciones · ajustable por tarea, producto o remitente.</div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">My Skills</div>
+        <div class="toolItem"><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label><span class="ico">&#9881;</span><span class="lbl">Cotizar RFQ</span><span class="tag ok">Vigente</span></div>
+        <div class="toolItem"><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label><span class="ico">&#9881;</span><span class="lbl">Cobranza interna</span><span class="tag ok">Vigente</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Shared Skills</div>
+        <div class="toolItem"><label class="toggle"><input type="checkbox"><span class="slider"></span></label><span class="ico">&#9881;</span><span class="lbl">Resumir cuenta</span><span class="tag">Draft</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Library Skills <span class="seal">&#128275; sealed</span></div>
+        <div class="toolItem"><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label><span class="ico">&#9881;</span><span class="lbl">Validar NIF</span><span class="tag ok">Vigente</span></div>
+      </div>
+    </div>
+
+    <div class="toolPanel" id="t-know">
+      <div class="toolGroup"><div class="toolGroupHead">My Knowledge</div>
+        <div class="knowItem">&#9673; Histórico Sondel<span class="lvl">L3</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Shared Knowledge</div>
+        <div class="knowItem">&#9673; Condiciones comerciales<span class="lvl">L3</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Library Knowledge <span class="seal">&#128275; sealed</span></div>
+        <div class="knowItem">&#9675; Lista precios T2<span class="lvl warn">L2 · vence 18d</span></div>
+        <div class="knowItem">&#9675; Voice MWT<span class="lvl">L2</span></div>
+        <div class="knowItem">&#9675; Normas EPP LATAM<span class="lvl">L0</span></div>
+      </div>
+    </div>
+
+    <div class="toolPanel" id="t-gold">
+      <div class="toolGroup"><div class="toolGroupHead">My Gold Samples</div>
+        <div class="goldItem">&#9673; Cotización Sondel · PF_2453<span class="num">12 usos</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Shared Gold Samples</div>
+        <div class="goldItem">&#9673; Cobranza firme · F-1102<span class="num">8 usos</span></div>
+      </div>
+      <div class="toolGroup"><div class="toolGroupHead">Library Gold Samples <span class="seal">&#128275; sealed</span></div>
+        <div class="goldItem">&#9673; Respuesta tracking<span class="num">5 usos</span></div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+</div>
+
+<!-- ════════ DRAWER BACKDROP (móvil) ════════ -->
+<div class="drawerbg" id="drawerbg" onclick="closeDrawers()"></div>
+
+<!-- ════════ COMMAND PALETTE (cmd+K) — iconos + agrupado (// E1a) ════════ -->
+<div class="modal-bg" id="mbg" onclick="closePalette()"></div>
+<div class="palette" id="palette">
+  <input id="pin" placeholder="Buscar o ejecutar…" oninput="filterP()" aria-label="Comando">
+  <div class="res" id="pres"></div>
+</div>
+
+<!-- ════════ SEND CONFIRMATION MODAL — doble confirmación (// E1b · no auto-send) ════════ -->
+<div class="modal-bg" id="sendBg" onclick="closeSend()"></div>
+<div class="sendModal" id="sendModal" role="dialog" aria-modal="true" aria-labelledby="smTitle">
+  <div class="smhead">
+    <div class="smtitle" id="smTitle"><span class="warnico">&#9993;</span> Confirmar envío</div>
+    <div class="smsub">Esta acción <b>envía un correo real</b> al cliente. No se puede deshacer. Revisá destinatario y contenido.</div>
+  </div>
+  <div class="smbody">
+    <div class="sm-recipient">
+      <div class="srlab">Destinatario</div>
+      <div class="srval">compras@sondel.cr</div>
+      <div class="srfile">Proforma PF_2468 · Sondel SA (v1) · DDP Alajuela</div>
+    </div>
+    <div class="sm-check" id="smCheck1" onclick="toggleCheck(this,1)">
+      <div class="cb">&#10003;</div>
+      <div class="ct">Confirmo el <b>destinatario</b> y que el contenido fue revisado.</div>
+    </div>
+    <div class="sm-check" id="smCheck2" onclick="toggleCheck(this,2)">
+      <div class="cb">&#10003;</div>
+      <div class="ct">Confirmo que los datos marcados como <b>asumidos</b> fueron verificados.</div>
+    </div>
+  </div>
+  <div class="sm-foot">
+    <button class="sm-cancel" onclick="closeSend()">Cancelar</button>
+    <button class="sm-send" id="smSend" disabled onclick="doSend()">Enviar ahora</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   FaberLoom v4.14 — lógica de la shell
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Contextos de workspace ── */
+const contexts={
+  sondel:{name:'Sondel SA',type:'B2B',sub:'CXC 90d · código SI0063 · al día',color:'var(--coral)'},
+  rana:{name:'Rana Walk',type:'Marca',sub:'Marca propia · Amazon FBA · Costa Rica',color:'var(--sage)'},
+  industrias:{name:'Industrias del Norte',type:'Platinum',sub:'Cuenta crítica · override activo',color:'var(--amber)'},
+  tema:{name:'Precios dieléctrica',type:'Tema',sub:'Investigación activa · día 2',color:'var(--slate)'},
+  'shared-lic':{name:'Licitación Q3 · Construx',type:'Shared',sub:'Licitación compartida · Guatemala',color:'var(--vino)'},
+  'shared-corp':{name:'Corporativo MWT',type:'Shared',sub:'Workspace compartido · cross-tenant',color:'var(--slate)'},
+  global:{name:'Sin contexto',type:'Global',sub:'KB tenant · cross-workspace',color:'var(--text-muted)'}
+};
+const historyByCtx={
+  sondel:[{t:'PF_2468 · cotización',c:'var(--coral)'},{t:'RFQ 500 pares',c:'var(--amber)'},{t:'Condiciones DDP',c:'var(--slate)'}],
+  industrias:[{t:'BC-7240 · descuento platinum',c:'var(--coral)'},{t:'Override aprobado',c:'var(--sage)'}],
+  rana:[{t:'FBA Q3 planning',c:'var(--sage)'},{t:'Stock replenishment',c:'var(--amber)'},{t:'Amazon review',c:'var(--slate)'}],
+  tema:[{t:'Dieléctrica precios T2',c:'var(--slate)'},{t:'Comparativa proveedores',c:'var(--amber)'}],
+  'shared-lic':[{t:'Catálogo EPP enviado',c:'var(--vino)'},{t:'Condiciones licitación',c:'var(--slate)'}],
+  'shared-corp':[{t:'Reporte mensual Q2',c:'var(--coral)'},{t:'Política de precios',c:'var(--amber)'}],
+  global:[{t:'Sin historial',c:'var(--text-muted)'}]
+};
+let currentCtx='global';
+
+function setContext(id){
+  const c=contexts[id]||contexts.global; currentCtx=id;
+  document.querySelectorAll('.it').forEach(t=>{ if(t.id&&t.id.startsWith('ctx-')) t.classList.remove('active'); });
+  const el=document.getElementById('ctx-'+id); if(el) el.classList.add('active');
+  // Context strip prominente (CEO sabe en <2s)
+  document.getElementById('ctxDot').style.background=c.color;
+  document.getElementById('ctxName').textContent=c.name;
+  document.getElementById('ctxSub').textContent=c.sub;
+  document.getElementById('ctxType').textContent=c.type;
+  // Historial
+  const histBody=document.getElementById('hist-body'),histCnt=document.getElementById('hist-cnt');
+  const items=historyByCtx[id]||historyByCtx.global;
+  if(histBody&&histCnt){histBody.innerHTML=items.map(h=>'<div class="it"><span class="dot" style="background:'+h.c+'"></span>'+h.t+'</div>').join('');histCnt.textContent=items.length;}
+  toast('Contexto: <b>'+c.name+'</b> · KB inyectado: L3 propio + L2 heredado');
+}
+
+/* ── Navegación ── */
+function setMode(m){
+  document.querySelectorAll('.modebar-2 button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  document.querySelectorAll('.navmode').forEach(n=>n.classList.remove('on'));
+  document.getElementById('nm-'+m).classList.add('on');
+  if(m==='operar') go('space'); else if(m==='aprender') go('aprender'); else if(m==='admin') go('routing');
+}
+function go(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  const el=document.getElementById('v-'+v); if(!el) return; void el.offsetWidth; el.classList.add('on');
+  document.querySelectorAll('.it[data-v]').forEach(x=>x.classList.remove('active'));
+  const it=document.querySelector('.it[data-v="'+v+'"]'); if(it) it.classList.add('active');
+  document.getElementById('canvas').scrollTop=0;
+  if(v==='space') clearDraft();
+  closeDrawers();
+}
+function toggleAcc(head){head.nextElementSibling.classList.toggle('open');head.querySelector('.chev').classList.toggle('rot');}
+
+/* ── Toolset / routing tabs ── */
+function showToolTab(btn,id){document.querySelectorAll('.toolTabs button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.querySelectorAll('.toolPanel').forEach(p=>p.classList.remove('on'));document.getElementById(id).classList.add('on');}
+function showRTab(btn,id){document.querySelectorAll('.r-tabs button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.querySelectorAll('.r-panel').forEach(p=>p.classList.remove('on'));document.getElementById(id).classList.add('on');}
+function openAgentWorkspace(a){toast('Abriendo espacio de <b>@'+a+'</b> · sus tareas y resoluciones');}
+function runSimulation(){toast('Simulación ejecutada · Balanceado · $0.018 · 94.2% · transfer_basis OK');}
+
+/* ── Inbox ── */
+function filterInbox(chip,cls){
+  document.querySelectorAll('.inboxToolbar .filterchip').forEach(c=>c.classList.remove('on'));chip.classList.add('on');
+  document.querySelectorAll('.mailrow').forEach(r=>{r.style.display=(cls==='all'||r.dataset.cls===cls)?'':'none';});
+}
+function markSpam(btn){const row=btn.closest('.mailrow');row.style.opacity='.35';btn.textContent='Movido a spam';btn.disabled=true;toast('Movido a spam · no se notifica al remitente','warn');}
+
+/* ── DRAFT (// E1b · grounding E2) ── */
+function loadDraft(){
+  go('space');
+  const th=document.getElementById('spaceThread'),welcome=document.getElementById('welcomeMsg');
+  if(welcome) welcome.style.display='none';
+  if(document.getElementById('draft')) return;
+  th.insertAdjacentHTML('beforeend',
+    '<div class="qmsg me"><div class="who">Alvaro · 10:42</div>'+
+      '<div class="bub">Entró el RFQ de 500 pares. Armala con camino 2 DDP.</div></div>'+
+    '<div class="qmsg ai"><div class="who"><span style="color:var(--coral)">@cotizador · Sondel SA</span></div>'+
+      '<div class="bub">Tier 0 extrajo 7/9 campos. Excepción: curva de tallas no especificada — usé el histórico de Sondel y quedó marcada como <b style="color:var(--amber)">asumida</b>.</div>'+
+      '<div class="msgmeta"><span><b>modelo:</b> sonnet</span><span><b>costo:</b> $0.018</span><span><b>confianza:</b> 0.78</span></div></div>'+
+
+    '<div class="draft is-review" id="draft">'+
+      '<div class="dhead"><span class="state" id="dstate">&#9203; Esperando aprobación</span>'+
+        '<span class="dtitle">Proforma PF_2468 — Sondel SA (v1)</span>'+
+        '<span class="dclass">N1 · PARTNER_B2B</span></div>'+
+      '<div class="dbody">500 × <b>50S5BR</b> · mix histórico 38-44 · DDP Alajuela camino 2 · monto $——,——<br>'+
+        '<span style="color:var(--amber);font-size:12.5px">&#9888; Hay 1 dato asumido — confirmá antes de enviar.</span></div>'+
+
+      /* PII + proveedor US → transfer_basis (// E4) */
+      '<div class="complbanner warn"><span class="ci">&#9888;</span>'+
+        '<div><b>PII + proveedor US (OpenAI)</b> · transfer_basis pendiente para este destinatario.</div>'+
+        '<button class="fix" onclick="toast(\'transfer_basis: SCC verificado para Sondel SA\',\'warn\')">Verificar</button></div>'+
+
+      /* Provenance: 100% trazado vs asumido (// E2) */
+      '<div class="prov"><div class="prov-h">Trazabilidad de datos'+
+        '<span class="legend"><span><span class="prov-mark t" style="width:12px;height:12px">&#10003;</span>trazado</span>'+
+        '<span><span class="prov-mark a" style="width:12px;height:12px">~</span>asumido</span></span></div>'+
+        '<div class="prov-row"><span class="prov-mark t">&#10003;</span><span class="prov-label">Precio unitario</span><span class="prov-val">$32.40</span><span class="prov-src">Lista Marluvas T2 §pricing</span></div>'+
+        '<div class="prov-row"><span class="prov-mark t">&#10003;</span><span class="prov-label">Cantidad</span><span class="prov-val">500 pares</span><span class="prov-src">RFQ original · línea 1</span></div>'+
+        '<div class="prov-row"><span class="prov-mark t">&#10003;</span><span class="prov-label">Incoterm</span><span class="prov-val">DDP Alajuela</span><span class="prov-src">RFQ original · asunto</span></div>'+
+        '<div class="prov-row"><span class="prov-mark a">~</span><span class="prov-label">Curva de tallas</span><span class="prov-val">mix 38-44</span><span class="prov-src assumed">asumido · histórico Sondel</span></div>'+
+      '</div>'+
+
+      /* Evidence bundle escaneable (// E2) */
+      '<div class="evbundle"><div class="evh">Evidence bundle<span class="sha">&#10003; SHA-256 sellado</span></div>'+
+        '<div class="evgrid">'+
+          '<div class="evcard" onclick="toast(\'Abriendo SCH_PROFORMA_MWT\')"><div class="evt">&#128196; Schema proforma<span class="lv">L3</span></div><div class="evd">SCH_PROFORMA_MWT</div></div>'+
+          '<div class="evcard" onclick="toast(\'Abriendo pricing §C\')"><div class="evt">&#128176; Pricing comercial<span class="lv">L3</span></div><div class="evd">ENT_COMERCIAL §C</div></div>'+
+          '<div class="evcard" onclick="toast(\'Abriendo golden PF_2453\')"><div class="evt">&#9673; Golden sample<span class="lv">gold</span></div><div class="evd">PF_2453 · 12 usos</div></div>'+
+          '<div class="evcard" onclick="toast(\'Abriendo Lista Marluvas T2\')"><div class="evt">&#128202; Lista de precios<span class="lv warn" style="color:var(--amber)">L2</span></div><div class="evd">Marluvas T2 · vence 18d</div></div>'+
+        '</div></div>'+
+
+      /* Routing meta + cost cap + confidence (// E4) */
+      '<div class="dmeta">'+
+        '<span class="modeltag" id="dmodel">&#9707; sonnet · Balanceado</span>'+
+        '<div class="meterwrap"><div class="meterlab"><span>Confianza</span><b>0.78</b></div><div class="meter"><i class="conf" style="width:78%"></i></div></div>'+
+        '<div class="meterwrap"><div class="meterlab"><span>Costo / cap</span><b>$0.018 / $0.50</b></div><div class="meter"><i class="cost" style="width:4%"></i></div></div>'+
+      '</div>'+
+
+      /* HITL: Aprobar SEPARADO de Enviar (// E1b) */
+      '<div class="hitl" id="dacts">'+
+        '<button class="btn ok" id="btnApprove" onclick="approveDraft()">&#10003; Aprobar</button>'+
+        '<button class="btn iter" onclick="focusComposer(\'Decile qué cambiar…\')">Editar</button>'+
+        '<button class="btn no" onclick="toast(\'Draft rechazado · vuelve a la cola\',\'err\')">Rechazar</button>'+
+        '<button class="boost" onclick="boost()">&#9889; Rehacer con el mejor</button>'+
+        '<div class="stepnote"><span class="lock">&#128274;</span> Aprobar no envía. El envío es un paso aparte con doble confirmación.</div>'+
+      '</div>'+
+    '</div>');
+  th.scrollTop=th.scrollHeight;
+}
+function clearDraft(){
+  const draft=document.getElementById('draft'); if(draft) draft.remove();
+  const welcome=document.getElementById('welcomeMsg'); if(welcome) welcome.style.display='';
+  document.querySelectorAll('#spaceThread .qmsg:not(#welcomeMsg)').forEach(m=>m.remove());
+}
+
+/* Paso 1: Aprobar (NO envía) */
+function approveDraft(){
+  const draft=document.getElementById('draft');
+  draft.classList.remove('is-review');draft.classList.add('is-approved');
+  const s=document.getElementById('dstate');s.innerHTML='&#10003; Aprobada · lista para enviar';s.classList.add('approved');
+  document.getElementById('dacts').innerHTML=
+    '<button class="btn send" onclick="openSend()">&#9993; Enviar al cliente…</button>'+
+    '<button class="btn ghost" onclick="toast(\'Aprobación revertida\')">Revertir</button>'+
+    '<div class="stepnote"><span style="color:var(--sage)">&#10003;</span> Aprobada por Alvaro · 10:43. Aún <b>no se envió nada</b>. El envío requiere doble confirmación.</div>';
+  toast('<b>Draft aprobado</b> · todavía no se envió · revisá y confirmá el envío');
+}
+
+/* Paso 2: Enviar — modal con doble confirmación (imposible de saltar en móvil) */
+let chk1=false,chk2=false,cdTimer=null,cdLeft=0;
+function openSend(){
+  chk1=chk2=false;
+  document.getElementById('smCheck1').classList.remove('checked');
+  document.getElementById('smCheck2').classList.remove('checked');
+  resetSendBtn();
+  document.getElementById('sendBg').classList.add('open');
+  document.getElementById('sendModal').classList.add('open');
+}
+function closeSend(){document.getElementById('sendBg').classList.remove('open');document.getElementById('sendModal').classList.remove('open');if(cdTimer){clearInterval(cdTimer);cdTimer=null;}}
+function toggleCheck(el,n){el.classList.toggle('checked');if(n===1)chk1=el.classList.contains('checked');else chk2=el.classList.contains('checked');updateSendBtn();}
+function resetSendBtn(){const b=document.getElementById('smSend');b.disabled=true;b.innerHTML='Enviar ahora';}
+function updateSendBtn(){
+  const b=document.getElementById('smSend');
+  if(chk1&&chk2){
+    // Doble confirmación + cooldown anti-accidente de 3s
+    cdLeft=3;b.disabled=true;b.innerHTML='Mantené para confirmar… <span class="cd">('+cdLeft+')</span>';
+    if(cdTimer) clearInterval(cdTimer);
+    cdTimer=setInterval(()=>{cdLeft--;if(cdLeft<=0){clearInterval(cdTimer);cdTimer=null;b.disabled=false;b.innerHTML='&#9993; Enviar ahora';}
+      else b.innerHTML='Mantené para confirmar… <span class="cd">('+cdLeft+')</span>';},1000);
+  } else {if(cdTimer){clearInterval(cdTimer);cdTimer=null;}resetSendBtn();}
+}
+function doSend(){
+  const b=document.getElementById('smSend');b.innerHTML='<span class="spinner"></span> Enviando…';b.disabled=true;
+  setTimeout(()=>{
+    closeSend();
+    const s=document.getElementById('dstate');s.innerHTML='&#10003; Enviada';
+    document.getElementById('dacts').innerHTML='<span style="color:var(--sage);font-size:12.5px;display:flex;align-items:center;gap:7px">&#10003; Enviada a compras@sondel.cr · 10:44 · audit sellado SHA-256</span>';
+    toast('<b>PF_2468 enviada</b> · evidence sellado · registrada en audit');
+  },950);
+}
+function boost(){document.getElementById('dmodel').innerHTML='&#9707; opus · Sport+ (boost)';document.getElementById('dstate').innerHTML='&#9203; Re-generando…';toast('Re-ejecutando con el mejor modelo');}
+
+/* ── Composer ── */
+function pedal(b,label){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  const m=document.getElementById('ctxModel');if(m)m.innerHTML='<span>&#9707;</span>'+label;}
+function wire(taId,boxId,sendId){
+  const ta=document.getElementById(taId),box=document.getElementById(boxId),send=document.getElementById(sendId);
+  ta.addEventListener('focus',()=>box.classList.add('focus'));
+  ta.addEventListener('blur',()=>box.classList.remove('focus'));
+  ta.addEventListener('input',()=>{ta.style.height='24px';ta.style.height=Math.min(ta.scrollHeight,140)+'px';send.classList.toggle('ready',ta.value.trim().length>0);});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
+}
+function sendMsg(){
+  const ta=document.getElementById('ta'),th=document.getElementById('spaceThread'),txt=ta.value.trim();if(!txt)return;
+  const welcome=document.getElementById('welcomeMsg');if(welcome)welcome.style.display='none';
+  const m=document.createElement('div');m.className='qmsg me';
+  m.innerHTML='<div class="who">Alvaro · ahora</div><div class="bub"></div>';m.querySelector('.bub').textContent=txt;th.appendChild(m);
+  ta.value='';ta.style.height='24px';document.getElementById('sendBtn').classList.remove('ready');
+  const t=document.createElement('div');t.className='qmsg ai';
+  t.innerHTML='<div class="who"><span style="color:var(--coral)">@cotizador · '+(contexts[currentCtx]||contexts.global).name+'</span></div><div class="bub"><span class="typing"><i></i><i></i><i></i></span></div>';
+  th.appendChild(t);th.scrollTop=th.scrollHeight;
+  setTimeout(()=>{t.querySelector('.bub').innerHTML='Entendido. Procesando tu instrucción…';
+    t.insertAdjacentHTML('beforeend','<div class="msgmeta"><span><b>modelo:</b> haiku</span><span><b>costo:</b> $0.003</span></div>');
+    th.scrollTop=th.scrollHeight;},1100);
+}
+function focusComposer(ph){const ta=document.getElementById('ta');ta.placeholder=ph;ta.focus();}
+
+/* ── Paneles desktop ── */
+function toggleL(){document.getElementById('rail1').classList.toggle('hidden');}
+function toggleR(){document.getElementById('rail3').classList.toggle('hidden');}
+let focused=false;
+function focusMode(){focused=!focused;document.getElementById('rail1').classList.toggle('hidden',focused);document.getElementById('rail3').classList.toggle('hidden',focused);toast(focused?'<b>Modo focus</b> · paneles ocultos':'Paneles restaurados');}
+
+/* ── Drawers móvil ── */
+function openDrawer(id){document.getElementById(id).classList.add('drawer-open');document.getElementById('drawerbg').classList.add('open');}
+function closeDrawers(){document.querySelectorAll('.drawer-open').forEach(d=>d.classList.remove('drawer-open'));document.getElementById('drawerbg').classList.remove('open');}
+
+/* ── Resize handles (desktop) ── */
+let resizing=null,startX=0,startW=0;
+document.querySelectorAll('.resize-handle').forEach(h=>{h.addEventListener('mousedown',e=>{
+  const panel=document.getElementById(h.dataset.resize);if(panel.classList.contains('hidden'))return;
+  resizing=panel;startX=e.clientX;startW=panel.offsetWidth;panel.classList.add('resizing');
+  document.body.style.cursor='col-resize';document.body.style.userSelect='none';e.preventDefault();});});
+document.addEventListener('mousemove',e=>{if(!resizing)return;
+  const dx=resizing.id==='rail1'?e.clientX-startX:startX-e.clientX;const nw=Math.max(200,Math.min(400,startW+dx));
+  resizing.style.width=nw+'px';resizing.style.minWidth=nw+'px';});
+document.addEventListener('mouseup',()=>{if(resizing){resizing.classList.remove('resizing');resizing=null;}document.body.style.cursor='';document.body.style.userSelect='';});
+
+/* ── Command palette agrupado (// E1a) ── */
+const cmds=[
+  {g:'Navegar',l:'Ir a SpaceLoom',i:'&#10047;',k:'',f:()=>{setMode('operar');go('space');}},
+  {g:'Navegar',l:'Ir a Inbox',i:'&#9993;',k:'',f:()=>{setMode('operar');go('inbox');}},
+  {g:'Navegar',l:'Ir a WorkLoom',i:'&#9707;',k:'',f:()=>{setMode('operar');go('workloom');}},
+  {g:'Navegar',l:'Ir a Routing · Factory',i:'&#127899;',k:'',f:()=>{setMode('admin');go('routing');}},
+  {g:'Navegar',l:'Ir a Aprendizaje',i:'&#9719;',k:'',f:()=>{setMode('aprender');go('aprender');}},
+  {g:'Contexto',l:'Contexto: Sondel SA',i:'&#9673;',k:'',f:()=>{setContext('sondel');go('space');}},
+  {g:'Contexto',l:'Contexto: Industrias Norte',i:'&#9673;',k:'',f:()=>{setContext('industrias');go('space');}},
+  {g:'Contexto',l:'Contexto: Rana Walk',i:'&#9673;',k:'',f:()=>{setContext('rana');go('space');}},
+  {g:'Acciones',l:'Cargar draft de cotización (demo)',i:'&#9998;',k:'',f:()=>{setContext('sondel');loadDraft();}},
+  {g:'Acciones',l:'Modo focus',i:'&#9678;',k:'F',f:focusMode}
+];
+function openPalette(){document.getElementById('mbg').classList.add('open');document.getElementById('palette').classList.add('open');
+  const i=document.getElementById('pin');i.value='';filterP();setTimeout(()=>i.focus(),60);}
+function closePalette(){document.getElementById('mbg').classList.remove('open');document.getElementById('palette').classList.remove('open');}
+function filterP(){
+  const q=document.getElementById('pin').value.toLowerCase();
+  const res=cmds.filter(c=>c.l.toLowerCase().includes(q)||c.g.toLowerCase().includes(q));
+  let html='',lastG='';
+  res.forEach((c)=>{const idx=cmds.indexOf(c);if(c.g!==lastG){html+='<div class="pgrp">'+c.g+'</div>';lastG=c.g;}
+    html+='<div class="pres" onclick="run('+idx+')"><span class="pico">'+c.i+'</span>'+c.l+(c.k?'<kbd>'+c.k+'</kbd>':'')+'</div>';});
+  document.getElementById('pres').innerHTML=html||'<div class="pres" style="color:var(--text-muted)">sin resultados</div>';
+}
+function run(i){cmds[i].f();closePalette();}
+
+/* ── Atajos de teclado ── */
+document.addEventListener('keydown',e=>{
+  const typing=/TEXTAREA|INPUT/.test(document.activeElement.tagName);
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();document.getElementById('palette').classList.contains('open')?closePalette():openPalette();return;}
+  if(e.key==='Escape'){closePalette();closeSend();closeDrawers();return;}
+  if(typing)return;
+  if(e.key==='[')toggleL();if(e.key===']')toggleR();if(e.key==='f'||e.key==='F')focusMode();
+});
+
+/* ── Toast ── */
+let toastTimer;
+function toast(html,kind){const t=document.getElementById('toast');t.className='toast'+(kind?' '+kind:'');t.innerHTML=html;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3600);}
+
+/* ── Estilos alternativos (themes) ── */
+function setTheme(t){
+  if(t==='warm') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme',t);
+  document.querySelectorAll('.themeOpt').forEach(o=>o.classList.toggle('on',o.dataset.theme===t));
+  try{localStorage.setItem('faberloom_theme',t);}catch(e){}
+  const names={warm:'Faber Warm',slate:'Slate Pro',paper:'Paper (cálido)',mono:'Mono Contrast',indigo:'Indigo Night',cloud:'Cloud (neutro)',mist:'Mist (azulado)'};
+  toast('Estilo: <b>'+(names[t]||t)+'</b>');
+  document.getElementById('themePop').classList.remove('open');
+}
+function toggleThemePop(e){e.stopPropagation();document.getElementById('themePop').classList.toggle('open');}
+document.addEventListener('click',e=>{const p=document.getElementById('themePop');if(p&&p.classList.contains('open')&&!e.target.closest('.themeBtn'))p.classList.remove('open');});
+
+/* ── Init ── */
+wire('ta','box','sendBtn');
+setContext('global');
+(function(){let t='warm';try{t=localStorage.getItem('faberloom_theme')||'warm';}catch(e){}
+  if(t&&t!=='warm'){document.documentElement.setAttribute('data-theme',t);
+    document.querySelectorAll('.themeOpt').forEach(o=>o.classList.toggle('on',o.dataset.theme===t));}})();
+</script>
+
+<!--
+  ════════════════════════════════════════════════════════════════════
+  NOTAS DE DISEÑO · v4.14  (resumen — detalle en INDEX_v4_14.md)
+  ════════════════════════════════════════════════════════════════════
+  · HITL seguro: "Aprobar" y "Enviar" son pasos separados. El envío exige
+    modal de doble confirmación + cooldown de 3s (imposible de saltar en móvil).
+  · Grounding: cada dato del draft se marca trazado (✓, fuente) o asumido (~).
+    Evidence bundle escaneable con nivel L0-L3 y sello SHA-256.
+  · Compliance: DeepSeek y MX bloqueados para PII; banner transfer_basis cuando
+    un draft con PII usa proveedor US; cobranza a terceros bloqueada hasta dictamen.
+  · Cost cap $0.50/draft visible en topbar, draft y simulador.
+  · Color funcional: coral=acción/IA · sage=aprobado/trazado · amber=espera/asumido
+    · vino=error/bloqueo · slate=neutro/delegado.
+  · Responsive: 3 breakpoints (desktop / ≤1080 tablet / ≤767 móvil). En móvil los
+    rails son drawers, el composer es bottom sheet y el HITL ocupa ancho completo.
+  Milestones: buscá "// E1a", "// E1b", "// E2", "// E3", "// E4" en el código.
+  ════════════════════════════════════════════════════════════════════
+-->
+</body>
+</html>

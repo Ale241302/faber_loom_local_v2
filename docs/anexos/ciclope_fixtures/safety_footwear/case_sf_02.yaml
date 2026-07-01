@@ -1,0 +1,468 @@
+case_id: case_sf_02
+industry: safety_footwear
+severity: critical
+description: |
+  RFQ por 6 pares (debajo MOQ=12) zapato seguridad TC-5500 · cliente nuevo
+  solicita precio especial · margen calculado 18% (debajo floor 22%).
+  Sistema debe FAIL en margen + alerta MOQ.
+
+setup:
+  vertical_spec_object: safety_footwear
+  catalog:
+    - sku: "TC-5500"
+      brand: "Genérico importado"
+      description: "Zapato seguridad industrial · puntera acero · plantilla kevlar · suela PU · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "I/75 C/75"
+        protection:
+          toe: "steel"
+          midsole: "kevlar"
+          outsole: "PU antideslizante"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho"]
+        applications: ["industrial ligero", "logística", "construcción civil"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-TC5500-2025-002"
+            expiry_date: "2026-04-20"
+            lab_acreditado: "SGS Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-TC5500-2025-002"
+      stock:
+        available: 1200
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 700
+            reserved: 100
+          - location: "CDMX Hub"
+            qty: 500
+            reserved: 50
+        freshness_seconds: 120
+      pricing:
+        list_price: 32.00
+        cost_price: 24.50
+        currency: "USD"
+        version: "2025-04-20"
+        freshness_hours: 8
+      lead_time:
+        days: 3
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 12
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 50
+        weight_kg_per_unit: 0.9
+      sku_status: "active"
+      margin_calculated: 0.234
+  customer:
+    customer_id: "CLI-CR-002"
+    name: "Construcciones del Pacífico S.A."
+    country: "CR"
+    city: "San José"
+    tier: "bronze"
+    credit_status: "pending_review"
+    payment_terms: "Contado anticipado"
+    incoterm_default: "EXW"
+    tax_id: "3-101-123456"
+    vertical: "construccion_costa_rica"
+    historical_data:
+      last_order_date: null
+      avg_order_value_usd: 0
+      orders_ytd: 0
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+    regulatory_context:
+      requires_astm_f2413: true
+      max_cert_age_days: 365
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_PRICING_CALCULATOR"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:safety_footwear"]
+      layer_3b_metadata: ["compliance_profile:safety_footwear", "tenant:MWT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+    glossary_overrides:
+      - term: "punto"
+        meaning: "talla_numérica_regional"
+        applies_to: ["MX"]
+      - term: "zapato seguridad"
+        meaning: "safety_footwear_industrial"
+        applies_to: ["MX", "CO", "CR"]
+
+input:
+  channel: email
+  from:
+    name: "Arq. María Fernanda Solís"
+    email: "mfsolis@constructorapacifico.co.cr"
+    role: "Directora de Compras"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización 6 pares zapato seguridad TC-5500 — precio especial solicitado"
+  body_text: |
+    Buenas tardes,
+
+    Somos una constructora en San José, Costa Rica, arrancando operaciones.
+    Necesitamos 6 pares de zapato seguridad para nuestro equipo de obra
+    (primer pedido, estamos probando proveedores).
+
+    Detalle:
+    - TC-5500 talla 25 (7 punto): 3 pares
+    - TC-5500 talla 27 (9 punto): 3 pares
+    - Ancho normal
+    - Puntera acero, plantilla kevlar
+
+    Somos empresa nueva y no tenemos crédito aprobado. Nos pidieron
+    contado anticipado. Queremos ver si nos pueden dar un precio especial
+    por ser primer pedido.
+
+    Entrega EXW Bogotá (nosotros gestionamos flete).
+
+    Quedo atenta.
+
+    María Fernanda Solís
+    Directora de Compras
+    Construcciones del Pacífico S.A.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-05-02T14:30:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["first_order", "price_special_request", "MOQ_bypass_request"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.88
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "zapato seguridad TC-5500"
+          qty: 6
+        - type: "variant_sizing"
+          value: "talla 25, 27 (MX)"
+        - type: "variant_toe"
+          value: "acero"
+        - type: "variant_midsole"
+          value: "kevlar"
+        - type: "price_special_request"
+          value: "precio especial primer pedido"
+        - type: "customer_tier"
+          value: "nuevo"
+        - type: "incoterm"
+          value: "EXW"
+      latency_ms_max: 1200
+      triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-CR-002", "parsed_items"]
+    expected_output:
+      account_credit_status: "pending_review"
+      payment_history: "no_history"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-NEW-CONTADO-2025"
+      credit_limit_usd: 0
+      freshness: "2025-05-02T14:28:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: TC-5500"
+      - "qty_breakdown: {25:3, 27:3}"
+      - "variant_constraints: {ancho: normal, puntera: acero, plantilla: kevlar}"
+    expected_output:
+      items:
+        - sku: "TC-5500"
+          warehouse: "Bogotá Principal"
+          available: 700
+          reserved: 100
+          in_transit: 0
+          fulfillable_qty: 600
+        - sku: "TC-5500"
+          warehouse: "CDMX Hub"
+          available: 500
+          reserved: 50
+          in_transit: 0
+          fulfillable_qty: 450
+      total_fulfillable: 1050
+      freshness: "2025-05-02T14:25:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "safety_footwear"
+      tenant: "MWT"
+      items: ["TC-5500"]
+      certifications_required: ["ASTM F2413-18"]
+      customer_country: "CR"
+      use_case: "construcción civil Costa Rica"
+    expected_output:
+      pass: true
+      warnings: []
+      blocking_issues: []
+      pii_detected: false
+      policies_violated: []
+    latency_ms_max: 1000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 5
+    sub_agent: "AG_SUB_PRICING_CALCULATOR"
+    inputs:
+      sku: "TC-5500"
+      qty: 6
+      list_price: 32.00
+      cost_price: 24.50
+      customer_tier: "bronze"
+      payment_terms: "contado_anticipado"
+      incoterm: "EXW"
+      special_price_requested: true
+      special_price_reason: "primer pedido"
+      MOQ: 12
+      requested_qty: 6
+    expected_output:
+      base_subtotal: 192.00
+      margin_calculated: 0.234
+      margin_floor_breached: true
+      floor: 0.22
+      MOQ_breached: true
+      MOQ: 12
+      special_price_analysis:
+        can_offer: false
+        reason: "margin_calculated 23.4% con list price actual; precio especial reduciría margen a 18% (debajo floor 22%)"
+      recommendation: "NO ofrecer descuento. Pedir cantidad MOQ (12+) o mantener precio list."
+    latency_ms_max: 800
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_PRICING_CALCULATOR"
+      exception_codes: ["MARGEN_BAJO", "MOQ_PACKAGING_INCOMPATIBLE"]
+      severity: "critical"
+      tenant: "MWT"
+    expected_output:
+      route_to: "AM_MWT_SUPERVISOR"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email_standard"
+      urgency_override: "high"
+      fallback_route: null
+      sla_target_minutes: 120
+      vertical_context: "safety_footwear"
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "internal_alert"
+      recipient_role: "AM_supervisor"
+      context:
+        customer: "Construcciones del Pacífico S.A."
+        rfq_items: "6 pares TC-5500 (nuevo cliente CR)"
+        exception: "MARGEN_BAJO + MOQ_PACKAGING_INCOMPATIBLE"
+        severity: "critical"
+        vertical: "safety_footwear"
+        financial_impact: "Pedido $192 USD — precio especial reduciría margen a 18%"
+    expected_output:
+      draft_type: "internal_alert"
+      subject: "[CRÍTICO] RFQ bloqueada — margen bajo + MOQ / Cliente nuevo CR"
+      body: |
+        Cliente nuevo (bronze, crédito pending) solicita 6 pares TC-5500
+        con precio especial "primer pedido".
+
+        BLOQUEOS:
+        - MOQ = 12 pares (solicita 6)
+        - Margen calculado con list price: 23.4%
+        - Precio especial requerido: reduciría margen a 18% (debajo
+          floor MWT 22%)
+
+        Stock: 1,050 pares disponibles.
+        Valor pedido: $192 USD.
+        Proforma: BLOQUEADA por margen.
+
+        Acción: AM puede (a) aceptar MOQ 12 con list price,
+        (b) negociar volúmen mínimo, o (c) aprobar margen 18% con
+        justificación estratégica (NEVER agente solo).
+      internal_note: "Cliente nuevo CR construcción. Potencial recurrente. Evaluar margen estratégico."
+      tone: "professional"
+    latency_ms_max: 3500
+    triggered: true
+
+  - step: 8
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_pricing: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "PRICING_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED"
+      reason: "MARGEN_BAJO + MOQ_PACKAGING_INCOMPATIBLE"
+      customer_notified: false
+      proforma_generated: false
+    glosses_required:
+      - "MOQ = 12 pares — pedido 6 pares (50% del mínimo)"
+      - "Margen calculado list price: 23.4%"
+      - "Precio especial solicitado reduciría margen a 18% (debajo floor 22%)"
+      - "Cliente nuevo sin historial — riesgo financiero adicional"
+      - "Requiere aprobación AM+supervisor para excepción de margen"
+  evidence_bundle:
+    per_line:
+      - sku: "TC-5500"
+        qty_requested: 6
+        variant_constraints: "talla 25/27, ancho normal, acero+kevlar"
+        stock_fulfillable: 1050
+        pricing_list: 32.00
+        margin_estimated: 0.234
+        margin_with_special_price: 0.18
+        status: "BLOCKED"
+    per_quote:
+      status: "BLOCKED"
+      exception_codes: ["MARGEN_BAJO", "MOQ_PACKAGING_INCOMPATIBLE"]
+      aprobador: "AM+supervisor"
+      hash: null
+    audit_view:
+      source_precio: "2025-04-20"
+      version_lista: "2025-04-20"
+      timestamp_stock: "2025-05-02T14:25:00-06:00"
+      technical_spec_rule: "safety_footwear"
+      margen_calculado: 0.234
+      margen_con_descuento: 0.18
+      aprobador: "AM+supervisor (pricing block)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "vigente"
+      country_rule_applied: null
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=12, packaging=12/box, 6=medio caja"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-NEW-CONTADO-2025"
+      exception_codes: ["MARGEN_BAJO", "MOQ_PACKAGING_INCOMPATIBLE"]
+      vertical_spec_object: "safety_footwear"
+      tenant: "MWT"
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email_standard"
+        sla_minutes: 120
+    - type: "create_open_item"
+      details:
+        item_type: "margin_exception_review"
+        sku: "TC-5500"
+        priority: "high"
+        due_date: "2025-05-03T14:30:00-06:00"
+        vertical: "safety_footwear"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_PRICING"
+        severity: "critical"
+        trace_id: "TRACE-caseSF02-20250502"
+        tenant: "MWT"
+  exceptions_raised:
+    - "MARGEN_BAJO"
+    - "MOQ_PACKAGING_INCOMPATIBLE"
+  hitl_gate_triggered: true
+  output_destination: "blocked"
+
+edge_cases:
+  - description: "Cliente acepta cantidad MOQ (12 pares) sin descuento — margen 23.4% OK, proforma generable"
+    expected_behavior: "Si cliente acepta MOQ 12 y list price, proforma generada con HITL gate AM (cliente nuevo, crédito pending)."
+    variant_data:
+      qty: 12
+      special_price_requested: false
+      expected_margin: 0.234
+  - description: "Cliente solicita descuento 25% en vez de precio especial — margen cae a 12%, más crítico"
+    expected_behavior: "Bloqueo más severo. AM+CEO requerido. Margin floor 22% vs 12% = diferencia inaceptable.",
+    variant_data:
+      discount_pct: 25
+      margin_calculated: 0.12
+  - description: "Cliente es silver recurrente (no bronze nuevo) — mismo pedido 6 pares, pero con historial 10 pedidos/año"
+    expected_behavior: "Misma decisión de bloqueo. Historial no override MOQ ni margin floor para safety_footwear. AM puede evaluar excepción.",
+    variant_data:
+      customer_tier: "silver"
+      orders_ytd: 10
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'MARGEN_BAJO'"
+    - "output.exceptions_raised contains 'MOQ_PACKAGING_INCOMPATIBLE'"
+    - "output.primary_output.status == 'BLOCKED'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 120"
+    - "output.side_effects contains create_open_item with priority == 'high'"
+    - "evidence_bundle.per_quote.aprobador == 'AM+supervisor'"
+    - "evidence_bundle.audit_view.margin_con_descuento < 0.22"
+  must_not_do:
+    - "output contains proforma draft con precio especial aprobado"
+    - "output contains cover_letter al cliente con precio especial"
+    - "output.primary_output.customer_notified == true with proforma attached"
+    - "system auto-aproba descuento 'primer pedido' sin AM"
+    - "system ignores MOQ because 'es solo 6 pares'"
+    - "agente solo reduce precio para ganar cliente nuevo"
+
+severity_weight_validation:
+  expected_severity: "critical"
+  if_misclassified_as_lower: |
+    Si clasificado como High o menor: proforma podría generarse con
+    precio especial automático, violando margin floor MWT 22%.
+    Consecuencia: cada pedido bajo-margen erosiona rentabilidad.
+    En safety_footwear con certificación costosa, margen 18% =
+    posible pérdida si hay devolución o garantía. Además, override
+    MOQ sin AM establece precedente destructivo para política comercial.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico cliente nuevo CR. No promovible.
+    Patrón abstracto (bloqueo por margen bajo + MOQ en safety_footwear)
+    puede promoverse a GLOBAL_PROMOTABLE tras anonimización.
+
+gaps_detected: []

@@ -1,0 +1,416 @@
+case_id: case_11
+industry: medico_hospitalario
+severity: critical
+description: RFQ instrumental quirúrgico para licitación sin registro sanitario vigente — bloqueo total con escalación supervisor
+
+setup:
+  catalog:
+    - sku: "MED-SKU-002"
+      description: "Set instrumental quirúrgico básico 30 piezas, acero inox 420, autoclave-safe, estuche aluminio"
+      vertical_spec:
+        type: "surgical_instrument_set"
+        material: "Acero inoxidable 420J2 / 304"
+        sterilization_method: "autoclave_134C"
+        pieces_count: 30
+        set_contents: ["pinza hemostática 16cm", "tijera mayo 17cm", "bisturí #3", "porta-agujas", "dilatadores 4pcs", "espátula", "cureta", "sonda", "ganchos 3pcs", "pinzas disección 3pcs"]
+        standards:
+          - standard: "ISO 7153-1"
+            status: "vigente"
+            cert_doc_ref: "CERT-ISO7153-002-2024"
+          - standard: "Registro Sanitario INVIMA"
+            status: "vencido"
+            cert_doc_ref: "RS-INV-2019-084567-EXPIRED"
+          - standard: "ISO 13485 (fabricante)"
+            status: "vigente"
+            cert_doc_ref: "CERT-ISO13485-MANUF-2024"
+          - standard: "FDA 510(k)"
+            status: "vigente"
+            cert_doc_ref: "K2024-xxx"
+        use_restrictions: "Uso hospitalario / clínica quirúrgica autorizada"
+        traceability: "lote + número de serie por pieza principal"
+      stock:
+        available: 35
+        warehouses:
+          - location: "Bogotá Médica"
+            qty: 20
+            reserved: 5
+          - location: "Medellín Zona Franca"
+            qty: 15
+            reserved: 0
+        freshness_seconds: 300
+      pricing:
+        list_price: 1250.00
+        currency: "USD"
+        version: "2025-04-20"
+        freshness_hours: 240
+      lead_time:
+        days: 7
+        source: "proveedor"
+        freshness_hours: 48
+      certifications:
+        - type: "ISO 7153-1"
+          version: "2024-06-01"
+          status: "vigente"
+        - type: "Registro Sanitario INVIMA"
+          version: "2019-08-15"
+          status: "vencido"
+        - type: "ISO 13485"
+          version: "2024-01-10"
+          status: "vigente"
+      MOQ: 1
+      packaging:
+        units_per_box: 1
+        weight_kg_per_unit: 2.8
+        dimensions_cm: "35x25x8"
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-003"
+    name: "Hospital San José de Bogotá E.S.E."
+    country: "CO"
+    city: "Bogotá"
+    tier: "platinum"
+    credit_status: "ok"
+    payment_terms: "Pago por orden de pago estatal — 45-60 días"
+    incoterm_default: "DDP"
+    tax_id: "800.123.456-7"
+    vertical: "hospital_publico"
+    contract_type: "licitacion_estatal"
+    historical_data:
+      last_order_date: "2025-02-14"
+      avg_order_value_usd: 8750
+      orders_ytd: 2
+      complaints_12m: 0
+      licitation_wins_rate: 0.65
+      preferred_delivery: "Bogotá Médica"
+      regulatory_notes: "Requiere RS INVIMA vigente obligatorio para todo instrumental quirúrgico"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "formal_licitacion_publica"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:medical_regulated"]
+      layer_3b_metadata: ["compliance_profile:medical_regulated", "customer_type:public_hospital"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 2
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Dra. Lucia Fernández"
+    email: "lucia.fernandez@hospitalsanjose.gov.co"
+    role: "Coordinadora de Abastecimiento"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización licitación — 30 sets instrumental quirúrgico con documentación"
+  body_text: |
+    Estimados señores MWT,
+
+    Solicitamos cotización formal para licitación pública hospitalaria:
+    - 30 sets instrumental quirúrgico básico (30 piezas, acero inoxidable)
+    - Documentación técnica completa para licitación (registros sanitarios, certificados vigentes)
+    - Entrega: Bogotá, DDP Hospital San José
+    - Plazo: 10 días hábiles
+
+    El registro sanitario INVIMA debe estar vigente al momento de
+    presentación de oferta (fecha cierre: 15 de mayo 2025).
+
+    Agradeceríamos proforma con validez mínimo 30 días.
+
+    Atentamente,
+
+    Dra. Lucia Fernández
+    Coordinadora de Abastecimiento
+    Hospital San José de Bogotá E.S.E.
+  attachments:
+    - filename: "PLIEGO_CONDICIONES_2025_HSI.pdf"
+      type: "licitation_terms"
+      size_kb: 420
+  thread_id: null
+  timestamp: "2025-04-30T10:30:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject", "input.email.attachments"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["licitation", "documentation_request", "public_tender"]
+      urgency: "medium"
+      sentiment: "formal"
+      requires_human: false
+      confidence: 0.96
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "sets instrumental quirúrgico"
+          qty: 30
+        - type: "certification_requirement"
+          value: "registro sanitario INVIMA vigente"
+        - type: "delivery_location"
+          value: "Bogotá, Hospital San José"
+        - type: "deadline"
+          value: "2025-05-15"
+        - type: "contract_type"
+          value: "licitacion_publica"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-003", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-HSJ-2024-LIC"
+      contract_type: "licitacion_estatal"
+      freshness: "2025-04-30T10:25:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku: MED-SKU-002", "qty: 30"]
+    expected_output:
+      items:
+        - sku: "MED-SKU-002"
+          warehouse: "Bogotá Médica"
+          available: 20
+          reserved: 5
+          in_transit: 0
+          fulfillable_qty: 15
+        - sku: "MED-SKU-002"
+          warehouse: "Medellín Zona Franca"
+          available: 15
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 15
+      total_fulfillable: 30
+      freshness: "2025-04-30T10:25:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "medical_regulated"
+      items: ["MED-SKU-002"]
+      certifications_required: ["Registro Sanitario INVIMA"]
+      customer_country: "CO"
+      use_case: "hospitalario_quirurgico_licitacion"
+      contract_type: "licitacion_publica"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "REGULATORY_DOC_MISSING"
+          severity: "critical"
+          message: "Registro Sanitario INVIMA vencido (2019-08-15) para MED-SKU-002. Requerido vigente para licitación pública hospitalaria."
+      blocking_issues:
+        - "Registro Sanitario INVIMA vencido — requerimiento legal obligatorio para instrumental quirúrgico en licitación CO"
+        - "Licitación pública: documentación técnica incompleta descalifica oferta automáticamente"
+      pii_detected: false
+      policies_violated: ["medical_regulated_invima_mandatory", "public_tender_doc_completeness"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["REGULATORY_DOC_MISSING"]
+      severity: "critical"
+      customer_type: "public_hospital"
+    expected_output:
+      route_to: "AM_MWT_SUPERVISOR"
+      recipients: ["a.velasquez@mwt-faberloom.co", "compliance@mwt-faberloom.co", "regulatorio@tecmater.co"]
+      channel: "email_priority"
+      urgency_override: "critical"
+      fallback_route: "CEO_MWT"
+      sla_target_minutes: 30
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "internal_alert"
+      recipient_role: "AM_supervisor"
+      context:
+        customer: "Hospital San José de Bogotá E.S.E."
+        rfq_items: "30 sets instrumental quirúrgico"
+        exception: "REGULATORY_DOC_MISSING"
+        severity: "critical"
+        contract_type: "licitacion_publica"
+        deadline: "2025-05-15"
+    expected_output:
+      draft_type: "internal_alert"
+      subject: "[CRÍTICO — LICITACIÓN] RFQ bloqueada — RS INVIMA vencido MED-SKU-002 / Hospital San José"
+      body: |
+        RFQ de licitación pública bloqueada por compliance regulatorio:
+
+        Cliente: Hospital San José de Bogotá E.S.E. (CLI-003, platinum)
+        Producto: 30 sets instrumental quirúrgico MED-SKU-002
+        Valor estimado: $37,500 USD
+
+        BLOQUEO: Registro Sanitario INVIMA vencido (2019-08-15).
+        Requerido vigente para presentación de oferta pública.
+        Cierre licitación: 15 mayo 2025.
+
+        Stock disponible: 30 unidades (suficiente).
+        Precio: vigente.
+
+        ACCIÓN URGENTE:
+        1. Contactar fabricante para renovación RS INVIMA
+        2. Evaluar si SKU alternativo con RS vigente existe
+        3. Responder a coordinadora antes de 15 mayo si viable
+
+        Si no se puede resolver → declinar participación formalmente.
+      internal_note: "Licitación estatal, alto valor estratégico. Cliente platinum con tasa ganancia 65%. Pierde licitación = pérdida relación 2-3 años."
+      tone: "urgent_executive"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED"
+      reason: "REGULATORY_DOC_MISSING"
+      customer_notified: false
+      proforma_generated: false
+    glosses_required:
+      - "Registro Sanitario INVIMA vencido — requerimiento legal obligatorio"
+      - "Licitación pública hospitalaria — documentación incompleta descalifica"
+      - "Stock suficiente pero NO presentable sin certificación vigente"
+  evidence_bundle:
+    per_line: []
+    per_quote:
+      status: "BLOCKED"
+      exception_codes: ["REGULATORY_DOC_MISSING"]
+      aprobador: "AM+supervisor"
+      hash: null
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-20"
+      timestamp_stock: "2025-04-30T10:25:00-05:00"
+      technical_spec_rule: "surgical_instrument_set"
+      margen_calculado: null
+      aprobador: "AM+supervisor (compliance block)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "proveedor"
+      sku_status: "active"
+      cert_doc_version: "RS-INV-2019-084567-EXPIRED"
+      country_rule_applied: "CO_medical_device_invima_mandatory"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=1, packaging=1/unit"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-HSJ-2024-LIC"
+      exception_codes: ["REGULATORY_DOC_MISSING"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co", "regulatorio@tecmater.co"]
+        channel: "email_priority"
+        sla_minutes: 30
+    - type: "create_open_item"
+      details:
+        item_type: "regulatory_cert_renewal"
+        sku: "MED-SKU-002"
+        priority: "critical"
+        due_date: "2025-05-10T17:00:00-05:00"
+        note: "Urgente para licitación Hospital San José — cierre 15 mayo"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_REGULATORY"
+        severity: "critical"
+        trace_id: "TRACE-case11-20250430"
+        regulatory_context: "CO_public_tender_medical_device"
+  exceptions_raised:
+    - "REGULATORY_DOC_MISSING"
+  hitl_gate_triggered: true
+  output_destination: "blocked"
+
+edge_cases:
+  - description: "Registro sanitario vigente pero próximo a vencer (menos de 30 días antes de cierre licitación)"
+    expected_behavior: "Genera WARNING + escalación AM. No bloqueo absoluto pero AM debe evaluar riesgo de vencimiento durante vigencia oferta."
+    variant_data:
+      certifications:
+        - type: "Registro Sanitario INVIMA"
+          version: "2024-04-20"
+          status: "vigente"
+          expires: "2025-05-10"
+  - description: "Hospital privado (no E.S.E. pública) con mismos requerimientos — mismo resultado regulatorio"
+    expected_behavior: "Bloqueo igual. RS INVIMA es obligatorio para todo instrumental quirúrgico hospitalario en CO, independientemente de sector público/privado."
+    variant_data:
+      customer_type: "hospital_privado"
+  - description: "Cliente pide 15 sets en lugar de 30, como compra directa (no licitación)"
+    expected_behavior: "Mismo bloqueo. RS INVIMA vigente es requisito legal de comercialización, no depende de modalidad compra o cantidad."
+    variant_data:
+      qty: 15
+      contract_type: "compra_directa"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'REGULATORY_DOC_MISSING'"
+    - "output.primary_output.status == 'BLOCKED'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 30"
+    - "output.side_effects contains create_open_item with item_type == 'regulatory_cert_renewal'"
+    - "evidence_bundle.per_quote.cert_doc_version == 'RS-INV-2019-084567-EXPIRED'"
+    - "compliance_checker output.blocking_issues contains 'Registro Sanitario INVIMA vencido'"
+  must_not_do:
+    - "output contains proforma draft con precio total"
+    - "output contains cover_letter al cliente con cotización formal"
+    - "system ignores expired RS because ISO 7153-1 is vigente"
+    - "system allows quote because customer is platinum and stock exists"
+    - "output.primary_output.customer_notified == true"
+
+severity_weight_validation:
+  expected_severity: "critical"
+  if_misclassified_as_lower: |
+    Si clasificado como High o menor: proforma preliminar podría generarse,
+    llegar a borrador de licitación, y ser presentada con documentación vencida.
+    Consecuencia: descalificación automática en licitación pública, daño
+    reputacional con Hospital San José (cliente platinum), posible sanción
+    por parte de INVIMA por comercializar dispositivo médico sin registro vigente.
+    Impacto legal y regulatorio severo para MWT y fabricante.
+
+privacy_tier:
+  inputs: "RESTRICTED_SENSITIVE_OR_REGULATED"
+  outputs: "RESTRICTED_SENSITIVE_OR_REGULATED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Datos de licitación pública hospitalaria son sensibles por naturaleza
+    contractual y regulatoria. NO promovible. Patrón abstracto de bloqueo
+    por certificación médica vencida podría promoverse a TENANT_DERIVED
+    tras anonimización y l-diversity check.
+
+gaps_detected: []

@@ -1,0 +1,519 @@
+case_id: case_06
+industry: lubricantes_industriales
+severity: medium
+description: RFQ 208L aceite hidráulico ISO VG 46 sin especificar anti-wear ni zinc-free — sistema detecta especificación incompleta y pide aclaración
+
+setup:
+  catalog:
+    - sku: "LUB-SKU-001"
+      description: "Aceite hidráulico Shell Tellus S2 MX 46, ISO VG 46, anti-wear zinc-based, 208L tambor"
+      vertical_spec:
+        type: "hydraulic_oil"
+        viscosity_grade: "ISO VG 46"
+        base_oil: "mineral"
+        additives:
+          - "anti-wear ZDDP (zinc-based)"
+          - "antioxidante"
+          - "antiespumante"
+        zinc_content_ppm: 600
+        zinc_free: false
+        applications: ["sistemas_hidraulicos_industriales", "bombas_paletas", "cilindros"]
+        compatibility_warning: "NO usar donde agua residual contenga zinc (regulación ambiental)"
+        standards:
+          - standard: "ISO 11158 HM"
+            status: "vigente"
+            cert_doc_ref: "CERT-ISO11158-001-2024"
+          - standard: "DIN 51524 Parte 2"
+            status: "vigente"
+            cert_doc_ref: "CERT-DIN51524-001-2024"
+        drain_interval_hours: 4000
+      stock:
+        available: 12
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 8
+            reserved: 2
+          - location: "Barranquilla Norte"
+            qty: 4
+            reserved: 0
+        freshness_seconds: 180
+      pricing:
+        list_price: 485.00
+        currency: "USD"
+        version: "2025-04-28"
+        freshness_hours: 48
+      lead_time:
+        days: 3
+        source: "3PL"
+        freshness_hours: 2
+      certifications:
+        - type: "ISO 11158 HM"
+          version: "2024-09-01"
+          status: "vigente"
+        - type: "DIN 51524 Parte 2"
+          version: "2024-09-01"
+          status: "vigente"
+      MOQ: 1
+      packaging:
+        units_per_drum: 208
+        weight_kg_per_drum: 190
+      sku_status: "active"
+    - sku: "LUB-SKU-001B"
+      description: "Aceite hidráulico Shell Tellus S4 ME 46, ISO VG 46, zinc-free, anti-wear ashless, 208L tambor"
+      vertical_spec:
+        type: "hydraulic_oil"
+        viscosity_grade: "ISO VG 46"
+        base_oil: "sintético"
+        additives:
+          - "anti-wear ashless (zinc-free)"
+          - "antioxidante"
+          - "antiespumante"
+        zinc_content_ppm: 0
+        zinc_free: true
+        applications: ["sistemas_hidraulicos_ambientalmente_sensibles", "fundicion_aluminio", "papeleria"]
+        standards:
+          - standard: "ISO 11158 HM"
+            status: "vigente"
+            cert_doc_ref: "CERT-ISO11158-001B-2024"
+          - standard: "DIN 51524 Parte 3"
+            status: "vigente"
+            cert_doc_ref: "CERT-DIN51524-001B-2024"
+        drain_interval_hours: 8000
+      stock:
+        available: 6
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 4
+            reserved: 1
+          - location: "Barranquilla Norte"
+            qty: 2
+            reserved: 1
+        freshness_seconds: 180
+      pricing:
+        list_price: 720.00
+        currency: "USD"
+        version: "2025-04-28"
+        freshness_hours: 48
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 1
+      packaging:
+        units_per_drum: 208
+        weight_kg_per_drum: 190
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-014"
+    name: "Metalmecánica del Valle S.A.S."
+    country: "CO"
+    city: "Cali"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "901.789.012-3"
+    vertical: "metalurgia"
+    historical_data:
+      last_order_date: "2025-03-30"
+      avg_order_value_usd: 1800
+      orders_ytd: 2
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:MRO_compatibility"]
+      layer_3b_metadata: ["compliance_profile:MRO_compatibility"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Jefe de Planta Martín Londoño"
+    email: "m.londono@metalmecanicavalle.co"
+    role: "Jefe de Planta"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización 10 tambores aceite hidráulico ISO 46 — urgente"
+  body_text: |
+    Estimados,
+
+    Solicitamos cotización de 10 tambores de 208 litros de aceite
+    hidráulico ISO VG 46 para nuestros equipos.
+
+    Entrega: Cali, DDP.
+    Plazo: esta semana.
+
+    Martín Londoño
+    Jefe de Planta
+    Metalmecánica del Valle
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T07:30:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["industrial_lubricant", "bulk_order"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.91
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "aceite hidráulico ISO VG 46"
+          qty: 10
+          unit: "tambores 208L"
+        - type: "delivery_location"
+          value: "Cali"
+        - type: "incoterm"
+          value: "DDP"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-014", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-MVA-2025-Q1"
+      freshness: "2025-04-30T07:25:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku_query: aceite hidraulico ISO VG 46", "qty: 10"]
+    expected_output:
+      items:
+        - sku: "LUB-SKU-001"
+          warehouse: "Bogotá Principal"
+          available: 8
+          reserved: 2
+          in_transit: 0
+          fulfillable_qty: 6
+        - sku: "LUB-SKU-001"
+          warehouse: "Barranquilla Norte"
+          available: 4
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 4
+        - sku: "LUB-SKU-001B"
+          warehouse: "Bogotá Principal"
+          available: 4
+          reserved: 1
+          in_transit: 0
+          fulfillable_qty: 3
+        - sku: "LUB-SKU-001B"
+          warehouse: "Barranquilla Norte"
+          available: 2
+          reserved: 1
+          in_transit: 0
+          fulfillable_qty: 1
+      total_fulfillable: 14
+      multiple_skus_found: true
+      sku_list: ["LUB-SKU-001", "LUB-SKU-001B"]
+      freshness: "2025-04-30T07:28:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "MRO_compatibility"
+      items: ["LUB-SKU-001", "LUB-SKU-001B"]
+      customer_country: "CO"
+      use_case: "equipos hidráulicos metalmecánica"
+      specs_provided:
+        - "viscosidad: ISO VG 46"
+      specs_missing:
+        - "tipo anti-wear (zinc-based vs ashless/zinc-free)"
+        - "base oil (mineral vs sintético)"
+        - "aplicación específica (bombas, cilindros, sistema mixto)"
+        - "regulación ambiental (zinc-free requerido?)"
+        - "intervalo de drenaje deseado"
+        - "compatibilidad con sellos existentes"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "ASTM_AMBIGUO"
+          severity: "medium-high"
+          message: "Aceite hidráulico ISO VG 46 especificado sin tipo anti-wear ni base oil. Dos variantes disponibles con diferencias funcionales significativas."
+        - code: "SUSTITUCIÓN_ACEPTABLE"
+          severity: "medium"
+          message: "LUB-SKU-001 (mineral ZDDP $485) vs LUB-SKU-001B (sintético zinc-free $720). Diferente vida útil (4,000h vs 8,000h), diferente compatibilidad ambiental, diferente precio."
+      blocking_issues:
+        - "Tipo anti-wear desconocido: ZDDP (zinc) puede ser incompatible con regulaciones de vertido en algunos sectores"
+        - "Base oil desconocida: sintético permite intervalos 2x más largos pero cuesta 48% más"
+        - "Aplicación específica no indicada: bombas de paletas vs cilindros vs sistemas mixtos requieren viscosidades/aditivos específicos"
+      pii_detected: false
+      policies_violated: ["lubricant_specification_mandatory", "substitution_requires_tech_approval"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["ASTM_AMBIGUO", "SUSTITUCIÓN_ACEPTABLE"]
+      severity: "medium"
+      customer_tier: "silver"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email"
+      urgency_override: "medium"
+      fallback_route: "AM_MWT_SUPERVISOR"
+      sla_target_minutes: 240
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Metalmecánica del Valle S.A.S."
+        rfq_items: "10 tambores aceite hidráulico ISO VG 46"
+        exception: "ASTM_AMBIGUO + SUSTITUCIÓN_ACEPTABLE"
+        severity: "medium"
+        clarification_needed: true
+        options_available:
+          - "Shell Tellus S2 MX 46: mineral, ZDDP anti-wear, 4,000h drenaje, $485"
+          - "Shell Tellus S4 ME 46: sintético, zinc-free ashless, 8,000h drenaje, $720"
+    expected_output:
+      draft_type: "customer_clarification"
+      subject: "Re: Cotización aceite hidráulico ISO VG 46 — aclaración técnica"
+      body: |
+        Estimado Sr. Londoño,
+
+        Gracias por su solicitud. Para cotizar el aceite hidráulico
+        correcto para sus equipos, necesitamos completar la
+        especificación técnica:
+
+        DATOS FALTANTES:
+        1. ¿Tipo de anti-desgaste?
+           - ZDDP (zinc-based): estándar, compatible con la mayoría
+             de bombas y cilindros
+           - Ashless (zinc-free): requerido donde hay restricciones
+             ambientales de zinc en aguas residuales; compatible con
+             sellos modernos; intervalo de drenaje 2x más largo
+        2. ¿Base oil preferida?
+           - Mineral ($485/tambor): rendimiento estándar, 4,000h
+           - Sintético ($720/tambor): mayor estabilidad térmica,
+             intervalo 8,000h, mejor arranque en frío
+        3. ¿Equipos a lubricar?
+           - Bombas de paletas / engranajes / pistón
+           - Cilindros hidráulicos
+           - Sistema mixto
+        4. ¿Intervalo de cambio de aceite actual?
+           - Estándar (4,000-5,000h) vs extendido (8,000h+)
+
+        OPCIONES EN STOCK:
+        - Shell Tellus S2 MX 46 (mineral ZDDP): 10 tambores
+          disponibles — $485 c/u
+        - Shell Tellus S4 ME 46 (sintético zinc-free): 4 tambores
+          disponibles — $720 c/u
+
+        Con la especificación completa podemos cotizar el producto
+        exacto y aconsejar sobre intervalos de mantenimiento.
+
+        Quedo atento.
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Cliente silver metalmecánica. Spec incompleta aceite hidráulico — dos variantes muy diferentes en precio, performance y aplicación. Sustitución sin validación técnica podría causar incompatibilidad con sellos o regulaciones ambientales. Requiere intervención AM."
+      tone: "professional_technical"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED_PENDING_CLARIFICATION"
+      reason: "ASTM_AMBIGUO + SUSTITUCIÓN_ACEPTABLE"
+      customer_notified: true
+      customer_notification_type: "clarification_draft"
+      proforma_generated: false
+    glosses_required:
+      - "Aceite ISO VG 46 sin tipo anti-wear ni base oil"
+      - "2 variantes: mineral ZDDP $485 vs sintético zinc-free $720"
+      - "Diferente vida útil: 4,000h vs 8,000h"
+      - "Clarificación técnica enviada con checklist 4 items"
+  evidence_bundle:
+    per_line:
+      - sku: "LUB-SKU-001"
+        technical_spec_rule: "hydraulic_oil_ISO46_ZDDP_mineral"
+        precio: 485.00
+        stock: 10
+        lead_time: 3
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "SUSTITUCIÓN_ACEPTABLE"
+        aprobador: "AM"
+      - sku: "LUB-SKU-001B"
+        technical_spec_rule: "hydraulic_oil_ISO46_zincfree_synthetic"
+        precio: 720.00
+        stock: 4
+        lead_time: 5
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "SUSTITUCIÓN_ACEPTABLE"
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: null
+      moneda: "USD"
+      incoterm_pais: "DDP Colombia"
+      total: null
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: null
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-28"
+      timestamp_stock: "2025-04-30T07:28:00-05:00"
+      technical_spec_rule: "hydraulic_oil_ISO46_family"
+      margen_calculado: null
+      aprobador: "AM (clarification required)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "CERT-ISO11158-001-2024"
+      country_rule_applied: "CO_lubricant_specification_mandatory"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=1, packaging=208L/drum, 190kg"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-MVA-2025-Q1"
+      exception_codes: ["ASTM_AMBIGUO", "SUSTITUCIÓN_ACEPTABLE"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "create_open_item"
+      details:
+        item_type: "clarification_pending"
+        sku: "LUB-SKU-001"
+        priority: "medium"
+        due_date: "2025-05-05T17:00:00-05:00"
+        note: "Esperando especificación aceite hidráulico Metalmecánica del Valle"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_LUBRICANT_INCOMPLETE_SPEC"
+        severity: "medium"
+        trace_id: "TRACE-case06-20250430"
+        mro_context: "hydraulic_oil_ISO46_ZDDP_vs_zincfree_ambiguous"
+  exceptions_raised:
+    - "ASTM_AMBIGUO"
+    - "SUSTITUCIÓN_ACEPTABLE"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Cliente opera fundición de aluminio — regulación exige zinc-free. Sistema debe descartar LUB-SKU-001 automáticamente."
+    expected_behavior: "Compliance detecta aplicación fundición aluminio → LUB-SKU-001 descartado. Solo LUB-SKU-001B ofrecido. Si stock insuficiente (4 vs 10), añade STOCK_PARCIAL."
+    variant_data:
+      application: "fundicion_aluminio"
+      zinc_free_required: true
+  - description: "Cliente acepta mineral ZDDP pero tiene sellos de caucho NBR viejo — incompatibilidad química ZDDP-NBR degradado"
+    expected_behavior: "Compliance alerta: ZDDP puede degradar sellos NBR antiguos. Requiere confirmación estado sellos o upgrade a ashless."
+    variant_data:
+      seal_type: "NBR_old"
+      zinc_based_selected: true
+  - description: "Cliente quiere mezclar 5 tambores mineral + 5 sintético en mismo sistema"
+    expected_behavior: "Bloqueo AM. Mezclar aceites de diferente base y aditivación en mismo circuito es inaceptable. Draft explicando incompatibilidad."
+    variant_data:
+      mixed_request: "5_mineral_5_synthetic"
+      same_system: true
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'ASTM_AMBIGUO'"
+    - "output.exceptions_raised contains 'SUSTITUCIÓN_ACEPTABLE'"
+    - "output.primary_output.status == 'BLOCKED_PENDING_CLARIFICATION'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "compliance_checker output.blocking_issues contains 'Tipo anti-wear desconocido'"
+    - "compliance_checker output.blocking_issues contains 'Base oil desconocida'"
+    - "draft_writer output.body contains 'ZDDP (zinc-based)'"
+    - "draft_writer output.body contains 'Ashless (zinc-free)'"
+    - "draft_writer output.body contains '4,000h vs 8,000h'"
+    - "inventory_fetcher output.multiple_skus_found == true"
+    - "output.side_effects contains create_open_item with item_type == 'clarification_pending'"
+  must_not_do:
+    - "output contains proforma con 'aceite hidráulico ISO 46 genérico'"
+    - "system selects mineral because it's cheaper ($485 vs $720)"
+    - "system selects mineral because more stock (10 vs 4)"
+    - "system ignores missing anti-wear spec and proceeds with default"
+    - "draft_writer says 'recomendamos el mineral por precio'"
+    - "system accepts 'cualquiera de ISO 46' as sufficient specification"
+
+severity_weight_validation:
+  expected_severity: "medium"
+  if_misclassified_as_lower: |
+    Si clasificado como Low-Medium: proforma podría generarse
+    seleccionando aceite más barato o más stock sin validar
+    aplicación. Si cliente opera en zona con regulación zinc-free
+    (p.ej. cerca de río o en fundición aluminio), usar ZDDP genera
+    violación ambiental. Si cliente tiene sellos NBR viejos, ZDDP
+    acelera degradación → fugas → parada no planificada. Error en
+    lubricante de 10 tambores ($4,850-$7,200) con intervalo
+    inadecuado = costo doble por cambio prematuro o daño equipo.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico metalmecánica. NO promovible. Patrón abstracto
+    (lubricante especificación incompleta con variantes
+    zinc-based/zinc-free) valioso para training MRO_compatibility.
+    Puede promoverse a GLOBAL_PROMOTABLE como ejemplo de
+    lubricant_spec_ambiguity tras anonimización.
+
+gaps_detected: []

@@ -26,6 +26,7 @@ class Command(BaseCommand):
         "editorial_histories",
         "outboxes",
         "event_logs",
+        "sample_items",
     ]
 
     def add_arguments(self, parser):

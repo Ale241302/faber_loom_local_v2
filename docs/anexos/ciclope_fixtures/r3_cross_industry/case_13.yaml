@@ -1,0 +1,461 @@
+case_id: case_13
+industry: electrico_industrial
+severity: high
+description: RFQ tablero eléctrico para bomba 30HP con especificación incompleta — falta tensión, fases, protección, IP/NEMA
+
+setup:
+  catalog:
+    - sku: "ELEC-SKU-001"
+      description: "Tablero eléctrico NEMA 4X vacío, acero inox 304, 36x24x12 pulgadas, para montaje de breakers/contactores/relevos"
+      vertical_spec:
+        type: "electrical_panel_empty"
+        standard: "NEMA 4X / IEC 60529 IP66"
+        material: "acero inoxidable 304"
+        dimensions_in: "36x24x12"
+        max_breakers: 8
+        bus_rating_A: 400
+        includes: ["carril DIN", "barra neutro", "barra tierra", "placa montaje"]
+        requires_customer_spec:
+          - "tensión nominal (V)"
+          - "número de fases"
+          - "corriente máxima (A) o potencia (HP/kW)"
+          - "tipo de protección (breaker fusible)"
+          - "curva de disparo (B/C/D)"
+          - "kAIC requerido"
+          - "método de montaje (pared/suelo/pedestal)"
+          - "ambient conditions (temp, humedad, polvo, corrosión)"
+        NOT_compatible_without_spec: true
+        standards:
+          - standard: "NEMA 4X"
+            status: "vigente"
+            cert_doc_ref: "CERT-NEMA4X-001-2024"
+          - standard: "IEC 60529 IP66"
+            status: "vigente"
+            cert_doc_ref: "CERT-IP66-001-2024"
+          - standard: "UL 508A"
+            status: "vigente"
+            cert_doc_ref: "CERT-UL508A-001-2024"
+      stock:
+        available: 12
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 8
+            reserved: 2
+          - location: "Medellín Industrial"
+            qty: 4
+            reserved: 0
+        freshness_seconds: 360
+      pricing:
+        list_price: 485.00
+        currency: "USD"
+        version: "2025-04-20"
+        freshness_hours: 240
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 4
+      certifications:
+        - type: "NEMA 4X"
+          version: "2024-03-01"
+          status: "vigente"
+        - type: "IEC 60529 IP66"
+          version: "2024-03-01"
+          status: "vigente"
+        - type: "UL 508A"
+          version: "2024-03-01"
+          status: "vigente"
+      MOQ: 1
+      packaging:
+        units_per_box: 1
+        weight_kg_per_unit: 28
+        dimensions_cm: "92x61x30"
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-006"
+    name: "Electromontajes Centroamérica S.A."
+    country: "GT"
+    city: "Guatemala City"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "C/F"
+    vertical: "electrico_industrial"
+    historical_data:
+      last_order_date: "2025-02-28"
+      avg_order_value_usd: 3200
+      orders_ytd: 2
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+      country_rules: "GT voltage 120/208V 60Hz, NEC 2020 applicable"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_GT"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:electrical_technical"]
+      layer_3b_metadata: ["compliance_profile:electrical_technical", "country:GT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 1
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Ing. Javier Castellanos"
+    email: "j.castellanos@emca.gt"
+    role: "Gerente de Proyectos"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización tablero bomba 30HP — entrega Guatemala"
+  body_text: |
+    Buenos días,
+
+    Necesitamos cotizar un tablero eléctrico para bomba industrial de 30HP.
+    Entrega en Ciudad de Guatemala, DDP.
+
+    Es para una bomba centrifuga en planta de agua residual.
+    Plazo: 3 semanas.
+
+    Favor enviar proforma lo antes posible.
+
+    Ing. Javier Castellanos
+    Gerente de Proyectos
+    Electromontajes Centroamérica S.A.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T10:00:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["electrical_panel", "industrial_equipment"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.90
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "tablero eléctrico para bomba 30HP"
+        - type: "power_rating"
+          value: "30HP"
+        - type: "equipment_type"
+          value: "bomba centrifuga"
+        - type: "application"
+          value: "planta agua residual"
+        - type: "delivery_location"
+          value: "Ciudad de Guatemala"
+        - type: "incoterm"
+          value: "DDP"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-006", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-EMCA-2025-Q1"
+      country_rules: "GT_voltage_120_208V_60Hz"
+      freshness: "2025-04-30T09:55:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku: ELEC-SKU-001", "qty: 1"]
+    expected_output:
+      items:
+        - sku: "ELEC-SKU-001"
+          warehouse: "Bogotá Principal"
+          available: 8
+          reserved: 2
+          in_transit: 0
+          fulfillable_qty: 6
+      total_fulfillable: 10
+      freshness: "2025-04-30T09:58:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "electrical_technical"
+      items: ["ELEC-SKU-001"]
+      customer_country: "GT"
+      application: "bomba centrifuga 30HP planta agua residual"
+      specs_provided:
+        - "potencia: 30HP"
+      specs_missing:
+        - "tensión nominal"
+        - "número de fases"
+        - "corriente nominal / factor de servicio"
+        - "tipo de protección (breaker/ fusible)"
+        - "curva de disparo"
+        - "kAIC requerido"
+        - "método de montaje"
+        - "condiciones ambientales (IP/NEMA)"
+        - "arrancador directo o variador de frecuencia"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "ASTM_AMBIGUO"
+          severity: "high"
+          message: "Especificación eléctrica incompleta para tablero. Potencia conocida (30HP) pero faltan datos críticos de tensión, fases, protección, montaje y ambiente."
+      blocking_issues:
+        - "Tablero eléctrico requiere especificación completa según NEMA/UL — NO se puede dimensionar con solo HP"
+        - "Falta tensión nominal (120V? 208V? 240V? 480V?) — determina breakers, cableado, transformador de control"
+        - "Falta número de fases (1F o 3F) — 30HP típicamente 3F pero debe confirmarse"
+        - "Falta método de arranque (DOL, Y-D, VFD, soft starter) — afecta componentes y costo"
+        - "Falta kAIC — requerido para selección breaker adecuado y seguridad cortocircuito"
+        - "Ambiente planta agua residual: requiere confirmar IP/NEMA (humedad/corrosión)"
+      pii_detected: false
+      policies_violated: ["electrical_panel_specification_mandatory", "GT_NEC_compliance", "safety_first_incomplete_spec"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["ASTM_AMBIGUO"]
+      severity: "high"
+      customer_tier: "silver"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email"
+      urgency_override: "high"
+      fallback_route: "AM_MWT_SUPERVISOR"
+      sla_target_minutes: 240
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Electromontajes Centroamérica S.A."
+        rfq_items: "tablero eléctrico bomba 30HP"
+        exception: "ASTM_AMBIGUO"
+        severity: "high"
+        clarification_needed: true
+        missing_specs: ["tensión", "fases", "protección", "kAIC", "montaje", "ambiente", "arranque"]
+    expected_output:
+      draft_type: "customer_clarification"
+      subject: "Re: Cotización tablero bomba 30HP — datos técnicos requeridos"
+      body: |
+        Estimado Ing. Castellanos,
+
+        Gracias por su solicitud. Para cotizar el tablero eléctrico de la
+        bomba de 30HP de manera precisa y segura, necesitamos los siguientes
+        datos técnicos adicionales:
+
+        1. TENSIÓN NOMINAL: ¿120V, 208V, 240V o 480V? (Guatemala típicamente
+           120/208V 60Hz, pero confirmar del motor)
+        2. FASES: ¿Monofásico o trifásico?
+        3. TIPO DE ARRANQUE: ¿Directo (DOL), estrella-triángulo, variador
+           de frecuencia (VFD), o soft starter?
+        4. PROTECCIÓN REQUERIDA: ¿Breaker magnetotérmico o fusibles?
+           ¿Curva de disparo B, C o D?
+        5. CAPACIDAD DE CORTOCIRCUITO (kAIC): ¿Conoce la corriente de
+           cortocircuito disponible en el punto de instalación?
+        6. MÉTODO DE MONTAJE: ¿Pared, suelo con pedestal, o frente de
+           gabinete existente?
+        7. CONDICIONES AMBIENTALES: ¿Temperatura ambiente máxima? ¿IP/NEMA
+           requerido para planta agua residual (humedad/gases)?
+        8. ¿Requiere transformador de control separado o control a tensión
+           de línea?
+
+        Con esta información podemos dimensionar correctamente el tablero,
+        incluir los componentes apropiados (breakers, contactores, relés,
+        bornes, ventilación), y garantizar cumplimiento NEC y normativa
+        local de Guatemala.
+
+        Precio orientativo tablero vacío NEMA 4X: $485 USD (stock disponible).
+        Precio final dependerá de componentes internos según especificación.
+
+        Plazo fabricación: 2-3 semanas adicionales al lead time de
+        componentes.
+
+        Quedo atento a sus comentarios.
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Cliente silver GT, primer RFQ tablero. 30HP sin especificación eléctrica es riesgo de mala venta. Tablero vacío en stock pero NO se puede vender sin componentes específicos. Requiere checklist técnico completo antes de proforma."
+      tone: "professional_technical"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED_PENDING_CLARIFICATION"
+      reason: "ASTM_AMBIGUO"
+      customer_notified: true
+      customer_notification_type: "clarification_draft"
+      proforma_generated: false
+    glosses_required:
+      - "Especificación eléctrica incompleta — 30HP insuficiente"
+      - "Faltan 8 datos críticos: tensión, fases, arranque, protección, kAIC, montaje, ambiente, control"
+      - "Clarificación técnica enviada al cliente"
+      - "Tablero vacío en stock pero NO cotizable sin componentes específicos"
+  evidence_bundle:
+    per_line:
+      - sku: "ELEC-SKU-001"
+        technical_spec_rule: "electrical_panel_empty_NEMA4X"
+        precio: 485.00
+        stock: 10
+        lead_time: 5
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "ASTM_AMBIGUO"
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: null
+      moneda: "USD"
+      incoterm_pais: "DDP Guatemala"
+      total: null
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: null
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-20"
+      timestamp_stock: "2025-04-30T09:58:00-06:00"
+      technical_spec_rule: "electrical_panel_empty_NEMA4X"
+      margen_calculado: null
+      aprobador: "AM (clarification required)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "CERT-NEMA4X-001-2024"
+      country_rule_applied: "GT_NEC_2020_electrical_panel_spec"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=1, packaging=1/unit, 28kg"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-EMCA-2025-Q1"
+      exception_codes: ["ASTM_AMBIGUO"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "create_open_item"
+      details:
+        item_type: "clarification_pending"
+        sku: "ELEC-SKU-001"
+        priority: "high"
+        due_date: "2025-05-05T17:00:00-06:00"
+        note: "Esperando respuesta técnica cliente GT sobre tablero 30HP"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_TECH_SPEC_INCOMPLETE"
+        severity: "high"
+        trace_id: "TRACE-case13-20250430"
+        safety_context: "electrical_panel_30HP_incomplete_spec_Guatemala"
+  exceptions_raised:
+    - "ASTM_AMBIGUO"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Cliente responde con tensión 480V trifásico — pero Guatemala es 208V. Sistema debe alertar posible incompatibilidad país."
+    expected_behavior: "Compliance Checker debe detectar tensión 480V vs estándar GT 120/208V y generar advertencia adicional sobre compatibilidad motor-transformador o necesidad de verificación in-situ."
+    variant_data:
+      tension: "480V"
+      fases: "3F"
+      country_standard: "GT_120_208V"
+  - description: "Cliente solicita tablero con variador de frecuencia (VFD) pero no especifica marca/protocolo"
+    expected_behavior: "Clarificación adicional requerida: marca VFD preferida (ABB, Siemens, Danfoss), protocolo comunicación (Modbus, Ethernet/IP), filtros EMC. No asumir VFD genérico."
+    variant_data:
+      arranque: "VFD"
+      vfd_brand: null
+  - description: "Cliente responde con todos los datos excepto kAIC — sistema debe permitir proforma con nota 'kAIC por confirmar, breaker provisional basado en estimación estándar'"
+    expected_behavior: "Proforma generada con HITL gate. Línea con excepción LEAD_TIME_INCIERTO o equivalente para kAIC. Breaker seleccionado con margen estándar 10kAIC con nota explícita."
+    variant_data:
+      kAIC: null
+      all_other_specs: "complete"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'ASTM_AMBIGUO'"
+    - "output.primary_output.status == 'BLOCKED_PENDING_CLARIFICATION'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "compliance_checker output.blocking_issues contains 'Tablero eléctrico requiere especificación completa'"
+    - "compliance_checker output.blocking_issues contains 'Falta tensión nominal'"
+    - "draft_writer output.body contains checklist de 8+ items técnicos"
+    - "draft_writer output.body contains 'Precio orientativo tablero vacío NEMA 4X: $485 USD'"
+    - "evidence_bundle.per_line[0].excepcion == 'ASTM_AMBIGUO'"
+    - "output.side_effects contains create_open_item with item_type == 'clarification_pending'"
+  must_not_do:
+    - "output contains proforma con tablero completo a precio fijo"
+    - "system assumes 480V 3F because 30HP is typically 3-phase"
+    - "system quotes generic breaker and contactor without kAIC or curve"
+    - "system ignores missing voltage and proceeds with stock panel"
+    - "draft_writer body says 'we can proceed with standard configuration'"
+
+severity_weight_validation:
+  expected_severity: "high"
+  if_misclassified_as_lower: |
+    Si clasificado como Medium: proforma preliminar podría generarse con
+    tablero vacío + componentes "estándar" asumidos. Riesgo de enviar
+    tablero con breakers inadecuados (tensión incorrecta, curva errónea,
+    kAIC insuficiente) a Guatemala. Consecuencia: instalación peligrosa,
+    posible incendio eléctrico, daño a bomba 30HP, responsabilidad civil
+    y daño reputacional en mercado centroamericano. NEC y normativa local
+    GT requieren especificación completa para paneles industriales.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico cliente GT con proyecto agua residual. NO promovible.
+    Patrón abstracto (tablero eléctrico con spec incompleta) altamente
+    valioso para training de electrical_technical profile. Puede promoverse
+    a GLOBAL_PROMOTABLE como checklist técnico canónico para paneles
+    industriales tras anonimización completa.
+
+gaps_detected: []

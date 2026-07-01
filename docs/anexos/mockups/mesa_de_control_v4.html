@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mesa de Control · Cotizaciones Técnicas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --coral-primary: #C96442;
+      --coral-hover: #A84F33;
+      --coral-tint: rgba(201,100,66,0.10);
+      --bg-primary: #F4F1ED;       /* cream */
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #EDE8DF;
+      --text-primary: #1F1E1C;     /* ink */
+      --text-secondary: #5A544C;
+      --text-muted: #8A8278;
+      --border-subtle: #D8D0C0;
+      --evidence-highlight: #6E1F2B; /* vino · solo para evidence */
+      --evidence-tint: rgba(110,31,43,0.08);
+      --salvia: #7A8E6D;             /* success · LISTO subtle */
+      --amber: #B88A4A;              /* warning */
+      --pizarra: #5A6B7C;            /* info */
+      --shadow-soft: 0 18px 55px rgba(31,30,28,0.08);
+      --shadow-tight: 0 10px 30px rgba(31,30,28,0.10);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --ease-out: cubic-bezier(.2,.8,.2,1);
+    }
+    [data-theme="dark"] {
+      --coral-primary: #C96442;
+      --coral-hover: #D97757;
+      --coral-tint: rgba(217,119,87,0.14);
+      --bg-primary: #1F1E1C;
+      --bg-surface: #2A2824;
+      --bg-subtle: #34312C;
+      --text-primary: #F4F1ED;
+      --text-secondary: #B8B0A4;
+      --text-muted: #8A8278;
+      --border-subtle: #3D3A34;
+      --evidence-highlight: #6E1F2B;
+      --evidence-tint: rgba(110,31,43,0.18);
+      --salvia: #8FA481;
+      --amber: #D4A567;
+      --pizarra: #7C8EA0;
+      --shadow-soft: 0 18px 55px rgba(0,0,0,0.28);
+      --shadow-tight: 0 10px 30px rgba(0,0,0,0.22);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top left, var(--coral-tint), transparent 34rem), var(--bg-primary);
+      color: var(--text-primary);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      transition: background 280ms var(--ease-out), color 280ms var(--ease-out);
+    }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .mono {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      text-transform: uppercase;
+      letter-spacing: .105em;
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+    .display {
+      font-family: Georgia, "Times New Roman", serif;
+      font-style: italic;
+      font-weight: 400;
+      letter-spacing: -.035em;
+    }
+    .shell { width: min(1440px, calc(100vw - 56px)); margin: 0 auto; padding: 30px 0 28px; }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(210px, 1fr) minmax(330px, 460px) auto auto auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 72px;
+    }
+    .wordmark { line-height: .95; }
+    .wordmark-title {
+      font-family: Georgia, "Times New Roman", serif;
+      font-style: italic;
+      font-size: 28px;
+      letter-spacing: -.045em;
+    }
+    .wordmark-sub {
+      margin-top: 9px;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .18em;
+      color: var(--text-muted);
+    }
+    .command-pill {
+      height: 46px;
+      border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+      color: var(--text-secondary);
+      border-radius: 999px;
+      padding: 0 10px 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      box-shadow: 0 1px 0 rgba(255,255,255,.28) inset;
+      transition: transform 180ms var(--ease-out), border-color 180ms var(--ease-out), background 180ms var(--ease-out);
+    }
+    .command-pill:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--text-muted), var(--border-subtle) 45%); background: var(--bg-surface); }
+    .kbd {
+      min-width: 42px; height: 28px; border-radius: 999px;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--text-muted); background: var(--bg-subtle); border: 1px solid var(--border-subtle);
+      font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px;
+    }
+    .archetype {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-subtle);
+      color: var(--text-muted); background: color-mix(in srgb, var(--bg-surface) 70%, transparent); white-space: nowrap;
+    }
+    .archetype.warning {
+      color: var(--amber); background: color-mix(in srgb, var(--amber) 9%, var(--bg-surface));
+      border-color: color-mix(in srgb, var(--amber) 38%, var(--border-subtle));
+    }
+    .demo {
+      height: 42px; display: inline-flex; align-items: center; gap: 4px;
+      border: 1px solid var(--border-subtle); border-radius: 999px; padding: 4px;
+      background: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+    }
+    .demo-label { padding-left: 11px; padding-right: 4px; color: var(--text-muted); font-size: 12px; }
+    .demo-btn {
+      height: 32px; border: 0; border-radius: 999px; padding: 0 12px;
+      background: transparent; color: var(--text-secondary); font-size: 12px;
+      transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+    }
+    .demo-btn.active { background: var(--text-primary); color: var(--bg-primary); }
+    .icon-btn {
+      width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border-subtle);
+      background: color-mix(in srgb, var(--bg-surface) 78%, transparent); color: var(--text-secondary);
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: transform 180ms var(--ease-out), background 180ms var(--ease-out), color 180ms var(--ease-out), border-color 180ms var(--ease-out);
+    }
+    .icon-btn:hover { transform: translateY(-1px); background: var(--bg-surface); color: var(--text-primary); border-color: color-mix(in srgb, var(--text-muted), var(--border-subtle) 45%); }
+    .pulse {
+      margin-top: 24px; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);
+      padding: 16px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px;
+    }
+    .metric { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .metric-value { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: 27px; letter-spacing: -.055em; }
+    .metric-label { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+    .workspace { margin-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 326px; gap: 26px; align-items: start; }
+    .main-stage { min-height: 660px; position: relative; border-radius: 32px; }
+    .state-view { display: none; animation: stageIn 280ms var(--ease-out); }
+    .state-view.active { display: block; }
+    @keyframes stageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .section-kicker { margin: 0 0 18px; color: var(--text-muted); }
+    .editorial-title {
+      margin: 0; font-family: Georgia, "Times New Roman", serif; font-style: italic;
+      font-size: clamp(38px, 4vw, 58px); font-weight: 400; line-height: .92; letter-spacing: -.065em;
+    }
+    .editorial-row { display: grid; grid-template-columns: 1.2fr .82fr; gap: 18px; margin-top: 26px; }
+    .card {
+      border: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-soft);
+      transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out), background 200ms var(--ease-out);
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-tight); background: var(--bg-surface); }
+    .card.selected { outline: 2px solid color-mix(in srgb, var(--coral-primary) 28%, transparent); outline-offset: 3px; }
+    .hero-card {
+      padding: 30px; min-height: 322px; display: flex; flex-direction: column; justify-content: space-between;
+      border-color: color-mix(in srgb, var(--coral-primary) 42%, var(--border-subtle));
+      background: linear-gradient(135deg, var(--bg-surface), color-mix(in srgb, var(--coral-tint) 45%, var(--bg-surface)));
+    }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+    .tag {
+      height: 24px; border-radius: 999px; padding: 0 8px; display: inline-flex; align-items: center;
+      border: 1px solid var(--border-subtle); color: var(--text-muted); background: color-mix(in srgb, var(--bg-subtle) 64%, transparent);
+      font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+    }
+    .tag.alarm { color: var(--coral-primary); background: var(--coral-tint); border-color: color-mix(in srgb, var(--coral-primary) 42%, var(--border-subtle)); }
+    .tag.ready, .tag.received { color: var(--text-secondary); background: transparent; }
+    .timestamp { color: var(--text-muted); font-size: 12px; }
+    .item-title { margin: 16px 0 0; font-size: 25px; line-height: 1.05; letter-spacing: -.04em; font-weight: 650; }
+    .item-meta { margin: 9px 0 0; color: var(--text-secondary); line-height: 1.45; }
+    .item-note { margin: 18px 0 0; max-width: 56ch; color: var(--text-primary); font-size: 15px; line-height: 1.55; }
+    .gloss {
+      margin-top: 18px; font-family: Georgia, "Times New Roman", serif; font-style: italic;
+      color: var(--coral-primary); font-size: 11px; line-height: 1.45; letter-spacing: -.01em;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .btn {
+      min-height: 40px; border-radius: 999px; border: 1px solid var(--border-subtle); padding: 0 16px;
+      background: var(--bg-surface); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 13px; font-weight: 600; transition: transform 160ms var(--ease-out), background 160ms var(--ease-out), border-color 160ms var(--ease-out), color 160ms var(--ease-out);
+    }
+    .btn:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--text-muted), var(--border-subtle) 45%); color: var(--text-primary); }
+    .btn.primary { background: var(--coral-primary); color: #fff; border-color: var(--coral-primary); }
+    .btn.primary:hover { background: var(--coral-hover); }
+    .btn.ghost { background: transparent; }
+    .dispatch {
+      margin-top: 20px; padding: 12px; display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: color-mix(in srgb, var(--bg-subtle) 48%, transparent);
+    }
+    .dispatch input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
+    .dispatch input::placeholder { color: var(--text-muted); }
+    .stack { display: flex; flex-direction: column; gap: 12px; }
+    .mini-card { padding: 18px; box-shadow: none; border-radius: var(--radius-md); }
+    .mini-title { margin: 10px 0 0; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+    .mini-meta { margin-top: 5px; color: var(--text-muted); font-size: 13px; line-height: 1.35; }
+    .mini-card .actions { margin-top: 14px; gap: 8px; }
+    .mini-card .btn { min-height: 34px; padding: 0 12px; font-size: 12px; }
+    .section-block { margin-top: 34px; }
+    .list-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .list-title h2 { margin: 0; font-size: 17px; letter-spacing: -.025em; }
+    .list-title span { color: var(--text-muted); font-size: 13px; }
+    .list {
+      border: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-surface) 74%, transparent);
+      border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .row-item {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+      padding: 15px 18px; border-bottom: 1px solid var(--border-subtle); transition: background 150ms var(--ease-out);
+    }
+    .row-item:last-child { border-bottom: 0; }
+    .row-item:hover { background: color-mix(in srgb, var(--bg-subtle) 48%, transparent); }
+    .row-main strong { display: block; font-size: 14px; letter-spacing: -.01em; }
+    .row-main span { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12.5px; }
+    .row-price { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+    .ready-card { padding: 24px; margin-bottom: 16px; }
+    .confidence-line {
+      display: flex; gap: 8px; align-items: center; margin-top: 16px;
+      color: color-mix(in srgb, var(--evidence-highlight) 78%, var(--text-primary)); background: var(--evidence-tint);
+      border: 1px solid color-mix(in srgb, var(--evidence-highlight) 28%, var(--border-subtle));
+      border-radius: 999px; width: fit-content; max-width: 100%; padding: 7px 11px; font-size: 12px;
+    }
+    .empty-state {
+      min-height: 470px; display: grid; place-items: center; border-radius: var(--radius-xl);
+      border: 1px solid var(--border-subtle);
+      background: radial-gradient(circle at center, color-mix(in srgb, var(--bg-surface) 82%, transparent), transparent 68%), color-mix(in srgb, var(--bg-surface) 56%, transparent);
+    }
+    .empty-inner { text-align: center; max-width: 520px; padding: 44px; }
+    .empty-inner h1 {
+      margin: 0; font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400;
+      font-size: 56px; line-height: .93; letter-spacing: -.065em;
+    }
+    .empty-inner p { margin: 18px auto 0; max-width: 38ch; color: var(--text-secondary); line-height: 1.55; }
+    .empty-command { margin: 28px auto 0; width: min(360px, 100%); justify-content: space-between; }
+    .sidebar { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 14px; }
+    .side-panel {
+      border: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+      border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow-soft);
+    }
+    .side-title { margin: 0 0 14px; color: var(--text-muted); }
+    .pipeline-row {
+      width: 100%; border: 0; border-radius: 14px; background: transparent; padding: 12px 12px; color: var(--text-primary);
+      display: flex; align-items: center; justify-content: space-between; transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+    }
+    .pipeline-row:hover, .pipeline-row.active { background: color-mix(in srgb, var(--bg-subtle) 65%, transparent); }
+    .pipeline-row.alarm.active { background: var(--coral-tint); color: var(--coral-primary); }
+    .pipeline-row span:first-child { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .13em; text-transform: uppercase; color: inherit; }
+    .pipeline-row strong { font-size: 18px; font-weight: 650; letter-spacing: -.035em; }
+    .next-work { margin-top: 14px; padding: 14px; border-radius: 16px; border: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-subtle) 38%, transparent); }
+    .next-work p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
+    .account-card { display: none; animation: stageIn 220ms var(--ease-out); }
+    .account-card.visible { display: block; }
+    .account-name { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.03em; }
+    .account-meta { margin: 7px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.45; }
+    .account-facts { margin-top: 15px; display: grid; gap: 7px; }
+    .fact { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 7px; border-bottom: 1px solid var(--border-subtle); font-size: 12.5px; }
+    .fact:last-child { border-bottom: 0; padding-bottom: 0; }
+    .fact span { color: var(--text-muted); }
+    .fact strong { color: var(--text-secondary); font-weight: 600; }
+    footer { margin-top: 32px; color: var(--text-muted); display: flex; justify-content: space-between; gap: 16px; font-size: 12px; }
+    .drawer-backdrop, .modal-backdrop, .command-backdrop {
+      position: fixed; inset: 0; z-index: 50; background: rgba(31,30,28,.28); opacity: 0; pointer-events: none;
+      transition: opacity 220ms var(--ease-out);
+    }
+    [data-theme="dark"] .drawer-backdrop, [data-theme="dark"] .modal-backdrop, [data-theme="dark"] .command-backdrop { background: rgba(0,0,0,.48); }
+    .drawer-backdrop.open, .modal-backdrop.open, .command-backdrop.open { opacity: 1; pointer-events: auto; }
+    .agent-drawer {
+      position: fixed; right: 0; top: 0; z-index: 60; height: 100vh; width: min(80vw, 1120px);
+      transform: translateX(102%); background: var(--bg-surface); border-left: 1px solid var(--border-subtle);
+      box-shadow: -28px 0 90px rgba(0,0,0,.18); display: grid; grid-template-columns: 260px minmax(0, 1fr);
+      transition: transform 280ms var(--ease-out);
+    }
+    .agent-drawer.open { transform: translateX(0); }
+    .snapshot { padding: 30px 24px; border-right: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--bg-primary) 62%, var(--bg-surface)); }
+    .snapshot h3 { margin: 14px 0 0; font-size: 22px; line-height: 1.05; letter-spacing: -.045em; }
+    .snapshot p { margin: 8px 0 0; color: var(--text-secondary); line-height: 1.45; font-size: 13px; }
+    .snapshot dl { margin: 24px 0 0; display: grid; gap: 13px; }
+    .snapshot div { padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle); }
+    .snapshot dt { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; font-family: "JetBrains Mono", ui-monospace, monospace; }
+    .snapshot dd { margin: 5px 0 0; color: var(--text-primary); font-size: 13px; }
+    .agent-main { display: flex; flex-direction: column; min-width: 0; }
+    .agent-head { padding: 28px 32px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+    .agent-head h2 { margin: 10px 0 0; font-size: 30px; line-height: 1.04; letter-spacing: -.055em; }
+    .agent-body { padding: 28px 32px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 22px; }
+    .conversation { display: grid; gap: 14px; }
+    .bubble { border: 1px solid var(--border-subtle); border-radius: 20px; padding: 16px; background: color-mix(in srgb, var(--bg-primary) 48%, var(--bg-surface)); }
+    .bubble.agent { background: color-mix(in srgb, var(--coral-tint) 30%, var(--bg-surface)); border-color: color-mix(in srgb, var(--coral-primary) 20%, var(--border-subtle)); }
+    .bubble strong { display: block; font-size: 13px; margin-bottom: 6px; }
+    .bubble p { margin: 0 0 8px; color: var(--text-secondary); line-height: 1.55; font-size: 14px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .agent-evidence {
+      border: 1px solid color-mix(in srgb, var(--evidence-highlight) 25%, var(--border-subtle));
+      background: var(--evidence-tint); border-radius: 20px; padding: 16px; height: fit-content;
+    }
+    .agent-evidence h4 { margin: 0 0 12px; color: color-mix(in srgb, var(--evidence-highlight) 78%, var(--text-primary)); font-size: 13px; }
+    .agent-evidence ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
+    .agent-composer { margin-top: 16px; border: 1px solid var(--border-subtle); border-radius: 20px; padding: 12px; display: flex; gap: 10px; align-items: center; background: var(--bg-surface); }
+    .agent-composer input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
+    .modal {
+      position: fixed; left: 50%; top: 50%; z-index: 70; width: min(560px, calc(100vw - 36px));
+      transform: translate(-50%, -48%) scale(.98); opacity: 0; pointer-events: none; background: var(--bg-surface);
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); box-shadow: 0 34px 110px rgba(0,0,0,.22);
+      padding: 26px; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+    }
+    .modal.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+    .modal h2 { margin: 0; font-size: 28px; line-height: 1.05; letter-spacing: -.055em; }
+    .modal p { margin: 10px 0 0; color: var(--text-secondary); line-height: 1.55; font-size: 14px; }
+    .reason-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+    .reason { position: relative; }
+    .reason input { position: absolute; opacity: 0; inset: 0; }
+    .reason span { min-height: 38px; border: 1px solid var(--border-subtle); border-radius: 999px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 12px; transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out), color 160ms var(--ease-out); }
+    .reason input:checked + span { border-color: var(--coral-primary); background: var(--coral-tint); color: var(--coral-primary); }
+    textarea { width: 100%; min-height: 108px; margin-top: 14px; border: 1px solid var(--border-subtle); border-radius: 18px; background: color-mix(in srgb, var(--bg-subtle) 36%, transparent); color: var(--text-primary); padding: 14px; resize: vertical; outline: 0; }
+    .modal-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+    .command-modal {
+      position: fixed; left: 50%; top: 12vh; z-index: 80; width: min(680px, calc(100vw - 36px));
+      transform: translateX(-50%) translateY(-10px); opacity: 0; pointer-events: none; border: 1px solid var(--border-subtle);
+      background: var(--bg-surface); border-radius: 26px; box-shadow: 0 30px 100px rgba(0,0,0,.24); overflow: hidden;
+      transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+    }
+    .command-modal.open { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+    .command-input { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border-subtle); }
+    .command-input input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 18px; letter-spacing: -.02em; }
+    .command-list { padding: 10px; }
+    .command-option { display: grid; grid-template-columns: auto 1fr auto; gap: 13px; align-items: center; padding: 12px; border-radius: 16px; color: var(--text-secondary); }
+    .command-option:hover { background: color-mix(in srgb, var(--bg-subtle) 65%, transparent); color: var(--text-primary); }
+    .command-option strong { display: block; font-size: 13px; color: inherit; }
+    .command-option span { display: block; margin-top: 3px; color: var(--text-muted); font-size: 12px; }
+    @media (max-width: 1180px) {
+      .shell { width: min(100vw - 32px, 1180px); }
+      .topbar { grid-template-columns: 1fr auto auto; }
+      .command-pill { grid-column: 1 / -1; grid-row: 2; max-width: 520px; }
+      .archetype { display: none; }
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar { position: static; grid-row: 1; }
+      .editorial-row { grid-template-columns: 1fr; }
+      .agent-drawer { width: min(94vw, 1120px); }
+      .agent-body { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar" aria-label="Cabecera principal">
+      <div class="wordmark" aria-label="Mesa de Control Cotizaciones Técnicas">
+        <div class="wordmark-title">Mesa de Control</div>
+        <div class="wordmark-sub">Cotizaciones Técnicas</div>
+      </div>
+      <button class="command-pill" id="openCommand" type="button" aria-label="Buscar trace, cuenta o thread"><span>Buscar trace/cuenta/thread</span><span class="kbd">⌘K</span></button>
+      <div class="archetype warning mono" id="archetypeStatus">AG_AM_MWT · 2 ajustando</div>
+      <div class="demo" aria-label="Selector de estado demo">
+        <span class="demo-label">Demo:</span>
+        <button class="demo-btn active" type="button" data-state-button="urgent">Urgente</button>
+        <button class="demo-btn" type="button" data-state-button="firma">Firma</button>
+        <button class="demo-btn" type="button" data-state-button="calma">Calma</button>
+      </div>
+      <button class="icon-btn" id="themeToggle" type="button" aria-label="Cambiar tema claro u oscuro">◐</button>
+    </header>
+
+    <section class="pulse" aria-label="Pulso operativo">
+      <div class="metric"><span class="metric-value" id="metricRfq">12</span><span class="metric-label">RFQ esta semana</span></div>
+      <div class="metric"><span class="metric-value" id="metricCycle">4.2h</span><span class="metric-label">ciclo medio</span></div>
+      <div class="metric"><span class="metric-value" id="metricPending">3</span><span class="metric-label">esperando firma</span></div>
+    </section>
+
+    <main class="workspace">
+      <section class="main-stage" aria-live="polite">
+        <div class="state-view active" id="state-urgent">
+          <p class="section-kicker mono">Hoy entra</p>
+          <h1 class="editorial-title">Una cosa requiere criterio humano.</h1>
+          <div class="editorial-row">
+            <article class="card hero-card selected" data-account="norte" aria-label="Alarma prioritaria">
+              <div>
+                <div class="card-top"><span class="tag alarm">ALARMA</span><span class="timestamp">hace 8m</span></div>
+                <h2 class="item-title">Industrias del Norte SA de CV</h2>
+                <p class="item-meta">Saltillo MX · 240 pares BC-7240 · bota dieléctrica clase eléctrica · puntera composite</p>
+                <p class="item-note">El agente no pudo cerrar la cotización porque la política de validez no cubre el plazo solicitado por compras.</p>
+                <p class="gloss">→ confianza 0.41 · umbral 0.70 · bloqueo por validez 15d vs solicitud 30d</p>
+                <form class="dispatch" aria-label="Asignar tarea libre a agente"><span class="mono">@agente</span><input type="text" value="@cotizador revisá validez 30d y proponé alternativa sin prometer stock" /></form>
+              </div>
+              <div class="actions"><button class="btn primary" type="button" data-open-agent>Entrar a iterar</button><button class="btn ghost" type="button" data-open-command>Buscar trazas</button></div>
+            </article>
+            <aside class="stack" aria-label="Resumen secundario">
+              <article class="card mini-card" data-account="norte">
+                <div class="card-top"><span class="tag ready">LISTO</span><span class="timestamp">hace 21m</span></div>
+                <h3 class="mini-title">Proforma · Industrias del Norte</h3><p class="mini-meta">$48,200 MXN · margen 27.2% · evidencia verificada</p>
+                <div class="actions"><button class="btn primary" type="button" data-modal="approve">Aprobar</button><button class="btn" type="button" data-modal="edit">Editar</button><button class="btn ghost" type="button" data-modal="reject">✕ Rechazar</button></div>
+              </article>
+              <article class="card mini-card" data-account="bajio">
+                <div class="card-top"><span class="tag ready">LISTO</span><span class="timestamp">hace 34m</span></div>
+                <h3 class="mini-title">Cotización · Petrolera del Bajío</h3><p class="mini-meta">Querétaro MX · TC-7800 · revisar lead time</p>
+                <div class="actions"><button class="btn primary" type="button" data-modal="approve">Aprobar</button><button class="btn" type="button" data-modal="edit">Editar</button><button class="btn ghost" type="button" data-modal="reject">✕ Rechazar</button></div>
+              </article>
+            </aside>
+          </div>
+          <section class="section-block">
+            <div class="list-title"><h2>Recibido</h2><span>contenido hasta resolver la alarma</span></div>
+            <div class="list">
+              <div class="row-item" data-account="andes"><span class="tag received">RECIBIDO</span><div class="row-main"><strong>Minera Andes Centrales</strong><span>Lima PE · cliente nuevo · TC-7800 bota minera</span></div><span class="row-price">prioridad media</span></div>
+              <div class="row-item" data-account="construsur"><span class="tag received">RECIBIDO</span><div class="row-main"><strong>Construsur Andina</strong><span>Bogotá CO · seguimiento ETA · BC-3120</span></div><span class="row-price">thread abierto</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="state-view" id="state-firma">
+          <p class="section-kicker mono">Espera firma</p>
+          <h1 class="editorial-title">Revisar, decidir, cerrar.</h1>
+          <section class="section-block" style="margin-top:26px">
+            <article class="card ready-card selected" data-account="norte">
+              <div class="card-top"><span class="tag ready">LISTO</span><span class="timestamp">proforma · hace 11m</span></div>
+              <h2 class="item-title">Industrias del Norte SA de CV</h2><p class="item-meta">240 pares BC-7240 · $48,200 MXN · margen 27.2%</p>
+              <div class="confidence-line">Evidencia verificada · 4 fuentes · hash a3f9b2c ✓</div>
+              <div class="actions" style="margin-top:22px"><button class="btn primary" type="button" data-modal="approve">Aprobar</button><button class="btn" type="button" data-modal="edit">Editar</button><button class="btn ghost" type="button" data-modal="reject">✕ Rechazar</button></div>
+            </article>
+            <article class="card ready-card" data-account="bajio">
+              <div class="card-top"><span class="tag ready">LISTO</span><span class="timestamp">cotización · hace 18m</span></div>
+              <h2 class="item-title">Petrolera del Bajío</h2><p class="item-meta">Querétaro MX · 1,200 pares TC-7800 · lead time sujeto a confirmación</p>
+              <div class="confidence-line">Evidencia verificada · 3 fuentes · hash 7c91d0e ✓</div>
+              <div class="actions" style="margin-top:22px"><button class="btn primary" type="button" data-modal="approve">Aprobar</button><button class="btn" type="button" data-modal="edit">Editar</button><button class="btn ghost" type="button" data-modal="reject">✕ Rechazar</button></div>
+            </article>
+            <article class="card ready-card" data-account="sur">
+              <div class="card-top"><span class="tag ready">LISTO</span><span class="timestamp">email · hace 26m</span></div>
+              <h2 class="item-title">Distribuidora Sur</h2><p class="item-meta">Ciudad de México · TC-5500 · respuesta lista para compras</p>
+              <div class="confidence-line">Evidencia verificada · 2 fuentes · hash c0b44e1 ✓</div>
+              <div class="actions" style="margin-top:22px"><button class="btn primary" type="button" data-modal="approve">Aprobar</button><button class="btn" type="button" data-modal="edit">Editar</button><button class="btn ghost" type="button" data-modal="reject">✕ Rechazar</button></div>
+            </article>
+          </section>
+          <section class="section-block">
+            <div class="list-title"><h2>Recibido</h2><span>8 items colapsados</span></div>
+            <div class="list">
+              <div class="row-item" data-account="construsur"><span class="tag received">RECIBIDO</span><div class="row-main"><strong>Construsur Andina</strong><span>solicita ETA actualizado · BC-3120</span></div><span class="row-price">sin urgencia</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="state-view" id="state-calma">
+          <div class="empty-state"><div class="empty-inner"><h1>Todo claro por ahora.</h1><p>Última revisión hace 12 minutos. La mesa queda abierta, pero no pide atención.</p><button class="command-pill empty-command" type="button" data-open-command><span>Buscar trace/cuenta/thread</span><span class="kbd">⌘K</span></button></div></div>
+          <section class="section-block">
+            <div class="list-title"><h2>Recibido reciente</h2><span>sin bloqueo operativo</span></div>
+            <div class="list">
+              <div class="row-item" data-account="terminal"><span class="tag received">RECIBIDO</span><div class="row-main"><strong>Logística Terminal</strong><span>San José CR · reorden mensual · TC-5500</span></div><span class="row-price">mañana</span></div>
+              <div class="row-item" data-account="construsur"><span class="tag received">RECIBIDO</span><div class="row-main"><strong>Construsur Andina</strong><span>Bogotá CO · seguimiento OC · BC-3120</span></div><span class="row-price">sin alarma</span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="sidebar" aria-label="Sidebar operativo">
+        <section class="side-panel">
+          <p class="side-title mono">Mi pipeline</p>
+          <button class="pipeline-row" type="button" data-filter="curso"><span>En curso</span><strong id="countCurso">3</strong></button>
+          <button class="pipeline-row active" type="button" data-filter="firma"><span>Espera firma</span><strong id="countFirma">3</strong></button>
+          <button class="pipeline-row alarm" type="button" data-filter="alarma"><span>Alarma</span><strong id="countAlarma">1</strong></button>
+          <div class="next-work" id="nextWork"><p><strong>@redactor</strong> · Distribuidora Sur · respuesta comercial ~1m</p></div>
+        </section>
+        <section class="side-panel account-card visible" id="accountCard">
+          <p class="side-title mono">Cuenta en foco</p>
+          <h3 class="account-name" id="accountName">Industrias del Norte SA de CV</h3>
+          <p class="account-meta" id="accountMeta">Saltillo MX · tier gold · compras industriales</p>
+          <div class="account-facts"></div>
+        </section>
+        <section class="side-panel"><p class="side-title mono">Pulso</p><p class="account-meta" id="pulseCopy">La prioridad real es una ALARMA. No firmar alrededor del bloqueo.</p></section>
+      </aside>
+    </main>
+    <footer><span>powered by FaberLoom</span><span class="mono">trace-ready · no SCADA</span></footer>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="agent-drawer" id="agentDrawer" aria-hidden="true" aria-label="AgentConsole">
+    <section class="snapshot">
+      <button class="icon-btn" type="button" id="closeAgent" aria-label="Cerrar AgentConsole">×</button>
+      <h3>Industrias del Norte SA de CV</h3><p>Saltillo MX · tier gold. Cuenta activa con historial limpio y presión de compras por plazo de validez.</p>
+      <dl><div><dt>SKU</dt><dd>BC-7240 · bota dieléctrica · composite</dd></div><div><dt>Cantidad</dt><dd>240 pares</dd></div><div><dt>Estado</dt><dd>bloqueo por validez 30d</dd></div><div><dt>Pago</dt><dd>al día</dd></div></dl>
+    </section>
+    <section class="agent-main">
+      <header class="agent-head"><div><span class="tag alarm">ALARMA</span><h2>@cotizador se bloqueó por política de validez.</h2></div><button class="btn ghost" type="button" id="closeAgent2">Cerrar</button></header>
+      <div class="agent-body">
+        <div>
+          <div class="conversation">
+            <div class="bubble"><strong>AM</strong><p>@cotizador revisá validez 30d y proponé alternativa sin prometer stock.</p></div>
+            <div class="bubble agent"><strong>@cotizador</strong><p>No puedo aprobar 30 días con stock no reservado. Puedo proponer validez comercial 15 días + recotización automática si el cliente firma después del día 15.</p><p class="gloss">→ causa raíz: RFQ pide 30d, política vigente permite 15d sin reserva confirmada</p></div>
+            <div class="bubble"><strong>AM</strong><p>Prepará versión con nota clara: precio sujeto a confirmación de stock después de 15 días.</p></div>
+          </div>
+          <form class="agent-composer"><input type="text" value="@cotizador redactá alternativa aprobable con validez 15d + nota de stock" /><button class="btn primary" type="button">Enviar</button></form>
+        </div>
+        <aside class="agent-evidence"><h4>Evidencia usada</h4><ul><li>Política comercial MWT · validez estándar 15d</li><li>Stock BC-7240 · no reservado</li><li>Historial cliente · tier gold</li><li>Trace RFQ · compras solicita 30d</li></ul></aside>
+      </div>
+    </section>
+  </aside>
+
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+  <section class="modal" id="modalApprove" role="dialog" aria-modal="true" aria-label="Aprobar draft"><h2>Aprobar y liberar</h2><p>El draft queda aprobado con evidencia verificada · 4 fuentes · hash a3f9b2c ✓.</p><div class="confidence-line">Evidencia verificada · 4 fuentes · hash a3f9b2c ✓</div><div class="modal-actions"><button class="btn ghost" type="button" data-close-modal>Cancelar</button><button class="btn primary" type="button" data-close-modal>Aprobar</button></div></section>
+  <section class="modal" id="modalEdit" role="dialog" aria-modal="true" aria-label="Editar draft"><h2>Editar con razón</h2><p>La edición queda registrada para aprendizaje y auditoría. Elegí la causa principal.</p><div class="reason-grid"><label class="reason"><input type="radio" name="edit_reason" checked><span>Dato</span></label><label class="reason"><input type="radio" name="edit_reason"><span>Tono</span></label><label class="reason"><input type="radio" name="edit_reason"><span>Fuente</span></label><label class="reason"><input type="radio" name="edit_reason"><span>Acción</span></label><label class="reason"><input type="radio" name="edit_reason"><span>Contexto</span></label></div><textarea>Modificar nota de validez: dejar 15 días y aclarar que stock se confirma al emitir OC.</textarea><div class="modal-actions"><button class="btn ghost" type="button" data-close-modal>Cancelar</button><button class="btn primary" type="button" data-close-modal>Guardar edición</button></div></section>
+  <section class="modal" id="modalReject" role="dialog" aria-modal="true" aria-label="Rechazar draft"><h2>Rechazar con razón</h2><p>El rechazo alimenta aprendizaje solo si la causa queda tipificada.</p><div class="reason-grid"><label class="reason"><input type="radio" name="reject_reason"><span>Dato</span></label><label class="reason"><input type="radio" name="reject_reason"><span>Tono</span></label><label class="reason"><input type="radio" name="reject_reason" checked><span>Fuente</span></label><label class="reason"><input type="radio" name="reject_reason"><span>Acción</span></label><label class="reason"><input type="radio" name="reject_reason"><span>Contexto</span></label></div><textarea>Falta confirmar fuente de flete antes de enviar. No prometer tarifa.</textarea><div class="modal-actions"><button class="btn ghost" type="button" data-close-modal>Cancelar</button><button class="btn primary" type="button" data-close-modal>Rechazar draft</button></div></section>
+
+  <div class="command-backdrop" id="commandBackdrop"></div>
+  <section class="command-modal" id="commandModal" role="dialog" aria-modal="true" aria-label="Command bar">
+    <div class="command-input"><span class="mono">⌘K</span><input id="commandInput" type="text" placeholder="Buscar trace_id, cuenta o thread…" /><button class="icon-btn" type="button" id="closeCommand">×</button></div>
+    <div class="command-list">
+      <div class="command-option"><span class="tag alarm">ALARMA</span><div><strong>trace RFQ · Industrias del Norte SA de CV</strong><span>BC-7240 · validez 30d solicitada</span></div><span class="kbd">↵</span></div>
+      <div class="command-option"><span class="tag ready">LISTO</span><div><strong>Petrolera del Bajío</strong><span>TC-7800 · cotización pendiente firma</span></div><span class="kbd">↵</span></div>
+      <div class="command-option"><span class="tag received">RECIBIDO</span><div><strong>thread · Construsur Andina</strong><span>ETA solicitado · Bogotá CO</span></div><span class="kbd">↵</span></div>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const stateButtons = document.querySelectorAll("[data-state-button]");
+      const stateViews = { urgent: document.getElementById("state-urgent"), firma: document.getElementById("state-firma"), calma: document.getElementById("state-calma") };
+      const metrics = {
+        urgent: { rfq: "12", cycle: "4.2h", pending: "3", curso: "3", firma: "3", alarma: "1", status: "AG_AM_MWT · 2 ajustando", warning: true, pulse: "La prioridad real es una ALARMA. No firmar alrededor del bloqueo.", account: true },
+        firma: { rfq: "12", cycle: "4.2h", pending: "4", curso: "3", firma: "4", alarma: "0", status: "AG_AM_MWT · sano", warning: false, pulse: "No hay alarma. Revisar drafts y cerrar con evidencia.", account: true },
+        calma: { rfq: "12", cycle: "4.2h", pending: "0", curso: "0", firma: "0", alarma: "0", status: "AG_AM_MWT · sano", warning: false, pulse: "Sin bloqueo. La pantalla respira porque puede hacerlo.", account: false }
+      };
+      const accounts = {
+        norte: { name: "Industrias del Norte SA de CV", meta: "Saltillo MX · tier gold · compras industriales", facts: [["Pago", "al día"], ["Último RFQ", "BC-7240"], ["Riesgo", "validez oferta"]] },
+        bajio: { name: "Petrolera del Bajío", meta: "Querétaro MX · tier platinum · operación crítica", facts: [["Pago", "al día"], ["SKU", "TC-7800"], ["Riesgo", "lead time"]] },
+        construsur: { name: "Construsur Andina", meta: "Bogotá CO · tier silver · construcción", facts: [["Pago", "normal"], ["SKU", "BC-3120"], ["Riesgo", "ETA"]] },
+        andes: { name: "Minera Andes Centrales", meta: "Lima PE · tier gold · cliente nuevo", facts: [["Pago", "por validar"], ["SKU", "TC-7800"], ["Riesgo", "primer pedido"]] },
+        terminal: { name: "Logística Terminal", meta: "San José CR · tier silver · reorden", facts: [["Pago", "al día"], ["SKU", "TC-5500"], ["Riesgo", "bajo"]] },
+        sur: { name: "Distribuidora Sur", meta: "Ciudad de México · tier silver · distribución", facts: [["Pago", "al día"], ["SKU", "TC-5500"], ["Riesgo", "tono comercial"]] }
+      };
+      const accountCard = document.getElementById("accountCard"), accountName = document.getElementById("accountName"), accountMeta = document.getElementById("accountMeta"), factContainer = document.querySelector(".account-facts");
+      function setAccount(key) {
+        const account = accounts[key]; if (!account) return;
+        accountCard.classList.add("visible");
+        accountName.textContent = account.name; accountMeta.textContent = account.meta;
+        factContainer.innerHTML = account.facts.map(([k, v]) => `<div class="fact"><span>${k}</span><strong>${v}</strong></div>`).join("");
+      }
+      function setState(state) {
+        Object.entries(stateViews).forEach(([key, view]) => view.classList.toggle("active", key === state));
+        stateButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.stateButton === state));
+        const m = metrics[state];
+        document.getElementById("metricRfq").textContent = m.rfq; document.getElementById("metricCycle").textContent = m.cycle; document.getElementById("metricPending").textContent = m.pending;
+        document.getElementById("countCurso").textContent = m.curso; document.getElementById("countFirma").textContent = m.firma; document.getElementById("countAlarma").textContent = m.alarma; document.getElementById("pulseCopy").textContent = m.pulse;
+        const archetype = document.getElementById("archetypeStatus"); archetype.textContent = m.status; archetype.classList.toggle("warning", m.warning);
+        document.querySelectorAll(".pipeline-row").forEach(row => row.classList.remove("active"));
+        const targetFilter = state === "urgent" ? "alarma" : state === "firma" ? "firma" : "curso";
+        const targetRow = document.querySelector(`[data-filter="${targetFilter}"]`); if (targetRow) targetRow.classList.add("active");
+        if (m.account) setAccount("norte"); else accountCard.classList.remove("visible");
+      }
+      stateButtons.forEach(btn => btn.addEventListener("click", () => setState(btn.dataset.stateButton)));
+      document.getElementById("themeToggle").addEventListener("click", () => root.setAttribute("data-theme", root.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+      document.querySelectorAll("[data-account]").forEach(item => item.addEventListener("click", (event) => { if (event.target.closest("button") || event.target.closest("input")) return; document.querySelectorAll("[data-account]").forEach(card => card.classList.remove("selected")); item.classList.add("selected"); setAccount(item.dataset.account); }));
+      document.querySelectorAll(".pipeline-row").forEach(row => row.addEventListener("click", () => { document.querySelectorAll(".pipeline-row").forEach(r => r.classList.remove("active")); row.classList.add("active"); document.querySelector(".main-stage").animate([{ boxShadow: "0 0 0 0 rgba(201,100,66,0)" }, { boxShadow: "0 0 0 5px rgba(201,100,66,0.10)" }, { boxShadow: "0 0 0 0 rgba(201,100,66,0)" }], { duration: 560, easing: "cubic-bezier(.2,.8,.2,1)" }); }));
+      const drawer = document.getElementById("agentDrawer"), drawerBackdrop = document.getElementById("drawerBackdrop");
+      function openAgent() { drawer.classList.add("open"); drawerBackdrop.classList.add("open"); drawer.setAttribute("aria-hidden", "false"); }
+      function closeAgent() { drawer.classList.remove("open"); drawerBackdrop.classList.remove("open"); drawer.setAttribute("aria-hidden", "true"); }
+      document.querySelectorAll("[data-open-agent]").forEach(btn => btn.addEventListener("click", openAgent)); document.getElementById("closeAgent").addEventListener("click", closeAgent); document.getElementById("closeAgent2").addEventListener("click", closeAgent); drawerBackdrop.addEventListener("click", closeAgent);
+      const modalBackdrop = document.getElementById("modalBackdrop"), modals = { approve: document.getElementById("modalApprove"), edit: document.getElementById("modalEdit"), reject: document.getElementById("modalReject") };
+      function openModal(type) { closeModal(); modalBackdrop.classList.add("open"); modals[type].classList.add("open"); }
+      function closeModal() { modalBackdrop.classList.remove("open"); Object.values(modals).forEach(m => m.classList.remove("open")); }
+      document.querySelectorAll("[data-modal]").forEach(btn => btn.addEventListener("click", (event) => { event.stopPropagation(); openModal(btn.dataset.modal); }));
+      document.querySelectorAll("[data-close-modal]").forEach(btn => btn.addEventListener("click", closeModal)); modalBackdrop.addEventListener("click", closeModal);
+      const commandBackdrop = document.getElementById("commandBackdrop"), commandModal = document.getElementById("commandModal"), commandInput = document.getElementById("commandInput");
+      function openCommand() { commandBackdrop.classList.add("open"); commandModal.classList.add("open"); setTimeout(() => commandInput.focus(), 80); }
+      function closeCommand() { commandBackdrop.classList.remove("open"); commandModal.classList.remove("open"); }
+      document.getElementById("openCommand").addEventListener("click", openCommand); document.querySelectorAll("[data-open-command]").forEach(btn => btn.addEventListener("click", openCommand)); document.getElementById("closeCommand").addEventListener("click", closeCommand); commandBackdrop.addEventListener("click", closeCommand);
+      document.addEventListener("keydown", (event) => {
+        const isCommandK = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
+        if (isCommandK) { event.preventDefault(); openCommand(); }
+        if (event.key === "Escape") { closeCommand(); closeModal(); closeAgent(); }
+      });
+      setAccount("norte");
+    })();
+  </script>
+</body>
+</html>

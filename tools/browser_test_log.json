@@ -1,0 +1,145 @@
+{
+  "url": "http://localhost:8000/static/index.html",
+  "start": 1782842773.3873906,
+  "console_errors": [],
+  "console_warnings": [
+    {
+      "type": "warning",
+      "text": "You are using the in-browser Babel transformer. Be sure to precompile your scripts for production - https://babeljs.io/docs/setup/",
+      "location": "{'url': 'https://unpkg.com/@babel/standalone@7/babel.min.js', 'line': 2, 'column': 3135438, 'lineNumber': 2, 'columnNumber': 3135438}",
+      "time": 1782842775.1878362
+    }
+  ],
+  "network_errors": [],
+  "observed": {
+    "composer_visible": true,
+    "message_typed": "hola",
+    "send_attempt_enter": true,
+    "draft_after_enter": "hola\n",
+    "enter_sent": false,
+    "send_attempt_click": true,
+    "draft_after_click_send": "",
+    "active_chat_title": "hola",
+    "body_text": "FaberLoom\nFaberLoom · local-first\nBuscar o ejecutar…\nCtrl K\n$0.03 / $5\nOSCUROS\nWarm\n✓\nSlate\n✓\nMono\n✓\nIndigo\n✓\nCLAROS\nPaper\n✓\nCloud\n✓\nMist\n✓\nLocal-first\nOperar\nAprender\nAdmin\nWORKSPACE\nREADY\nMWT Demo\nContext(workspace_id) listo para toda query\n▸\nFABERLOOM\n8\nFaberLoom\n▸\nENTRADA\n0\n▸\nMY WORKSPACES\n1\n▸\nSHARED WORKSPACES\n▸\nHISTORIAL\nAA\nUsuario\nOWNER · FaberLoom\nMWT Demo\nMWT-DEMO\nEspacio activo · flujos reales contra el backend local\nRouter SL1a\nKB SL2\nHITL SL5\nFABERLOOM\nChats\nhola\n01:06 p. m.\nhola\n01:04 p. m.\nhola como estas\n09:51 a. m.\nNueva conversación\n09:50 a. m.\nhola\n03:11 p. m.\nNueva conversación\n11:04 p. m.\nNueva conversación\n07:55 p. m.\nNueva conversación\n04:16 p. m.\nhola\n\nConversación con el router SL1a.\n\nSL1a\nTú · 01:06 p. m.\nhola\nFaberLoom · 01:06 p. m.\n¡Hola! ¿Cómo puedo ayudarte hoy?\nopenai/gpt-4o-mini\nTokens: 87 in · 9 out\nCosto: $0.00002 · 3378 ms\nBudget: $0.03248 / $5.00\nAuto\nEnviar\nLas acciones destructivas requieren HITL y doble confirmación.\nCOSTURAS\nContract-first\nHITL absoluto\n\nEl shell no ejecuta acciones irreversibles. Enviar y borrar requieren doble confirmación futura.\n\nContext layer\n\nLa UI consume /api/workspaces y deja preparado el workspace activo para toda query.\n\nAuditWriter\n\nHoy JSONL; mañana outbox/tabla sin reescribir la superficie.\n\nToolset\nAgentes\nSkills\nTemplates\nConocimiento\nNo hay agents activos y aprobados.",
+    "thinking_steps_visible": false,
+    "message_bubbles_count": 8
+  },
+  "screenshots": {
+    "rendered": "C:\\Users\\ale13\\OneDrive\\Documents\\faber_loom_local_vv2\\tools\\browser_test_1_rendered.png",
+    "after_enter": "C:\\Users\\ale13\\OneDrive\\Documents\\faber_loom_local_vv2\\tools\\browser_test_2_after_enter.png",
+    "after_click_send": "C:\\Users\\ale13\\OneDrive\\Documents\\faber_loom_local_vv2\\tools\\browser_test_3_after_click_send.png"
+  },
+  "title": "FaberLoom · FaberLoom",
+  "url_after": "http://localhost:8000/static/index.html",
+  "end": 1782842788.8008776,
+  "all_logs": [
+    {
+      "type": "warning",
+      "text": "You are using the in-browser Babel transformer. Be sure to precompile your scripts for production - https://babeljs.io/docs/setup/",
+      "location": "{'url': 'https://unpkg.com/@babel/standalone@7/babel.min.js', 'line': 2, 'column': 3135438, 'lineNumber': 2, 'columnNumber': 3135438}",
+      "time": 1782842775.1878362
+    }
+  ],
+  "requests_sample": [
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/gold-candidates",
+      "time": 1782842788.6407743
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/routines",
+      "time": 1782842788.6410203
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/router/status",
+      "time": 1782842788.641268
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/providers",
+      "time": 1782842788.64149
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats/chat_7513814a2fa24d1d94a79047ecb300fe/completions",
+      "time": 1782842788.6416943
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats/chat_7513814a2fa24d1d94a79047ecb300fe/messages",
+      "time": 1782842788.641897
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats/chat_7513814a2fa24d1d94a79047ecb300fe/messages",
+      "time": 1782842788.645179
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/router/status",
+      "time": 1782842788.6457052
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/providers",
+      "time": 1782842788.6459165
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats",
+      "time": 1782842788.646631
+    },
+    {
+      "method": "PATCH",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats/chat_7513814a2fa24d1d94a79047ecb300fe",
+      "time": 1782842788.6470585
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/chats",
+      "time": 1782842788.6475701
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/mail",
+      "time": 1782842788.6477616
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/workloom",
+      "time": 1782842788.6479456
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/routines",
+      "time": 1782842788.648147
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/kb/sources",
+      "time": 1782842788.6483433
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/gold-candidates",
+      "time": 1782842788.648539
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/routines",
+      "time": 1782842788.6487577
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/router/status",
+      "time": 1782842788.648941
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:8000/api/workspaces/ws_ba09b68de0454598841bce41d5fcbd24/providers",
+      "time": 1782842788.6490822
+    }
+  ]
+}

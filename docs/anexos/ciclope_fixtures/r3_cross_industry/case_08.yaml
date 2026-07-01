@@ -1,0 +1,450 @@
+case_id: case_08
+industry: construccion
+severity: medium
+description: RFQ perfilería ángulo acero 2x2x1/4" sin especificar longitud — sistema detecta medida faltante y bloquea proforma
+
+setup:
+  catalog:
+    - sku: "CONST-SKU-002"
+      description: "Ángulo de acero estructural ASTM A36, 2\"x2\"x1/4\" (50.8x50.8x6.35mm), 6m barra, certificado molino"
+      vertical_spec:
+        type: "structural_steel_angle"
+        profile: "L"
+        dimensions_in: "2x2x1/4"
+        dimensions_mm: "50.8x50.8x6.35"
+        length_standard_m: 6
+        material: "acero al carbono ASTM A36"
+        yield_strength_MPa: 250
+        tensile_strength_MPa: 400
+        standards:
+          - standard: "ASTM A36"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTMA36-002-2024"
+          - standard: "AISC 360"
+            status: "vigente"
+            cert_doc_ref: "CERT-AISC360-002-2024"
+        applications: ["estructuras_metálicas", "soportes", "refuerzos"]
+        cut_service_available: true
+        cut_tolerance_mm: "+/- 2"
+      stock:
+        available: 120
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 80
+            reserved: 15
+          - location: "Barranquilla Norte"
+            qty: 40
+            reserved: 10
+        freshness_seconds: 180
+      pricing:
+        list_price: 18.50
+        currency: "USD"
+        version: "2025-04-28"
+        freshness_hours: 48
+        price_unit: "por metro lineal"
+      lead_time:
+        days: 2
+        source: "3PL"
+        freshness_hours: 1
+      certifications:
+        - type: "ASTM A36"
+          version: "2024-09-01"
+          status: "vigente"
+        - type: "AISC 360"
+          version: "2024-09-01"
+          status: "vigente"
+      MOQ: 6
+      packaging:
+        length_m_per_bar: 6
+        weight_kg_per_m: 1.77
+        bars_per_bundle: 10
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-016"
+    name: "Estructuras del Norte S.A.S."
+    country: "CO"
+    city: "Barranquilla"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "900.234.567-8"
+    vertical: "construccion_estructuras"
+    historical_data:
+      last_order_date: "2025-04-02"
+      avg_order_value_usd: 2800
+      orders_ytd: 3
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: []
+      layer_3b_metadata: []
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Ing. Roberto Castro"
+    email: "r.castro@estructurasnorte.co"
+    role: "Ingeniero Estructural"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización ángulos acero 2x2x1/4\" — 30 barras"
+  body_text: |
+    Buenos días,
+
+    Necesitamos cotizar 30 barras de ángulo acero 2x2x1/4" para
+    estructura de nave industrial.
+
+    Entrega: Barranquilla, DDP.
+    Plazo: esta semana.
+
+    Gracias.
+
+    Ing. Roberto Castro
+    Estructuras del Norte S.A.S.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T08:15:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["structural_steel", "construction_materials"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.88
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "ángulo acero 2x2x1/4\""
+          qty: 30
+          unit: "barras"
+        - type: "profile"
+          value: "ángulo L"
+        - type: "dimensions"
+          value: "2x2x1/4\""
+        - type: "delivery_location"
+          value: "Barranquilla"
+        - type: "incoterm"
+          value: "DDP"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-016", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-EDN-2025-Q1"
+      freshness: "2025-04-30T08:10:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku: CONST-SKU-002", "qty: 30"]
+    expected_output:
+      items:
+        - sku: "CONST-SKU-002"
+          warehouse: "Bogotá Principal"
+          available: 80
+          reserved: 15
+          in_transit: 0
+          fulfillable_qty: 65
+        - sku: "CONST-SKU-002"
+          warehouse: "Barranquilla Norte"
+          available: 40
+          reserved: 10
+          in_transit: 0
+          fulfillable_qty: 30
+      total_fulfillable: 95
+      reservation_possible: true
+      total_with_reservation: 30
+      freshness: "2025-04-30T08:13:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "construction_supply"
+      items: ["CONST-SKU-002"]
+      customer_country: "CO"
+      use_case: "nave industrial estructura"
+      specs_provided:
+        - "perfil: ángulo L"
+        - "dimensiones: 2x2x1/4\""
+        - "cantidad: 30 barras"
+      specs_missing:
+        - "longitud de barra requerida (estándar 6m o corte a medida)"
+        - "corte a medida requerido"
+        - "tolerancia de corte"
+        - "certificado molino requerido"
+        - "pintura o galvanizado adicional"
+        - "tipo de unión (soldada, atornillada, mixta)"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "ASTM_AMBIGUO"
+          severity: "medium"
+          message: "Ángulo 2x2x1/4\" especificado sin longitud de barra. Barras estándar 6m vs corte a medida tienen diferente precio y logística."
+      blocking_issues:
+        - "Longitud no especificada: ¿barras estándar 6m o cortes específicos?"
+        - "Si corte a medida: requiere servicio adicional, tolerancia, y posible scrap"
+        - "30 barras × 6m = 180m lineales vs 30 cortes de X metros = diferente peso y costo"
+        - "Nave industrial estructura requiere certificado molino ASTM A36 — confirmar requerimiento"
+      pii_detected: false
+      policies_violated: ["structural_steel_length_mandatory", "cut_service_requires_specification"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["ASTM_AMBIGUO"]
+      severity: "medium"
+      customer_tier: "silver"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email"
+      urgency_override: "medium"
+      fallback_route: "AM_MWT_SUPERVISOR"
+      sla_target_minutes: 240
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Estructuras del Norte S.A.S."
+        rfq_items: "30 barras ángulo acero 2x2x1/4\""
+        exception: "ASTM_AMBIGUO"
+        severity: "medium"
+        clarification_needed: true
+        standard_length: "6m"
+        cut_service: true
+    expected_output:
+      draft_type: "customer_clarification"
+      subject: "Re: Cotización ángulos acero — longitud requerida"
+      body: |
+        Estimado Ing. Castro,
+
+        Gracias por su solicitud. Para cotizar las 30 barras de
+        ángulo acero 2x2x1/4" de manera precisa, necesitamos
+        confirmar la longitud:
+
+        DATOS FALTANTES:
+        1. ¿Longitud de barra requerida?
+           - Barras estándar 6 metros (stock inmediato)
+           - Cortes a medida (servicio disponible, tolerancia +/- 2mm)
+        2. Si cortes a medida:
+           - Especificar longitudes exactas de cada corte
+           - ¿Acepta tolerancia +/- 2mm o requiere +/- 1mm?
+           - Scrap por corte: se cotiza o cliente lo retira
+        3. ¿Certificado de molino ASTM A36 requerido?
+           - Sí: incluido sin costo adicional
+           - No: material igual, sin trazabilidad de lote
+        4. ¿Tratamiento superficial?
+           - Natural (óxido tolerable)
+           - Pintura anticorrosiva
+           - Galvanizado por inmersión en caliente
+
+        OPCIONES EN STOCK:
+        - Ángulo ASTM A36, 2x2x1/4", barras 6m — $18.50/m lineal
+        - Stock disponible: 95 barras (suficiente para 30)
+        - Lead time: 2 días (corte a medida + 1 día adicional)
+
+        Con la longitud confirmada emitimos proforma exacta.
+
+        Quedo atento.
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Cliente silver estructuras. Spec incompleta: ángulo sin longitud. Estructura nave industrial requiere precisión. Corte a medida cambia precio (servicio adicional + scrap). Certificado molino es diferenciador técnico. Requiere intervención AM."
+      tone: "professional_technical"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED_PENDING_CLARIFICATION"
+      reason: "ASTM_AMBIGUO"
+      customer_notified: true
+      customer_notification_type: "clarification_draft"
+      proforma_generated: false
+    glosses_required:
+      - "Ángulo 2x2x1/4\" sin longitud especificada"
+      - "Barras estándar 6m vs cortes a medida — diferente precio y logística"
+      - "Corte requiere tolerancia y scrap"
+      - "Certificado molino requerido confirmación"
+  evidence_bundle:
+    per_line:
+      - sku: "CONST-SKU-002"
+        technical_spec_rule: "structural_steel_angle_2x2x1-4_ASTM_A36"
+        precio: 18.50
+        stock: 95
+        lead_time: 2
+        MOQ: 6
+        flete_asignado: null
+        margen: null
+        excepcion: null
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: null
+      moneda: "USD"
+      incoterm_pais: "DDP Colombia"
+      total: null
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: null
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-28"
+      timestamp_stock: "2025-04-30T08:13:00-05:00"
+      technical_spec_rule: "structural_steel_angle_2x2x1-4_ASTM_A36"
+      margen_calculado: null
+      aprobador: "AM (clarification required)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "CERT-ASTMA36-002-2024"
+      country_rule_applied: "CO_structural_steel_length_mandatory"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=6, packaging=6m/bar, 1.77kg/m, 10 bars/bundle"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-EDN-2025-Q1"
+      exception_codes: ["ASTM_AMBIGUO"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "create_open_item"
+      details:
+        item_type: "clarification_pending"
+        sku: "CONST-SKU-002"
+        priority: "medium"
+        due_date: "2025-05-05T17:00:00-05:00"
+        note: "Esperando longitud barras ángulo acero estructura nave industrial"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_STEEL_LENGTH_MISSING"
+        severity: "medium"
+        trace_id: "TRACE-case08-20250430"
+        construction_context: "structural_steel_angle_no_length_specified"
+  exceptions_raised:
+    - "ASTM_AMBIGUO"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Cliente confirma barras 6m estándar — sistema debe generar proforma con precio por metro lineal (30×6m=180m × $18.50 = $3,330)"
+    expected_behavior: "Proforma con 180m lineales. Sin excepciones adicionales. Draft confirmando estándar 6m."
+    variant_data:
+      length_confirmed: "6m_standard"
+      total_meters: 180
+  - description: "Cliente pide cortes de 3m (60 cortes totales de 30 barras) — sistema debe cotizar servicio corte + scrap"
+    expected_behavior: "Proforma con servicio corte adicional. Scrap calculado (~5%). Tolerancia confirmada."
+    variant_data:
+      cut_length: "3m"
+      cuts_per_bar: 2
+      scrap_rate_pct: 5
+  - description: "Cliente requiere certificado molino y trazabilidad de lote — sistema debe verificar lote actual y asociar certificado"
+    expected_behavior: "Compliance verifica cert_doc_ref vigente. Proforma incluye lote number y certificado reference."
+    variant_data:
+      mill_certificate_required: true
+      traceability: "lote_level"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'ASTM_AMBIGUO'"
+    - "output.primary_output.status == 'BLOCKED_PENDING_CLARIFICATION'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "compliance_checker output.blocking_issues contains 'Longitud no especificada'"
+    - "compliance_checker output.blocking_issues contains 'barras estándar 6m o cortes específicos'"
+    - "draft_writer output.body contains 'Barras estándar 6 metros'"
+    - "draft_writer output.body contains 'Cortes a medida'"
+    - "draft_writer output.body contains 'tolerancia'"
+    - "output.side_effects contains create_open_item with item_type == 'clarification_pending'"
+    - "evidence_bundle.per_line[0].technical_spec_rule contains 'structural_steel_angle'"
+  must_not_do:
+    - "output contains proforma con '30 barras ángulo acero' sin especificar metros lineales"
+    - "system assumes 6m standard without asking"
+    - "system assumes cut-to-length without asking"
+    - "system quotes 'per barra' price without clarifying length"
+    - "system ignores missing length and generates proforma with placeholder"
+    - "system delivers proforma with 'longitud por confirmar'"
+
+severity_weight_validation:
+  expected_severity: "medium"
+  if_misclassified_as_lower: |
+    Si clasificado como Low-Medium: proforma podría generarse
+    asumiendo barras estándar 6m. Si cliente necesitaba cortes de
+    2.5m para optimizar estructura, recibe barras 6m con mucho
+    scrap y costo de corte local. 30 barras × $111 c/u (6m) =
+    $3,330 vs 75m lineales (si cortes optimizados) = $1,387.50 +
+    servicio corte. Diferencia significativa. Estructura nave
+    industrial: error en longitud = retrabajo en obra.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico construcción estructuras. NO promovible. Patrón
+    abstracto (perfil acero sin longitud especificada) valioso para
+    replay set. Puede promoverse a GLOBAL_PROMOTABLE como ejemplo
+    de structural_steel_length_ambiguous tras anonimización.
+
+gaps_detected: []

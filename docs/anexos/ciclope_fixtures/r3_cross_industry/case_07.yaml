@@ -1,0 +1,436 @@
+case_id: case_07
+industry: construccion
+severity: medium
+description: RFQ 500 sacos cemento Portland Tipo I con flete no cotizado — sistema detecta flete faltante y bloquea proforma hasta cotización transporte
+
+setup:
+  catalog:
+    - sku: "CONST-SKU-001"
+      description: "Cemento Portland Tipo I, 42.5kg saco, norma ICONTEC 321, uso general construcción, resistencia 28días 42.5MPa"
+      vertical_spec:
+        type: "cement_portland_type_I"
+        weight_kg_per_bag: 42.5
+        standard: "ICONTEC 321"
+        compressive_strength_28d_MPa: 42.5
+        applications: ["concreto_estructural", "mamposteria", "pavimentos"]
+        storage_conditions: "seco, ventilado, max 30 días almacenamiento"
+        standards:
+          - standard: "ICONTEC 321"
+            status: "vigente"
+            cert_doc_ref: "CERT-ICONTEC321-001-2024"
+          - standard: "ASTM C150"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTMC150-001-2024"
+      stock:
+        available: 800
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 500
+            reserved: 100
+          - location: "Barranquilla Norte"
+            qty: 300
+            reserved: 50
+        freshness_seconds: 180
+      pricing:
+        list_price: 6.80
+        currency: "USD"
+        version: "2025-04-28"
+        freshness_hours: 48
+      lead_time:
+        days: 1
+        source: "3PL"
+        freshness_hours: 1
+      certifications:
+        - type: "ICONTEC 321"
+          version: "2024-09-01"
+          status: "vigente"
+        - type: "ASTM C150"
+          version: "2024-09-01"
+          status: "vigente"
+      MOQ: 50
+      packaging:
+        units_per_bag: 1
+        weight_kg_per_bag: 42.5
+        bags_per_pallet: 56
+        pallets_per_truck: 18
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-015"
+    name: "Constructora del Caribe S.A."
+    country: "CO"
+    city: "Barranquilla"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "800.123.456-7"
+    vertical: "construccion"
+    historical_data:
+      last_order_date: "2025-04-08"
+      avg_order_value_usd: 1200
+      orders_ytd: 4
+      complaints_12m: 0
+      preferred_delivery: "Barranquilla Norte"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_PRICING_CALCULATOR"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: []
+      layer_3b_metadata: []
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Arq. Patricia Mendoza"
+    email: "p.mendoza@constructoradelcaribe.co"
+    role: "Directora de Proyectos"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización 500 sacos cemento Portland — obra Villa del Mar"
+  body_text: |
+    Buenos días,
+
+    Solicitamos cotización de 500 sacos de cemento Portland Tipo I
+    para nuestra obra Villa del Mar en Barranquilla.
+
+    Entrega: obra Villa del Mar, zona norte Barranquilla.
+    Plazo: 3 días.
+
+    Favor incluir flete.
+
+    Arq. Patricia Mendoza
+    Constructora del Caribe S.A.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T08:00:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["construction_materials", "freight_included"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.92
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "cemento Portland Tipo I"
+          qty: 500
+          unit: "sacos"
+        - type: "delivery_location"
+          value: "obra Villa del Mar, zona norte Barranquilla"
+        - type: "incoterm"
+          value: "DDP (flete incluido)"
+        - type: "project_name"
+          value: "Villa del Mar"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-015", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-CDC-2025-Q1"
+      freshness: "2025-04-30T07:55:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku: CONST-SKU-001", "qty: 500"]
+    expected_output:
+      items:
+        - sku: "CONST-SKU-001"
+          warehouse: "Barranquilla Norte"
+          available: 300
+          reserved: 50
+          in_transit: 0
+          fulfillable_qty: 250
+        - sku: "CONST-SKU-001"
+          warehouse: "Bogotá Principal"
+          available: 500
+          reserved: 100
+          in_transit: 0
+          fulfillable_qty: 400
+      total_fulfillable: 650
+      reservation_possible: true
+      total_with_reservation: 500
+      freshness: "2025-04-30T07:58:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "construction_supply"
+      items: ["CONST-SKU-001"]
+      customer_country: "CO"
+      use_case: "obra construcción Barranquilla"
+      freight_required: true
+      freight_source_configured: false
+      delivery_location: "obra Villa del Mar, zona norte Barranquilla"
+      incoterm: "DDP"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "FLETE_NO_COTIZADO"
+          severity: "medium"
+          message: "Flete a obra Villa del Mar no está configurado en Source of Truth. Distancia/condiciones de acceso desconocidas. Cotización transporte requerida antes de proforma."
+      blocking_issues:
+        - "DDP requiere flete cotizado antes de proforma"
+        - "Obra Villa del Mar es ubicación puntual no estándar — no en catálogo de rutas configuradas"
+        - "500 sacos = ~21 toneladas = camión completo requerido"
+        - "Zona norte Barranquilla puede tener restricciones de acceso vehicular pesado"
+      pii_detected: false
+      policies_violated: ["freight_quote_mandatory_before_proforma", "DDP_requires_delivered_cost", "construction_site_access_verification"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["FLETE_NO_COTIZADO"]
+      severity: "medium"
+      customer_tier: "silver"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email"
+      urgency_override: "medium"
+      fallback_route: "AM_MWT_SUPERVISOR"
+      sla_target_minutes: 240
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Constructora del Caribe S.A."
+        rfq_items: "500 sacos cemento Portland Tipo I"
+        exception: "FLETE_NO_COTIZADO"
+        severity: "medium"
+        freight_required: true
+        delivery_detail: "obra Villa del Mar, zona norte Barranquilla"
+    expected_output:
+      draft_type: "customer_clarification"
+      subject: "Re: Cotización cemento Portland — cotización de flete pendiente"
+      body: |
+        Estimada Arq. Mendoza,
+
+        Gracias por su solicitud. Estamos procesando la cotización
+        de 500 sacos de cemento Portland Tipo I.
+
+        El material está disponible (stock suficiente en Barranquilla
+        Norte y Bogotá). Sin embargo, para completar la proforma con
+        entrega DDP en obra Villa del Mar, necesitamos cotizar el
+        flete específico:
+
+        DATOS DE FLETE REQUERIDOS:
+        1. Dirección exacta de obra Villa del Mar (zona norte)
+        2. Condiciones de acceso: ¿camión completo puede ingresar?
+           - Altura máxima de vía de acceso
+           - Restricciones horarias de descarga
+           - Tipo de superficie (pavimento, compactado, terreno blando)
+        3. ¿Hay descarga con montacargas o grúa en obra?
+           - 500 sacos = ~21 toneladas = descarga mecanizada recomendada
+        4. Horario preferido de entrega
+
+        VOLUMEN: 500 sacos × 42.5kg = 21,250 kg
+        VEHÍCULO ESTIMADO: Camión de carga completo (18 pallets)
+
+        Una vez confirmados los datos de acceso, cotizamos flete y
+        emitimos proforma completa con precio entregado en obra.
+
+        Producto: Cemento Portland Tipo I, norma ICONTEC 321,
+        resistencia 42.5 MPa a 28 días — certificado vigente.
+
+        Quedo atento.
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Cliente silver construcción. Flete no configurado a obra puntual. 500 sacos = volumen significativo. Zona norte Barranquilla puede tener restricciones acceso. DDP requiere flete cotizado antes de proforma. Requiere intervención AM para gestionar transporte."
+      tone: "professional_logistics"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "alarma"
+    content:
+      status: "BLOCKED_PENDING_FREIGHT"
+      reason: "FLETE_NO_COTIZADO"
+      customer_notified: true
+      customer_notification_type: "clarification_draft"
+      proforma_generated: false
+    glosses_required:
+      - "Flete no configurado para obra puntual"
+      - "500 sacos = ~21 toneladas = camión completo"
+      - "DDP requiere flete cotizado antes de proforma"
+      - "Datos de acceso requeridos"
+  evidence_bundle:
+    per_line:
+      - sku: "CONST-SKU-001"
+        technical_spec_rule: "cement_portland_type_I_ICONTEC321"
+        precio: 6.80
+        stock: 650
+        lead_time: 1
+        MOQ: 50
+        flete_asignado: null
+        margen: null
+        excepcion: "FLETE_NO_COTIZADO"
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: null
+      moneda: "USD"
+      incoterm_pais: "DDP Colombia"
+      total: null
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: null
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-28"
+      timestamp_stock: "2025-04-30T07:58:00-05:00"
+      technical_spec_rule: "cement_portland_type_I_ICONTEC321"
+      margen_calculado: null
+      aprobador: "AM (freight block)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "CERT-ICONTEC321-001-2024"
+      country_rule_applied: "CO_construction_material_DDP_freight_mandatory"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=50, packaging=42.5kg/sack, 56 sacks/pallet, 18 pallets/truck"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-CDC-2025-Q1"
+      exception_codes: ["FLETE_NO_COTIZADO"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "create_open_item"
+      details:
+        item_type: "freight_quote_required"
+        sku: "CONST-SKU-001"
+        priority: "medium"
+        due_date: "2025-05-03T17:00:00-05:00"
+        note: "Cotizar flete Bogotá/Barranquilla → obra Villa del Mar zona norte. 500 sacos cemento, ~21 toneladas."
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_FREIGHT_NOT_QUOTED"
+        severity: "medium"
+        trace_id: "TRACE-case07-20250430"
+        logistics_context: "construction_site_Villa_del_Mar_access_unknown"
+  exceptions_raised:
+    - "FLETE_NO_COTIZADO"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Cliente confirma acceso camión completo y tiene descargador propio — sistema debe solicitar cotización flete a transportista tercero"
+    expected_behavior: "AM gestiona cotización flete con transportista configurado. Una vez cotizado, proforma_builder genera proforma con flete incluido."
+    variant_data:
+      access_confirmed: true
+      unloading: "cliente_propio"
+  - description: "Cliente acepta EXW en vez de DDP — sistema debe re-generar sin flete pero con advertencia de recolección"
+    expected_behavior: "Si cliente acepta EXW, compliance se desbloquea. Proforma sin flete. Draft confirmando EXW y condiciones de retiro."
+    variant_data:
+      incoterm_changed: "EXW"
+      freight_required: false
+  - description: "Obra Villa del Mar está a 500m de ruta configurada existente — sistema debe detectar proximidad y ofrecer estimación conservadora"
+    expected_behavior: "Si geocoding detecta <1km de ruta existente, proponer estimación flete con nota 'estimado, requiere confirmación'. NO bloqueo absoluto pero requiere AM aprobación."
+    variant_data:
+      distance_to_known_route_m: 500
+      estimated_freight: 145.00
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'FLETE_NO_COTIZADO'"
+    - "output.primary_output.status == 'BLOCKED_PENDING_FREIGHT'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.hitl_gate_triggered == true"
+    - "compliance_checker output.blocking_issues contains 'DDP requiere flete cotizado'"
+    - "compliance_checker output.blocking_issues contains 'ubicación puntual no estándar'"
+    - "draft_writer output.body contains 'Dirección exacta de obra Villa del Mar'"
+    - "draft_writer output.body contains '500 sacos = ~21 toneladas'"
+    - "draft_writer output.body contains 'Camión de carga completo'"
+    - "output.side_effects contains create_open_item with item_type == 'freight_quote_required'"
+    - "evidence_bundle.per_line[0].excepcion == 'FLETE_NO_COTIZADO'"
+  must_not_do:
+    - "output contains proforma sin línea de flete"
+    - "output contains proforma con flete estimado sin cotización real"
+    - "system assumes standard freight cost ($50) without route verification"
+    - "system promises 3-day delivery without confirming freight feasibility"
+    - "system ignores 'flete incluido' and quotes FOB/EXW silently"
+    - "system delivers proforma with 'flete por confirmar' as acceptable"
+
+severity_weight_validation:
+  expected_severity: "medium"
+  if_misclassified_as_lower: |
+    Si clasificado como Low-Medium: proforma podría generarse con
+    flete estimado o asumido. Si flete real es $300-500 (obra de
+    difícil acceso, zona norte Barranquilla con restricciones), y
+    sistema asumió $50 o no incluyó, proforma genera pérdida o
+    cliente recibe cobro adicional post-entrega. 500 sacos cemento
+    = $3,400. Flete mal cotizado puede ser 10-15% del valor. DDP
+    implica responsabilidad total de entrega — si camión no puede
+    acceder, re-entrega con costo adicional y retraso obra.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico construcción Barranquilla. NO promovible. Patrón
+    abstracto (flete no configurado a obra puntual + DDP requiere
+    cotización) valioso para training. Puede promoverse a
+    GLOBAL_PROMOTABLE como ejemplo de freight_not_configured.
+
+gaps_detected: []

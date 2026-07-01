@@ -1,0 +1,485 @@
+case_id: case_sf_03
+industry: safety_footwear
+severity: high
+description: |
+  Cliente pide 150 pares "calzado certificado para mi planta" — no especifica
+  versión norma ASTM. Planta industrial implica F2413-18 más estricto.
+  Sistema debe pedir clarificación, NO asumir.
+
+setup:
+  vertical_spec_object: safety_footwear
+  catalog:
+    - sku: "BC-7240"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera composite · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "composite"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240-2025-003"
+            expiry_date: "2026-04-15"
+            lab_acreditado: "Intertek Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-BC7240-2025-003"
+      stock:
+        available: 600
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 300
+            reserved: 40
+          - location: "CDMX Hub"
+            qty: 300
+            reserved: 20
+        freshness_seconds: 120
+      pricing:
+        list_price: 68.50
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.4
+      sku_status: "active"
+      margin_calculated: 0.28
+    - sku: "BC-7240-LEGACY"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera acero · plantilla estándar · norma F2413-11 (legacy)"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-11"
+        subclass: "EH"
+        protection:
+          toe: "steel"
+          midsole: "estándar"
+          outsole: "PU bidensidad"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho"]
+        applications: ["industrial ligero"]
+        standards:
+          - standard: "ASTM F2413-11"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240LEG-2024-001"
+            expiry_date: "2025-12-31"
+            lab_acreditado: "Intertek Brasil"
+      stock:
+        available: 200
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 200
+            reserved: 10
+      pricing:
+        list_price: 58.00
+        currency: "USD"
+        version: "2025-04-15"
+      MOQ: 24
+      sku_status: "active"
+      margin_calculated: 0.32
+  customer:
+    customer_id: "CLI-MX-003"
+    name: "Industrias del Norte S.A. de C.V."
+    country: "MX"
+    city: "Monterrey"
+    tier: "gold"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "INN-1234567890"
+    vertical: "manufactura_monterrey"
+    historical_data:
+      last_order_date: "2025-04-10"
+      avg_order_value_usd: 8500
+      orders_ytd: 8
+      complaints_12m: 0
+      preferred_delivery: "CDMX Hub"
+    regulatory_context:
+      requires_astm_f2413: true
+      max_cert_age_days: 365
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_PRICING_CALCULATOR"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_MX"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:safety_footwear"]
+      layer_3b_metadata: ["compliance_profile:safety_footwear", "tenant:MWT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+    glossary_overrides:
+      - term: "punto"
+        meaning: "talla_numérica_regional"
+        applies_to: ["MX"]
+      - term: "calzado certificado"
+        meaning: "safety_footwear_con_certificación_normativa"
+        applies_to: ["MX", "CO", "CR"]
+
+input:
+  channel: email
+  from:
+    name: "Lic. Jorge Ramírez"
+    email: "j.ramirez@industriasdelnorte.mx"
+    role: "Gerente de Compras"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización calzado certificado para planta — 150 pares"
+  body_text: |
+    Buenos días,
+
+    Solicitamos cotización para 150 pares de calzado certificado para
+    nuestra planta de manufactura en Monterrey.
+
+    Detalle:
+    - 150 pares total
+    - Talla 26 (8 punto): 60 pares
+    - Talla 28 (10 punto): 60 pares
+    - Talla 30 (12 punto): 30 pares
+    - Ancho normal
+    - Entrega DDP Monterrey
+
+    Requerimos calzado con certificación vigente para uso industrial.
+    Plazo 7 días hábiles.
+
+    Quedo atento.
+
+    Jorge Ramírez
+    Gerente de Compras
+    Industrias del Norte S.A. de C.V.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-05-02T09:00:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["certification_request"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.85
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "calzado certificado"
+          qty: 150
+        - type: "variant_sizing"
+          value: "talla 26, 28, 30 (MX)"
+        - type: "certification_requirement"
+          value: "certificación vigente para uso industrial"
+        - type: "delivery_location"
+          value: "Monterrey, MX"
+        - type: "incoterm"
+          value: "DDP"
+      latency_ms_max: 1200
+      triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-MX-003", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-IDN-2025-Q1"
+      freshness: "2025-05-02T08:58:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: BC-7240, BC-7240-LEGACY"
+      - "qty_breakdown: {26:60, 28:60, 30:30}"
+      - "variant_constraints: {ancho: normal}"
+    expected_output:
+      items:
+        - sku: "BC-7240"
+          warehouse: "Bogotá Principal"
+          available: 300
+          reserved: 40
+          in_transit: 0
+          fulfillable_qty: 260
+        - sku: "BC-7240"
+          warehouse: "CDMX Hub"
+          available: 300
+          reserved: 20
+          in_transit: 0
+          fulfillable_qty: 280
+        - sku: "BC-7240-LEGACY"
+          warehouse: "Bogotá Principal"
+          available: 200
+          reserved: 10
+          in_transit: 0
+          fulfillable_qty: 190
+      total_fulfillable: 730
+      freshness: "2025-05-02T08:55:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "safety_footwear"
+      tenant: "MWT"
+      items: ["BC-7240", "BC-7240-LEGACY"]
+      certifications_required: ["ASTM F2413"]
+      customer_country: "MX"
+      use_case: "manufactura Monterrey"
+      norm_version_ambiguous: true
+      detected_norm_candidates: ["ASTM F2413-18", "ASTM F2413-11"]
+    expected_output:
+      pass: false
+      warnings:
+        - code: "ASTM_AMBIGUO"
+          severity: "high"
+          message: "Cliente no especificó versión ASTM F2413. Detectado ambigüedad entre F2413-18 (actual, más estricto) y F2413-11 (legacy). Planta industrial implica F2413-18 por defecto según política MWT."
+      blocking_issues:
+        - "Norma no especificada — sistema no puede asumir versión sin confirmación cliente"
+        - "F2413-18 vs F2413-11: diferencia en resistencia impacto (75 vs 50), compresión (2500 vs 1750), y requisitos EH"
+      pii_detected: false
+      policies_violated:
+        - "safety_footwear_norm_must_be_explicit"
+        - "MWT_policy_no_assumption_on_norm_version"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["ASTM_AMBIGUO"]
+      severity: "high"
+      tenant: "MWT"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email_standard"
+      urgency_override: "high"
+      fallback_route: null
+      sla_target_minutes: 60
+      vertical_context: "safety_footwear"
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "draft_clarification"
+      recipient_role: "cliente"
+      context:
+        customer: "Industrias del Norte S.A. de C.V."
+        rfq_items: "150 pares calzado certificado"
+        exception: "ASTM_AMBIGUO — norma no especificada"
+        severity: "high"
+        vertical: "safety_footwear"
+    expected_output:
+      draft_type: "clarification_request"
+      subject: "Solicitud de clarificación — versión norma ASTM para calzado safety"
+      body: |
+        Estimado Lic. Ramírez,
+
+        Gracias por su solicitud de cotización para 150 pares de calzado
+        certificado.
+
+        Para brindarle la cotización más precisa y segura, necesitamos
+        confirmar la versión de la norma ASTM F2413 que requiere su planta:
+
+        - ASTM F2413-18 (versión actual, más estricta, recomendada para
+          industria manufacturera con riesgo eléctrico)
+        - ASTM F2413-11 (versión anterior, disponible en stock legacy)
+
+        La diferencia entre ambas afecta resistencia al impacto,
+        compresión, y requisitos de protección eléctrica (EH).
+
+        ¿Podría confirmarnos cuál versión aplica en su planta Monterrey?
+        Alternativamente, si tiene especificación técnica interna,
+        podemos validarla directamente.
+
+        Quedo atento a su respuesta para avanzar con la proforma.
+
+        Saludos cordiales,
+        MWT — Equipo de Cotizaciones
+      tone: "professional_inquisitive"
+      internal_note: "Cliente gold sin quejas. Ambigüedad norma = oportunidad de consultoría técnica. Valor estimado $10,275 USD."
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["blocked_by_compliance: true"]
+    expected_output:
+      status: "NOT_GENERATED"
+      reason: "COMPLIANCE_BLOCKING"
+    latency_ms_max: 6000
+    triggered: false
+
+expected_outputs:
+  primary_output:
+    type: "draft_clarification"
+    content:
+      status: "BLOCKED_PENDING_CLARIFICATION"
+      reason: "ASTM_AMBIGUO — norma no especificada"
+      customer_notified: true
+      proforma_generated: false
+      draft_sent: true
+    glosses_required:
+      - "Norma ASTM F2413 no especificada — F2413-18 vs F2413-11"
+      - "Planta industrial implica F2413-18 pero NO asumir sin confirmación"
+      - "Draft de clarificación enviado al cliente"
+      - "Proforma bloqueada hasta respuesta cliente"
+  evidence_bundle:
+    per_line:
+      - sku: "BC-7240"
+        qty_requested: 150
+        variant_constraints: "talla 26/28/30, ancho normal"
+        stock_fulfillable: 540
+        pricing_list: 68.50
+        margin_estimated: 0.28
+        status: "BLOCKED_PENDING_CLARIFICATION"
+    per_quote:
+      status: "BLOCKED_PENDING_CLARIFICATION"
+      exception_codes: ["ASTM_AMBIGUO"]
+      aprobador: "AM"
+      hash: null
+    audit_view:
+      source_precio: "2025-04-15"
+      version_lista: "2025-04-15"
+      timestamp_stock: "2025-05-02T08:55:00-06:00"
+      technical_spec_rule: "safety_footwear_norm_must_be_explicit"
+      margen_calculado: 0.28
+      aprobador: "AM (clarification pending)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "vigente (ambas versiones disponibles)"
+      country_rule_applied: "MWT_policy_no_assumption_on_norm_version"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=24, packaging=12/box"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-IDN-2025-Q1"
+      exception_codes: ["ASTM_AMBIGUO"]
+      vertical_spec_object: "safety_footwear"
+      tenant: "MWT"
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email_standard"
+        sla_minutes: 60
+    - type: "create_open_item"
+      details:
+        item_type: "clarification_pending"
+        sku: "BC-7240"
+        priority: "high"
+        due_date: "2025-05-03T09:00:00-06:00"
+        vertical: "safety_footwear"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_BLOCKED_CLARIFICATION"
+        severity: "high"
+        trace_id: "TRACE-caseSF03-20250502"
+        tenant: "MWT"
+  exceptions_raised:
+    - "ASTM_AMBIGUO"
+  hitl_gate_triggered: true
+  output_destination: "draft_clarification"
+
+edge_cases:
+  - description: "Cliente responde 'la más barata' — sistema debe RECHAZAR, no asumir. Requiere norma explícita."
+    expected_behavior: "Segundo draft de clarificación insistiendo en norma específica. NO generar proforma con 'la más barata'.",
+    variant_data:
+      client_response: "la más barata"
+      expected_action: "reclarification_required"
+  - description: "Cliente tiene spec interna que exige F2413-11 (legacy) — sistema ofrece BC-7240-LEGACY con evidence"
+    expected_behavior: "Proforma generable con BC-7240-LEGACY, evidence_bundle muestra norma legacy validada, AM firma.",
+    variant_data:
+      client_norm_specified: "ASTM F2413-11"
+      selected_sku: "BC-7240-LEGACY"
+      expected_proforma: true
+  - description: "Cliente opera con riesgo eléctrico (480V) — F2413-18 obligatorio, F2413-11 NO tiene EH completo"
+    expected_behavior: "Compliance Checker debe detectar riesgo eléctrico implícito en 'planta manufactura' y recomendar F2413-18 obligatoriamente.",
+    variant_data:
+      electrical_hazard_detected: true
+      recommended_norm: "ASTM F2413-18"
+      reason: "riesgo eléctrico 480V requiere EH clase F2413-18"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'ASTM_AMBIGUO'"
+    - "output.primary_output.status == 'BLOCKED_PENDING_CLARIFICATION'"
+    - "output.primary_output.proforma_generated == false"
+    - "output.primary_output.draft_sent == true"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 60"
+    - "evidence_bundle.per_quote.aprobador == 'AM'"
+    - "expected_pipeline[5].sub_agent == 'AG_SUB_DRAFT_WRITER'"
+    - "expected_pipeline[5].expected_output.draft_type == 'clarification_request'"
+  must_not_do:
+    - "output contains proforma draft con precio total antes de clarificación"
+    - "output assumes F2413-18 by default without client confirmation"
+    - "output offers F2413-11 as 'cheaper alternative' without technical justification"
+    - "system sends cover_letter with proforma attached"
+    - "agente solo aprueba envío de proforma sin norma confirmada"
+    - "system ignores ambiguity because 'planta industrial = obvio F2413-18'"
+
+severity_weight_validation:
+  expected_severity: "high"
+  if_misclassified_as_lower: |
+    Si clasificado como Medium: draft de clarificación puede no
+    incluir HITL gate, permitiendo que proforma se genere tras
+    respuesta vaga del cliente. Si asume F2413-11 cuando cliente
+    necesita F2413-18 para riesgo eléctrico, calzado entregado no
+    protege adecuadamente. Consecuencia: accidente laboral,
+    responsabilidad civil, sanción STPS.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico Industrias del Norte MX. No promovible.
+    Patrón abstracto (ambigüedad norma ASTM en safety_footwear)
+    puede promoverse a GLOBAL_PROMOTABLE tras anonimización.
+
+gaps_detected: []

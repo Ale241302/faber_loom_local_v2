@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rana Walk® — Insole Color Spec v7</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f4f5f7;color:#1a1a1a}
+
+.topbar{background:#013A57;padding:14px 32px;display:flex;align-items:center;gap:10px}
+.topbar h1{font-size:14px;font-weight:900;color:#fff;letter-spacing:2px}
+.topbar .r{color:#75CBB3;font-size:10px}
+.topbar .v{color:rgba(255,255,255,.3);font-size:10px;margin-left:auto}
+
+.wrap{max-width:820px;margin:0 auto;padding:24px 20px 60px}
+
+/* Intro */
+.intro{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:24px;font-size:12px;color:#475569;line-height:2}
+.intro strong{color:#013A57}
+.intro .t{display:inline-block;font-size:7px;font-weight:900;letter-spacing:.5px;padding:2px 5px;border-radius:3px;vertical-align:middle;margin:0 2px}
+
+/* Product */
+.prod{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;margin-bottom:28px;box-shadow:0 1px 8px rgba(0,0,0,.04)}
+.prod-h{padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+.prod-h .n{font-weight:900;font-size:18px;letter-spacing:3px}
+.prod-h .tg{font-size:9px;opacity:.6}
+
+/* Layer diagram */
+.layers{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #eee}
+.layer-col{padding:20px;display:flex;flex-direction:column;gap:12px;position:relative}
+.layer-col:first-child{border-right:1px solid #eee}
+.layer-col .side{font-size:8px;font-weight:800;letter-spacing:1.5px;color:#94a3b8;text-transform:uppercase;text-align:center}
+
+/* Stack visual — 3 layers stacked */
+.stack{display:flex;flex-direction:column;gap:0;align-items:center}
+.stack-layer{width:100%;max-width:180px;height:36px;display:flex;align-items:center;padding:0 12px;justify-content:space-between;position:relative;overflow:hidden;border:1px solid rgba(0,0,0,.12)}
+.stack-layer:first-child{border-radius:8px 8px 0 0}
+.stack-layer:last-child{border-radius:0 0 8px 8px}
+.stack-layer .lname{font-size:8px;font-weight:800;letter-spacing:.5px;z-index:1}
+.stack-layer .lhex{font-family:monospace;font-size:8px;opacity:.7;z-index:1}
+.stack-layer .lpms{font-size:7px;font-weight:700;opacity:.6;z-index:1}
+/* legacy classes kept for compat */
+
+/* Color detail list */
+.cdetail{display:flex;flex-direction:column;gap:6px}
+.citem{display:flex;align-items:center;gap:8px}
+.cchip{width:22px;height:22px;border-radius:5px;border:1.5px solid rgba(0,0,0,.15);flex-shrink:0}
+.cchip.str::after{content:'';display:block;width:100%;height:100%;border-radius:3px;background:repeating-linear-gradient(-45deg,transparent,transparent 2px,rgba(255,255,255,.25) 2px,rgba(255,255,255,.25) 4px)}
+.cchip.dsh{background:transparent !important;border-style:dashed}
+.cinfo{line-height:1.2}
+.cinfo .cr{font-size:7px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#94a3b8}
+.cinfo .cn{font-size:10px;font-weight:700}
+.cinfo .ch{font-family:monospace;font-size:8px;color:#94a3b8}
+.cinfo .cp{font-size:8px;font-weight:600;color:#64748b}
+
+/* Summary table */
+.sum{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;margin-bottom:24px}
+.sum table{width:100%;font-size:9px;border-collapse:collapse}
+.sum th{padding:7px 8px;text-align:left;font-size:7px;font-weight:900;color:#fff;background:#013A57;letter-spacing:.5px}
+.sum td{padding:5px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.sum tr:last-child td{border-bottom:none}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:3px;border:1px solid rgba(0,0,0,.15)}
+
+/* Note */
+.note{margin:-12px 0 28px;padding:8px 20px;border-radius:0 0 12px 12px;font-size:9px;line-height:1.5}
+.note.sp{background:#fefce8;border:1px solid #fde68a;border-top:0;color:#854d0e}
+.note.info{background:#eff6ff;border:1px solid #bfdbfe;border-top:0;color:#1e40af}
+
+@media(max-width:640px){.layers{grid-template-columns:1fr}.layer-col:first-child{border-right:0;border-bottom:1px solid #eee}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>INSOLE COLOR SPEC</h1><span class="r">&reg;</span>
+  <span class="v">v7 &middot; 7 modelos &middot; 2 capas &middot; Pantone &middot; Abril 2026</span>
+</div>
+
+<div class="wrap">
+
+<div class="intro">
+  <strong>2 CAPAS DE COLOR</strong><br>
+  <span class="t" style="background:#013A57;color:#fff">1 &middot; PU</span> <strong>Espuma PU base</strong> &mdash; el color del material de amortiguaci&oacute;n. Regla general: es el <em>inverso</em> del color dominante del textil de ese lado.<br>
+  <span class="t" style="background:#75CBB3;color:#013A57">2 &middot; TEXTIL</span> <strong>Tejido con sublimado/serigraf&iacute;a</strong> &mdash; una sola pieza textil por lado. El color base y el patr&oacute;n (rana, dots, chevrons) se aplican por sublimado o serigraf&iacute;a directamente sobre la tela. No son capas separadas.<br><br>
+  <strong>EXCEPCIONES:</strong><br>
+  &bull; <strong>VELOX</strong> &mdash; PU blanco obligatorio en ambos lados (condici&oacute;n del material).<br>
+  &bull; <strong>ORCA</strong> &mdash; PU negro ambos lados. Izq: textil negro con rayas blancas y Gold. Der: textil blanco con rayas negras y Gold. Thinboom Gold integrado en serigraf&iacute;a.
+</div>
+
+<!-- SUMMARY -->
+<div class="sum">
+  <table>
+    <tr>
+      <th>Modelo</th>
+      <th colspan="2">Lado Izquierdo</th>
+      <th colspan="2">Lado Derecho</th>
+    </tr>
+    <tr>
+      <th></th><th>PU</th><th>Textil (base + patr&oacute;n)</th><th>PU</th><th>Textil (base + patr&oacute;n)</th>
+    </tr>
+    <tr><td style="font-weight:900;color:#013A57">GOLIATH</td>
+      <td><span class="sw" style="background:#013A57"></span>Navy</td><td><span class="sw" style="background:#75CBB3"></span>Mint + <span class="sw" style="background:#013A57"></span>Navy</td>
+      <td><span class="sw" style="background:#75CBB3"></span>Mint</td><td><span class="sw" style="background:#013A57"></span>Navy + <span class="sw" style="background:#75CBB3"></span>Mint</td></tr>
+    <tr style="background:#f8f5ff"><td style="font-weight:900;color:#7B2DBF">VELOX *</td>
+      <td><span class="sw" style="background:#fff;border:1px solid #ddd"></span>Blanco</td><td><span class="sw" style="background:#75CBB3"></span>Mint + <span class="sw" style="background:#7B2DBF"></span>Violeta</td>
+      <td><span class="sw" style="background:#fff;border:1px solid #ddd"></span>Blanco</td><td><span class="sw" style="background:#7B2DBF"></span>Violeta + <span class="sw" style="background:#75CBB3"></span>Mint</td></tr>
+    <tr><td style="font-weight:900;color:#EF4E54">ORBIS</td>
+      <td><span class="sw" style="background:#EF4E54"></span>Coral</td><td><span class="sw" style="background:#fff;border:1px solid #ddd"></span>Blanco + <span class="sw" style="background:#EF4E54"></span>Coral</td>
+      <td><span class="sw" style="background:#fff;border:1px solid #ddd"></span>Blanco</td><td><span class="sw" style="background:#EF4E54"></span>Coral + <span class="sw" style="background:#013A57"></span>Navy</td></tr>
+    <tr><td style="font-weight:900;color:#3D3D3A">LEOPARD</td>
+      <td><span class="sw" style="background:#3D3D3A"></span>Charcoal</td><td><span class="sw" style="background:#C5A96A"></span>Arena + <span class="sw" style="background:#3D3D3A"></span>Charcoal</td>
+      <td><span class="sw" style="background:#C5A96A"></span>Arena</td><td><span class="sw" style="background:#3D3D3A"></span>Charcoal + <span class="sw" style="background:#C5A96A"></span>Arena</td></tr>
+    <tr><td style="font-weight:900;color:#FF8C00">BISON</td>
+      <td><span class="sw" style="background:#2C2C2C"></span>Carbon</td><td><span class="sw" style="background:#FF8C00"></span>Amber + <span class="sw" style="background:#2C2C2C"></span>Carbon</td>
+      <td><span class="sw" style="background:#FF8C00"></span>Amber</td><td><span class="sw" style="background:#2C2C2C"></span>Carbon + <span class="sw" style="background:#FF8C00"></span>Amber</td></tr>
+    <tr><td style="font-weight:900;color:#00BCD4">MANTA</td>
+      <td><span class="sw" style="background:#4A3F3A"></span>W.Char</td><td><span class="sw" style="background:#00BCD4"></span>Cyan + <span class="sw" style="background:#4A3F3A"></span>W.Char</td>
+      <td><span class="sw" style="background:#00BCD4"></span>Cyan</td><td><span class="sw" style="background:#4A3F3A"></span>W.Char + <span class="sw" style="background:#00BCD4"></span>Cyan</td></tr>
+    <tr style="background:#fefce8"><td style="font-weight:900;color:#0B0B0B">ORCA *</td>
+      <td><span class="sw" style="background:#0B0B0B"></span>Abyss</td><td><span class="sw" style="background:#0B0B0B"></span>Negro + <span class="sw" style="background:#fff;border:1px solid #ddd"></span><span class="sw" style="background:#FFD700"></span></td>
+      <td><span class="sw" style="background:#0B0B0B"></span>Abyss</td><td><span class="sw" style="background:#fff;border:1px solid #ddd"></span>Blanco + <span class="sw" style="background:#0B0B0B"></span><span class="sw" style="background:#FFD700"></span></td></tr>
+  </table>
+</div>
+
+<div id="cards"></div>
+
+</div>
+
+<div style="text-align:center;padding:16px;font-size:9px;color:#94A3B8;background:#f4f5f7">Rana Walk&reg; &middot; Insole Color Spec v7 &middot; Pantone calc. via Delta-E CIE Lab &middot; Abril 2026</div>
+
+<script>
+function isDk(h){var r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return(r*.299+g*.587+b*.114)<140}
+
+// Pantone lookup (calculated via Delta-E Lab)
+var PMS={
+  "#75CBB3":"PMS 7471 C",
+  "#013A57":"PMS 303 C",
+  "#7B2DBF":"PMS 266 C",
+  "#FFFFFF":"PMS White C",
+  "#EF4E54":"PMS 2063 C",
+  "#C5A96A":"PMS 467 C",
+  "#3D3D3A":"PMS Black 7 C",
+  "#FF8C00":"PMS 151 C",
+  "#2C2C2C":"PMS 426 C",
+  "#00BCD4":"PMS 3115 C",
+  "#4A3F3A":"PMS 412 C",
+  "#0B0B0B":"PMS Black 6 C",
+  "#FFD700":"PMS 107 C"
+};
+function pms(hex){return PMS[hex]||"—"}
+
+var PRODS=[
+  { name:"GOLIATH",tag:"Referencia",hBg:"#011e30",hTx:"#75CBB3",
+    L:{pu:"#013A57",tex:"#75CBB3",stripes:["#013A57"]},
+    R:{pu:"#75CBB3",tex:"#013A57",stripes:["#75CBB3"]} },
+  { name:"VELOX",tag:"PU Blanco obligatorio",hBg:"#1A1025",hTx:"#E040FB",
+    L:{pu:"#FFFFFF",tex:"#75CBB3",stripes:["#7B2DBF"]},
+    R:{pu:"#FFFFFF",tex:"#7B2DBF",stripes:["#75CBB3"]},
+    note:{t:"info",m:"<strong>VELOX:</strong> PU blanco en ambos lados &mdash; condici&oacute;n del material. No sigue la regla inversa."} },
+  { name:"ORBIS",tag:"Caso especial",hBg:"#013A57",hTx:"#EF4E54",
+    L:{pu:"#EF4E54",tex:"#FFFFFF",stripes:["#EF4E54"]},
+    R:{pu:"#FFFFFF",tex:"#EF4E54",stripes:["#013A57"]} },
+  { name:"LEOPARD",tag:"Arena / Charcoal",hBg:"#3D3D3A",hTx:"#C5A96A",
+    L:{pu:"#3D3D3A",tex:"#C5A96A",stripes:["#3D3D3A"]},
+    R:{pu:"#C5A96A",tex:"#3D3D3A",stripes:["#C5A96A"]} },
+  { name:"BISON",tag:"Amber / Carbon",hBg:"#2C2C2C",hTx:"#FF8C00",
+    L:{pu:"#2C2C2C",tex:"#FF8C00",stripes:["#2C2C2C"]},
+    R:{pu:"#FF8C00",tex:"#2C2C2C",stripes:["#FF8C00"]} },
+  { name:"MANTA",tag:"Cyan / Warm Charcoal",hBg:"#4A3F3A",hTx:"#00BCD4",
+    L:{pu:"#4A3F3A",tex:"#00BCD4",stripes:["#4A3F3A"]},
+    R:{pu:"#00BCD4",tex:"#4A3F3A",stripes:["#00BCD4"]} },
+  { name:"ORCA",tag:"Negro/Blanco + Thinboom Gold",hBg:"#0B0B0B",hTx:"#FFD700",
+    L:{pu:"#0B0B0B",tex:"#0B0B0B",stripes:["#FFFFFF","#FFD700"]},
+    R:{pu:"#0B0B0B",tex:"#FFFFFF",stripes:["#0B0B0B","#FFD700"]},
+    note:{t:"sp",m:"<strong>ORCA:</strong> PU negro ambos lados. Izq: textil negro con rayas blancas y Gold. Der: textil blanco con rayas negras y Gold. Thinboom Gold #FFD700 ("+pms("#FFD700")+") integrado."} },
+];
+
+var NAMES={
+  "#75CBB3":"Mint","#013A57":"Deep Navy","#7B2DBF":"Violeta","#FFFFFF":"Blanco",
+  "#EF4E54":"Coral","#C5A96A":"Arena Dorado","#3D3D3A":"Charcoal","#FF8C00":"Amber",
+  "#2C2C2C":"Carbon","#00BCD4":"Cyan","#4A3F3A":"Warm Charcoal","#0B0B0B":"Abyss Black","#FFD700":"Gold"
+};
+function cn(h){return NAMES[h]||h}
+
+function stackLayer(hex, role, cls){
+  var tx=isDk(hex)?'#fff':'#1a1a1a';
+  var isBorder = cls==='poron-layer';
+  if(isBorder){
+    return '<div class="stack-layer '+cls+'" style="border-color:'+hex+'"><span class="lname" style="color:'+hex+'">'+role+'</span><span class="lhex" style="color:'+hex+'">'+cn(hex)+'</span><span class="lpms" style="color:'+hex+'">'+pms(hex)+'</span></div>';
+  }
+  return '<div class="stack-layer '+cls+'" style="background:'+hex+'"><span class="lname" style="color:'+tx+'">'+role+'</span><span class="lhex" style="color:'+tx+'">'+cn(hex)+'</span><span class="lpms" style="color:'+tx+'">'+pms(hex)+'</span></div>';
+}
+
+function stackLayerSerigrafia(base, stripes, role){
+  var tx=isDk(base)?'#fff':'#1a1a1a';
+  var grad='repeating-linear-gradient(-55deg,'+base+','+base+' 6px';
+  for(var i=0;i<stripes.length;i++){grad+=','+stripes[i]+' 6px,'+stripes[i]+' 9px'}
+  grad+=','+base+' 9px,'+base+' 15px)';
+  return '<div class="stack-layer" style="background:'+grad+'"><span class="lname" style="color:'+tx+';text-shadow:0 0 3px '+base+'">'+role+'</span><span class="lhex" style="color:'+tx+';text-shadow:0 0 3px '+base+'">'+cn(base)+ ' + rayas</span></div>';
+}
+
+function colorItem(hex,role,chipCls){
+  var bc=(hex==='#FFFFFF')?'rgba(0,0,0,.15)':'rgba(0,0,0,.08)';
+  return '<div class="citem"><div class="cchip '+chipCls+'" style="background:'+hex+';border-color:'+bc+'"></div><div class="cinfo"><div class="cr">'+role+'</div><div class="cn">'+cn(hex)+' <span class="ch">'+hex+'</span></div><div class="cp">'+pms(hex)+'</div></div></div>';
+}
+
+var out='';
+PRODS.forEach(function(p){
+  out+='<div class="prod">';
+  out+='<div class="prod-h" style="background:'+p.hBg+'"><div class="n" style="color:'+p.hTx+'">'+p.name+'</div><div class="tg" style="color:'+p.hTx+'">'+p.tag+'</div></div>';
+
+  out+='<div class="layers">';
+
+  // LEFT
+  out+='<div class="layer-col"><div class="side">&larr; Izquierda</div>';
+  out+='<div class="stack">';
+  out+=stackLayerSerigrafia(p.L.tex,p.L.stripes,'2 &middot; TEXTIL');
+  out+=stackLayer(p.L.pu,'1 &middot; PU BASE','');
+  out+='</div>';
+  out+='<div class="cdetail">';
+  out+=colorItem(p.L.pu,'PU \u2014 espuma base','');
+  out+=colorItem(p.L.tex,'TEXTIL \u2014 color base','');
+  for(var i=0;i<p.L.stripes.length;i++) out+=colorItem(p.L.stripes[i],'PATR\u00d3N \u2014 sublimado','str');
+  out+='</div>';
+  out+='</div>';
+
+  // RIGHT
+  out+='<div class="layer-col"><div class="side">Derecha &rarr;</div>';
+  out+='<div class="stack">';
+  out+=stackLayerSerigrafia(p.R.tex,p.R.stripes,'2 &middot; TEXTIL');
+  out+=stackLayer(p.R.pu,'1 &middot; PU BASE','');
+  out+='</div>';
+  out+='<div class="cdetail">';
+  out+=colorItem(p.R.pu,'PU \u2014 espuma base','');
+  out+=colorItem(p.R.tex,'TEXTIL \u2014 color base','');
+  for(var i=0;i<p.R.stripes.length;i++) out+=colorItem(p.R.stripes[i],'PATR\u00d3N \u2014 sublimado','str');
+  out+='</div>';
+  out+='</div>';
+
+  out+='</div>'; // /layers
+  out+='</div>'; // /prod
+
+  if(p.note) out+='<div class="note '+p.note.t+'">'+p.note.m+'</div>';
+});
+
+// Pantone reference
+out+='<div style="margin-top:24px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px">';
+out+='<div style="font-size:11px;font-weight:900;color:#013A57;letter-spacing:1px;margin-bottom:12px">PANTONE REFERENCE (Delta-E CIE Lab)</div>';
+out+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">';
+Object.keys(PMS).forEach(function(hex){
+  var tx=isDk(hex)?'#fff':'#1a1a1a';
+  out+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fafbfc;border-radius:6px">';
+  out+='<div style="width:28px;height:28px;border-radius:6px;background:'+hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div>';
+  out+='<div style="line-height:1.3"><div style="font-size:10px;font-weight:700">'+cn(hex)+'</div><div style="font-family:monospace;font-size:8px;color:#94a3b8">'+hex+'</div><div style="font-size:9px;font-weight:600;color:#475569">'+PMS[hex]+'</div></div>';
+  out+='</div>';
+});
+out+='</div></div>';
+
+// Changelog
+out+='<div style="margin-top:16px;padding:14px 20px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;font-size:9px;color:#475569;line-height:1.8">';
+out+='<strong style="color:#013A57">CHANGELOG</strong><br>';
+out+='<strong>v7</strong> Modelo de 2 capas: PU + Textil (sublimado/serigraf&iacute;a integrado). Print no es capa separada &mdash; el patr&oacute;n va sublimado directo en la tela. Orca: Thinboom Gold integrado en serigraf&iacute;a.<br><strong>v6</strong> Tres capas (obsoleto). <strong>v5</strong> Orca corregido. <strong>v4</strong> Redise&ntilde;o.<br>';
+out+='<strong>v5</strong> Orca corregido. <strong>v4</strong> Redise&ntilde;o. <strong>v3</strong> 7 modelos, correcciones Velox/Leopard.</div>';
+
+document.getElementById('cards').innerHTML=out;
+</script>
+
+</body>
+</html>

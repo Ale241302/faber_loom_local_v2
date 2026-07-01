@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FaberLoom — Arquitectura v2</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; color: #e6edf3; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; padding: 24px; min-width: 1100px; }
+
+h1 { font-size: 24px; font-weight: 800; color: #58a6ff; letter-spacing: 2px; }
+.subtitle { color: #8b949e; font-size: 11px; margin-top: 4px; margin-bottom: 28px; }
+
+/* ── SECTION ── */
+.section { margin-bottom: 10px; }
+.section-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 4px 4px 0 0; display: inline-block; margin-bottom: -1px;
+}
+.section-body {
+  border-radius: 0 8px 8px 8px; padding: 14px 16px; border: 1px solid;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+
+/* colors per section */
+.s-channels  .section-label { background:#0d1b2e; color:#58a6ff; border:1px solid #388bfd44; border-bottom:none; }
+.s-channels  .section-body  { border-color:#388bfd44; background:#0a1522; }
+
+.s-gateway   .section-label { background:#1c1208; color:#f0883e; border:1px solid #f0883e44; border-bottom:none; }
+.s-gateway   .section-body  { border-color:#f0883e44; background:#130d05; }
+
+.s-email     .section-label { background:#0f1f1a; color:#39d353; border:1px solid #3fb95044; border-bottom:none; }
+.s-email     .section-body  { border-color:#3fb95044; background:#0a1810; }
+
+.s-agents    .section-label { background:#1a0e2a; color:#bc8cff; border:1px solid #bc8cff44; border-bottom:none; }
+.s-agents    .section-body  { border-color:#bc8cff44; background:#110920; }
+
+.s-kb        .section-label { background:#0d1b2e; color:#79c0ff; border:1px solid #58a6ff44; border-bottom:none; }
+.s-kb        .section-body  { border-color:#58a6ff44; background:#080f1a; }
+
+.s-router    .section-label { background:#1a1208; color:#ffa657; border:1px solid #ffa65744; border-bottom:none; }
+.s-router    .section-body  { border-color:#ffa65744; background:#120d04; }
+
+.s-external  .section-label { background:#161b22; color:#8b949e; border:1px solid #8b949e44; border-bottom:none; }
+.s-external  .section-body  { border-color:#8b949e44; background:#0d1117; }
+
+.s-future    .section-label { background:#161b22; color:#6e7681; border:1px solid #30363d; border-bottom:none; }
+.s-future    .section-body  { border-color:#30363d; background:#0d1117; opacity:.75; }
+
+/* ── BOX ── */
+.box {
+  border-radius: 7px; padding: 10px 13px; border: 1px solid #30363d;
+  background: #161b22; min-width: 150px; flex: 1; max-width: 240px;
+}
+.box.wide  { max-width: 360px; }
+.box.xwide { max-width: none; flex: 3; }
+.bname { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.bdesc { font-size: 10px; color: #8b949e; line-height: 1.55; }
+.btag  { display:inline-block; font-size:9px; font-weight:700; border-radius:3px; padding:1px 5px; margin-top:5px; }
+
+/* box accent colors */
+.bc-blue  { border-color:#388bfd55; } .bc-blue  .bname { color:#58a6ff; } .bc-blue  .btag { background:#388bfd15; color:#58a6ff; }
+.bc-green { border-color:#3fb95055; } .bc-green .bname { color:#39d353; } .bc-green .btag { background:#3fb95015; color:#39d353; }
+.bc-purp  { border-color:#bc8cff55; } .bc-purp  .bname { color:#bc8cff; } .bc-purp  .btag { background:#bc8cff15; color:#bc8cff; }
+.bc-ora   { border-color:#f0883e55; } .bc-ora   .bname { color:#f0883e; } .bc-ora   .btag { background:#f0883e15; color:#f0883e; }
+.bc-yel   { border-color:#ffa65755; } .bc-yel   .bname { color:#ffa657; } .bc-yel   .btag { background:#ffa65715; color:#ffa657; }
+.bc-gray  { border-color:#8b949e44; } .bc-gray  .bname { color:#8b949e; } .bc-gray  .btag { background:#8b949e15; color:#8b949e; }
+.bc-red   { border-color:#ff7b7255; } .bc-red   .bname { color:#ff7b72; } .bc-red   .btag { background:#ff7b7215; color:#ff7b72; }
+
+/* ── ARROW ── */
+.arrow { text-align:center; padding:3px 0; color:#444c56; font-size:13px; display:flex; align-items:center; justify-content:center; gap:8px; }
+.arrow span { color:#8b949e; font-size:10px; }
+
+/* ── COVEY GRID ── */
+.covey { display:grid; grid-template-columns:1fr 1fr; gap:6px; flex:2; min-width:300px; }
+.covey-cell { border-radius:6px; padding:10px; border:1px solid; }
+.q1 { border-color:#ff7b7244; background:#1a0a0a; }
+.q1 .qname { color:#ff7b72; }
+.q2 { border-color:#3fb95044; background:#0a180e; }
+.q2 .qname { color:#39d353; }
+.q3 { border-color:#ffa65744; background:#1a1206; }
+.q3 .qname { color:#ffa657; }
+.q4 { border-color:#8b949e44; background:#141920; }
+.q4 .qname { color:#8b949e; }
+.qname { font-size:11px; font-weight:800; margin-bottom:3px; }
+.qdesc { font-size:10px; color:#8b949e; line-height:1.5; }
+.covey-label { font-size:9px; font-weight:700; color:#6e7681; text-align:center; margin-bottom:4px; letter-spacing:1px; }
+
+/* ── KB LAYERS ── */
+.kblayers { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; width:100%; }
+.kbl { border-radius:6px; padding:8px 10px; border:1px solid; text-align:center; }
+.kbl1 { border-color:#bc8cff44; background:#12082a; }
+.kbl1 .klname { color:#bc8cff; }
+.kbl2 { border-color:#f0883e44; background:#160f06; }
+.kbl2 .klname { color:#f0883e; }
+.kbl3 { border-color:#3fb95044; background:#081508; }
+.kbl3 .klname { color:#39d353; }
+.kbl4 { border-color:#58a6ff44; background:#08111a; }
+.kbl4 .klname { color:#58a6ff; }
+.klname { font-size:11px; font-weight:800; margin-bottom:3px; }
+.kldesc { font-size:9px; color:#8b949e; line-height:1.45; }
+
+/* ── ROUTER STRIP ── */
+.rstrip { display:flex; border-radius:6px; overflow:hidden; border:1px solid #ffa65733; width:100%; }
+.rs { flex:1; padding:8px 10px; border-right:1px solid #ffa65722; text-align:center; }
+.rs:last-child { border-right:none; }
+.rstier { font-size:9px; color:#6e7681; margin-bottom:2px; }
+.rsmodel { font-size:11px; font-weight:700; }
+.rscost { font-size:9px; color:#39d353; margin-top:2px; }
+.rspct { font-size:9px; color:#8b949e; }
+
+/* ── PRICING ROW ── */
+.plans { display:flex; gap:6px; width:100%; margin-top:8px; }
+.plan { flex:1; border-radius:6px; padding:10px; border:1px solid #30363d; background:#161b22; text-align:center; }
+.pname { font-size:9px; color:#8b949e; font-weight:700; letter-spacing:1px; }
+.pprice { font-size:22px; font-weight:800; color:#e6edf3; }
+.pq { font-size:10px; color:#39d353; }
+.pm { font-size:9px; color:#6e7681; margin-top:3px; }
+
+/* ── MVP BADGE ── */
+.mvp { display:inline-block; font-size:8px; font-weight:800; background:#39d35322; color:#39d353; border:1px solid #39d35344; border-radius:3px; padding:1px 5px; margin-left:5px; }
+.fut { display:inline-block; font-size:8px; font-weight:800; background:#6e768122; color:#6e7681; border:1px solid #6e768144; border-radius:3px; padding:1px 5px; margin-left:5px; }
+
+/* ── DIVIDER ── */
+.divrow { display:flex; gap:8px; width:100%; }
+.divrow > * { flex:1; }
+
+/* ── NOTE ── */
+.note { font-size:10px; color:#8b949e; background:#161b22; border:1px solid #21262d; border-radius:5px; padding:7px 10px; margin-top:6px; width:100%; }
+.note strong { color:#e6edf3; }
+
+.full { flex-basis:100%; }
+</style>
+</head>
+<body>
+
+<h1>⬡ FABERLOOM</h1>
+<div class="subtitle">Arquitectura del Sistema v2 · faberloom.com · 2026-04-13 · Evolucionado de conversación de producto</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     CANALES DE ENTRADA
+══════════════════════════════════════════════════════════ -->
+<div class="section s-channels">
+  <div class="section-label">① Canales de entrada <span class="mvp">MVP</span></div>
+  <div class="section-body">
+    <div class="box bc-blue">
+      <div class="bname">🖥 Consola FaberLoom</div>
+      <div class="bdesc">Chat principal. Tablero Covey de email. Gestión de KB. Dashboard de uso. Composición de correos.</div>
+      <div class="btag">React/Next.js · Dark mode</div>
+    </div>
+    <div class="box bc-blue">
+      <div class="bname">📱 WhatsApp Business</div>
+      <div class="bdesc">Vendedor manda ficha técnica o consulta. Agente técnico responde en el mismo hilo. Sin cuenta FaberLoom requerida.</div>
+      <div class="btag">WhatsApp API · Webhook</div>
+    </div>
+    <div class="box bc-blue">
+      <div class="bname">📧 Gmail / Outlook</div>
+      <div class="bdesc">FaberLoom SOLO lee vía IMAP. Nunca reemplaza. El draft aprobado se empuja de vuelta al cliente de correo del usuario.</div>
+      <div class="btag">IMAP · OAuth2 · read-only</div>
+    </div>
+    <div class="box bc-gray fut">
+      <div class="bname">🔗 Slack Bot</div>
+      <div class="bdesc">Consulta KB desde canales. Sprint 3+.</div>
+      <div class="btag">Slack API · futuro</div>
+    </div>
+    <div class="box bc-gray fut">
+      <div class="bname">🌐 Portal VIP</div>
+      <div class="bdesc">Acceso externo para clientes del cliente. Solo capa 4. Sprint 4+.</div>
+      <div class="btag">futuro</div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">↓↓↓ <span>HTTPS · JWT · tenant_id · rate limiting</span></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     GATEWAY
+══════════════════════════════════════════════════════════ -->
+<div class="section s-gateway">
+  <div class="section-label">② Seguridad & Gateway</div>
+  <div class="section-body">
+    <div class="box bc-ora">
+      <div class="bname">🔐 Auth JWT</div>
+      <div class="bdesc">Token con tenant_id + user_role. Valida cada request antes de tocar datos.</div>
+      <div class="btag">Django · JWT</div>
+    </div>
+    <div class="box bc-ora">
+      <div class="bname">🛡 ClientScopedManager</div>
+      <div class="bdesc">for_user(user) siempre. Nunca .all(). Aislamiento estricto entre tenants.</div>
+      <div class="btag">ORM · row-level</div>
+    </div>
+    <div class="box bc-ora">
+      <div class="bname">⏱ Usage & Rate Limiter</div>
+      <div class="bdesc">Consultas por plan. Excedente cobrado. Logging de modelo usado + tokens + costo por query.</div>
+      <div class="btag">Redis · Celery</div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">↓↓↓</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     EMAIL INTELLIGENCE
+══════════════════════════════════════════════════════════ -->
+<div class="section s-email">
+  <div class="section-label">③ Email Intelligence — el copiloto que ya hizo la tarea <span class="mvp">MVP CORE</span></div>
+  <div class="section-body">
+
+    <!-- Left: flow boxes -->
+    <div class="box bc-green wide">
+      <div class="bname">📥 Onboarding: CSV histórico</div>
+      <div class="bdesc">El usuario exporta 1 mes de Gmail. Haiku procesa ~3,000 correos en batch. Construye sender profiles iniciales + voice profile. El sistema arranca con contexto real — no en cero.<br><br>Costo del batch: ~$1.20 total.</div>
+      <div class="btag">One-time · Haiku · pgvector</div>
+    </div>
+
+    <div class="box bc-green">
+      <div class="bname">👁 IMAP Listener</div>
+      <div class="bdesc">Polling cada 2-5 min. Detecta correos nuevos. Los encola para clasificación. Nunca bloquea el flujo normal del usuario en Gmail.</div>
+      <div class="btag">Celery async</div>
+    </div>
+
+    <div class="box bc-green">
+      <div class="bname">🧠 Sender Intelligence</div>
+      <div class="bdesc">Perfil por contacto: peso estratégico, historial, tono de relación, tiempo de respuesta usual, temas recurrentes. Se enriquece con cada interacción.</div>
+      <div class="btag">pgvector · por tenant</div>
+    </div>
+
+    <div class="box bc-green">
+      <div class="bname">✍️ Voice Profile</div>
+      <div class="bdesc">Construido de enviados históricos. 12 atributos: formalidad, longitud, cierre, muletillas, tono por tipo de contacto. Se afina con cada corrección del usuario.</div>
+      <div class="btag">Haiku · por usuario</div>
+    </div>
+
+    <!-- Covey quadrant -->
+    <div style="flex:2; min-width:340px;">
+      <div class="covey-label">TABLERO COVEY — prioridad por urgencia × peso estratégico del sender</div>
+      <div class="covey">
+        <div class="covey-cell q1">
+          <div class="qname">Q1 · Atender ahora</div>
+          <div class="qdesc">Urgente + sender estratégico. Draft listo con contexto completo. Acción inmediata.</div>
+        </div>
+        <div class="covey-cell q2">
+          <div class="qname">Q2 · Planificar</div>
+          <div class="qdesc">No urgente + estratégico. Respuesta profunda. El sistema sugiere cuándo agendar tiempo.</div>
+        </div>
+        <div class="covey-cell q3">
+          <div class="qname">Q3 · Respuesta corta</div>
+          <div class="qdesc">Urgente + bajo peso. Draft mínimo o sugerencia de delegar. 1 clic para aprobar.</div>
+        </div>
+        <div class="covey-cell q4">
+          <div class="qname">Q4 · Archivar</div>
+          <div class="qdesc">Sin urgencia ni peso estratégico. Clasificado automáticamente. Sin acción requerida.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box bc-green">
+      <div class="bname">🔄 Feedback Loop</div>
+      <div class="bdesc">Cada movimiento del usuario entrena el sistema: movió Q3→Q1, editó el draft, archivó sin leer. Sin formulario. Sin configuración. Aprende solo con el uso.</div>
+      <div class="btag">Reinforcement · tiempo real</div>
+    </div>
+
+    <div class="box bc-green">
+      <div class="bname">✉️ Composición outbound</div>
+      <div class="bdesc">Usuario escribe 3 líneas de contexto ("llamada con Carlos sobre propuesta X"). Sistema genera correo completo en su voz con datos de la KB. Usuario aprueba → va a Draft de Gmail.</div>
+      <div class="btag">Sonnet · KB + Voice</div>
+    </div>
+
+    <div class="note full">
+      <strong>FaberLoom nunca envía.</strong> Siempre propone. El usuario aprueba → el draft va al cliente de correo real. El 100% del control de envío queda en el humano. FaberLoom es el copiloto, no el piloto.
+    </div>
+
+  </div>
+</div>
+
+<div class="arrow">↓↓↓</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     AGENTES DE DOMINIO
+══════════════════════════════════════════════════════════ -->
+<div class="section s-agents">
+  <div class="section-label">④ Agentes de Dominio — KB específica por agente, no genéricos</div>
+  <div class="section-body">
+
+    <div class="box bc-purp wide">
+      <div class="bname">🔧 Agente Técnico de Producto <span class="mvp">MVP</span></div>
+      <div class="bdesc">
+        Recibe por WhatsApp o consola: ficha técnica del cliente o descripción de necesidad.<br><br>
+        Busca en KB de productos (fichas, certificaciones, especificaciones).<br><br>
+        Devuelve: <em>"Marluvas 430 cumple 7/9 requisitos. Falla en: resistencia ácidos ASTM F1671 y altura tobillo. Más cercano en esos puntos: modelo 612."</em><br><br>
+        El vendedor recibe esto en 8 segundos sin llamar a nadie.
+      </div>
+      <div class="btag">Sonnet · KB Productos · WhatsApp</div>
+    </div>
+
+    <div class="box bc-purp wide">
+      <div class="bname">📋 Agente Compliance <span class="mvp">MVP</span></div>
+      <div class="bdesc">
+        Recibe un documento, nota o borrador.<br><br>
+        Revisa contra KB de políticas, reglamentos y procedimientos del tenant.<br><br>
+        Devuelve: qué está correcto, qué falta, qué contradice algo vigente, referencias obligatorias ausentes.<br><br>
+        No decide — señala. El humano resuelve.
+      </div>
+      <div class="btag">Sonnet · KB Compliance · email/consola</div>
+    </div>
+
+    <div class="box bc-purp wide">
+      <div class="bname">📊 Gerente de Marca / Inteligencia <span class="fut">sprint 3+</span></div>
+      <div class="bdesc">
+        Accede a KPIs, ventas por período, objetivos definidos en KB.<br><br>
+        Cuando métricas caen bajo umbral → propone acciones concretas basadas en historial de qué ha funcionado.<br><br>
+        <em>"Ventas Marluvas Colombia -23% vs objetivo. Distribuidores con mayor caída: X, Y, Z. Propuesta: activar promo Q2 + revisar crédito con Z."</em><br><br>
+        La parte más delicada: requiere parámetros de alerta bien definidos en KB.
+      </div>
+      <div class="btag">Opus · KB KPIs + Historial · proactivo</div>
+    </div>
+
+    <div class="note full">
+      <strong>Cada agente accede solo a la capa de KB que le corresponde.</strong> El agente técnico no ve pricing confidencial. El compliance no ve datos de ventas. La KB detrás de cada agente es el límite de su conocimiento — no el modelo de IA.
+    </div>
+
+  </div>
+</div>
+
+<div class="arrow">↓↓↓ <span>Visibility Filter por capa antes de cada búsqueda en pgvector</span></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     KNOWLEDGE BASE
+══════════════════════════════════════════════════════════ -->
+<div class="section s-kb">
+  <div class="section-label">⑤ Knowledge Base — el cerebro del negocio, granular y privado</div>
+  <div class="section-body">
+    <div class="kblayers">
+      <div class="kbl kbl1">
+        <div class="klname">Capa 1 · PERSONAL</div>
+        <div class="kldesc">Solo el usuario. Decisiones, notas, historial propio. Nunca sale al equipo ni a los agentes de otros roles.</div>
+      </div>
+      <div class="kbl kbl2">
+        <div class="klname">Capa 2 · ROL</div>
+        <div class="kldesc">Comparte con mismo rol. Procesos de área, playbooks de equipo.</div>
+      </div>
+      <div class="kbl kbl3">
+        <div class="klname">Capa 3 · ORGANIZACIÓN</div>
+        <div class="kldesc">Todo el tenant. Promovido con aprobación del admin. Fichas técnicas, políticas, procedimientos.</div>
+      </div>
+      <div class="kbl kbl4">
+        <div class="klname">Capa 4 · PÚBLICO/VIP</div>
+        <div class="kldesc">Catálogos, FAQs, fichas de producto. Accesible por externos en el futuro.</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px; width:100%; margin-top:4px; flex-wrap:wrap;">
+      <div class="box bc-blue" style="flex:2;">
+        <div class="bname">⬆ Flujo de conocimiento</div>
+        <div class="bdesc">Usuario crea en Capa 1 → propone "subir a organización" → Haiku clasifica y sugiere visibilidad → admin aprueba → sube a Capa 3/4. <strong>Default siempre restrictivo.</strong> El conocimiento se cocina en lo personal y se promueve cuando está maduro.</div>
+        <div class="btag">Gate de aprobación · no automático</div>
+      </div>
+      <div class="box bc-blue">
+        <div class="bname">🔒 Lo que nunca sale</div>
+        <div class="bdesc">Documento original, taxonomía, estructura de capas, metadata organizacional. Solo salen chunks anonimizados de ~500 tokens — irreversibles sin la estructura del servidor.</div>
+        <div class="btag">IP protegida</div>
+      </div>
+      <div class="box bc-blue">
+        <div class="bname">✨ Prompt Enhancer</div>
+        <div class="bdesc">Haiku refina la pregunta vaga antes de gastar tokens en modelo pesado. Ahorra 2-3 iteraciones. Costo: $0.0004/query.</div>
+        <div class="btag">Haiku · pre-proceso</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">↓↓↓ <span>Router decide modelo. Cliente nunca sabe cuál respondió.</span></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     ROUTER
+══════════════════════════════════════════════════════════ -->
+<div class="section s-router">
+  <div class="section-label">⑥ Router Inteligente — agnóstico de proveedor</div>
+  <div class="section-body" style="flex-direction:column;">
+    <div class="rstrip">
+      <div class="rs">
+        <div class="rstier">TIER 1</div>
+        <div class="rsmodel" style="color:#39d353;">pgvector directo</div>
+        <div class="rscost">$0.0003/query</div>
+        <div class="rspct">~60% del tráfico</div>
+      </div>
+      <div class="rs">
+        <div class="rstier">TIER 2</div>
+        <div class="rsmodel" style="color:#58a6ff;">Haiku / Gemini Flash</div>
+        <div class="rscost">$0.008/query</div>
+        <div class="rspct">~22% del tráfico</div>
+      </div>
+      <div class="rs">
+        <div class="rstier">TIER 3</div>
+        <div class="rsmodel" style="color:#ffa657;">Sonnet / GPT-4o</div>
+        <div class="rscost">$0.105/query</div>
+        <div class="rspct">~13% del tráfico</div>
+      </div>
+      <div class="rs">
+        <div class="rstier">TIER 4</div>
+        <div class="rsmodel" style="color:#ff7b72;">Opus · solo cuando necesario</div>
+        <div class="rscost">$0.90/query</div>
+        <div class="rspct">~5% del tráfico</div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:6px;">
+      <strong>Proveedor agnóstico:</strong> Anthropic · OpenAI · Google. El router elige el mejor precio/rendimiento según benchmarks actuales. El cliente no sabe ni necesita saber qué modelo respondió.<br>
+      <strong>Costo promedio ponderado por query:</strong> ~$0.089. Con 55% de uso real (modelo telco), margen efectivo 88-92%.
+    </div>
+  </div>
+</div>
+
+<div class="arrow">↑ ↓ <span>Solo chunks descontextualizados salen al exterior</span></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     EXTERNO
+══════════════════════════════════════════════════════════ -->
+<div class="section s-external">
+  <div class="section-label">⑦ APIs Externas & Storage</div>
+  <div class="section-body">
+    <div class="box bc-gray">
+      <div class="bname">Anthropic / OpenAI / Google</div>
+      <div class="bdesc">Reciben: query del usuario + 3-5 chunks de ~500 tokens. Nunca: documento completo, taxonomía, estructura organizacional.</div>
+      <div class="btag">Haiku · Sonnet · Opus · GPT-4o · Gemini</div>
+    </div>
+    <div class="box bc-gray">
+      <div class="bname">🐘 PostgreSQL + pgvector</div>
+      <div class="bdesc">knowledge_chunks (content, embedding 1536d, tenant_id, layer). Sin doc_type ni estructura visible. Aurora/RDS en producción.</div>
+      <div class="btag">Multi-tenant · ~2MB/1K chunks</div>
+    </div>
+    <div class="box bc-gray">
+      <div class="bname">🗃 MinIO / S3 + Redis</div>
+      <div class="bdesc">Docs originales con Signed URLs TTL 15min. Redis para rate limiting, cache de embeddings, cola Celery.</div>
+      <div class="btag">Signed URLs · TTL</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     PRICING
+══════════════════════════════════════════════════════════ -->
+<div class="section" style="margin-bottom:10px;">
+  <div class="section-label" style="background:#0a180e; color:#39d353; border:1px solid #3fb95044; border-bottom:none;">💰 Modelo Comercial</div>
+  <div class="section-body" style="border-color:#3fb95044; background:#06110a; flex-direction:column;">
+    <div style="display:flex; gap:16px; width:100%;">
+      <div style="flex:1;">
+        <div style="font-size:10px; color:#39d353; font-weight:700; margin-bottom:6px;">Individual</div>
+        <div class="plans">
+          <div class="plan"><div class="pname">STARTER</div><div class="pprice">$99</div><div class="pq">330 consultas/mes</div><div class="pm">Margen ~88%</div></div>
+          <div class="plan"><div class="pname">PRO</div><div class="pprice">$199</div><div class="pq">670 consultas/mes</div><div class="pm">Margen ~86%</div></div>
+          <div class="plan"><div class="pname">BUSINESS</div><div class="pprice">$299</div><div class="pq">1,000 consultas/mes</div><div class="pm">Margen ~84%</div></div>
+        </div>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:10px; color:#39d353; font-weight:700; margin-bottom:6px;">Organizacional (tokens compartidos · usuarios ilimitados)</div>
+        <div class="plans">
+          <div class="plan"><div class="pname">ORG S</div><div class="pprice">$1K</div><div class="pq">pool base</div><div class="pm">precio base</div></div>
+          <div class="plan"><div class="pname">ORG M</div><div class="pprice">$2K</div><div class="pq">2.5x pool</div><div class="pm">-10% por token</div></div>
+          <div class="plan"><div class="pname">ORG L</div><div class="pprice">$3K</div><div class="pq">5x pool</div><div class="pm">-15% por token</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:6px;">
+      Excedente $0.03/consulta · Modelo telco: usuario promedio usa 55% del plan · Lock-in natural: el sender intelligence + voice profile entrenados no se transfieren si se cancela
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     FUTURO
+══════════════════════════════════════════════════════════ -->
+<div class="section s-future">
+  <div class="section-label">⏳ Roadmap post-MVP</div>
+  <div class="section-body">
+    <div class="box bc-gray"><div class="bname">Self-hosted tier</div><div class="bdesc">Deploy en infra del cliente. Licencia mensual. Desbloquea enterprise regulado.</div><div class="btag">v2</div></div>
+    <div class="box bc-gray"><div class="bname">Matrix Federation</div><div class="bdesc">Protocolo federado para compartir capas KB entre tenants. Distribuidor ↔ proveedor.</div><div class="btag">v3</div></div>
+    <div class="box bc-gray"><div class="bname">Portal VIP</div><div class="bdesc">Acceso externo para clientes del cliente. Capa 4 pública.</div><div class="btag">sprint 4</div></div>
+    <div class="box bc-gray"><div class="bname">Editor nativo KB</div><div class="bdesc">Crear knowledge directamente en FaberLoom con slash commands. Hoy: sube archivos.</div><div class="btag">v1.5</div></div>
+    <div class="box bc-gray"><div class="bname">Gemma local</div><div class="bdesc">GPU server cuando volumen justifique. Reemplaza Haiku T2 a costo ~$0.</div><div class="btag">cuando 10+ tenants</div></div>
+  </div>
+</div>
+
+<div style="margin-top:14px; font-size:9px; color:#444c56; text-align:center; letter-spacing:1px;">
+  faberloom.com · Muito Work Limitada · CR · DRAFT v2 — no indexar en pgvector
+</div>
+
+</body>
+</html>

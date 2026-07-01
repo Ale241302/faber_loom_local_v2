@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mesa de Control · Cotizaciones Técnicas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --coral-primary: #C96442;
+    --coral-hover: #A84F33;
+    --coral-tint: rgba(201,100,66,0.10);
+    --bg-primary: #F4F1ED;
+    --bg-surface: #FFFFFF;
+    --bg-subtle: #EDE8DF;
+    --text-primary: #1F1E1C;
+    --text-secondary: #5A544C;
+    --text-muted: #8A8278;
+    --border-subtle: #D8D0C0;
+    --border-soft: #E5DFD3;
+    --evidence-highlight: #6E1F2B;
+    --evidence-tint: rgba(110,31,43,0.08);
+    --salvia: #7A8E6D;
+    --salvia-tint: rgba(122,142,109,0.10);
+    --amber: #B88A4A;
+    --amber-tint: rgba(184,138,74,0.10);
+    --vino: #8B2F2F;
+    --pizarra: #5A6B7C;
+    --pizarra-tint: rgba(90,107,124,0.10);
+  }
+  [data-theme="dark"] {
+    --coral-primary: #C96442;
+    --coral-hover: #D97757;
+    --coral-tint: rgba(217,119,87,0.14);
+    --bg-primary: #1F1E1C;
+    --bg-surface: #2A2824;
+    --bg-subtle: #34312C;
+    --text-primary: #F4F1ED;
+    --text-secondary: #B8B0A4;
+    --text-muted: #8A8278;
+    --border-subtle: #3D3A34;
+    --border-soft: #34312C;
+    --evidence-highlight: #6E1F2B;
+    --evidence-tint: rgba(110,31,43,0.08);
+    --salvia: #8FA481;
+    --salvia-tint: rgba(143,164,129,0.12);
+    --amber: #D4A567;
+    --amber-tint: rgba(212,165,103,0.12);
+    --vino: #C76E6E;
+    --pizarra: #7C8EA0;
+    --pizarra-tint: rgba(124,142,160,0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: Inter, -apple-system, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .serif { font-family: Georgia, "Times New Roman", serif; }
+  .mono { font-family: "JetBrains Mono", "SF Mono", Menlo, monospace; }
+  .gloss {
+    font-family: Georgia, serif;
+    font-style: italic;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--coral-primary);
+  }
+  .gloss-arrow {
+    color: var(--coral-primary);
+    margin-right: 4px;
+    font-style: normal;
+    font-family: Inter, sans-serif;
+  }
+
+  .surface { background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+  .border-c { border-color: var(--border-subtle); }
+  .border-s { border-color: var(--border-soft); }
+  .text-2 { color: var(--text-secondary); }
+  .text-3 { color: var(--text-muted); }
+  .bg-bg { background: var(--bg-primary); }
+  .bg-subtle { background: var(--bg-subtle); }
+
+  /* Wordmark */
+  .wm { font-family: Georgia, serif; font-style: italic; letter-spacing: -0.01em; }
+  .wm-faber { color: var(--text-primary); }
+  .wm-loom { color: var(--coral-primary); }
+
+  /* Status dots for sub-agents */
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot-green { background: var(--salvia); }
+  .dot-blue { background: var(--pizarra); }
+  .dot-amber { background: var(--amber); }
+  .dot-gray { background: var(--text-muted); }
+
+  /* Feed item · etiqueta mono uppercase */
+  .label-mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+
+  /* Feed cards · border-left signature */
+  .feed-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-left-width: 3px;
+    border-radius: 4px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: border-color .12s, transform .12s;
+    position: relative;
+  }
+  .feed-card:hover { border-color: var(--text-muted); }
+  .feed-card.kind-recibido { border-left-color: var(--border-subtle); }
+  .feed-card.kind-listo { border-left-color: var(--salvia); }
+  .feed-card.kind-alarma { border-left-color: var(--coral-primary); }
+
+  /* Tab pills */
+  .tab {
+    padding: 6px 12px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    background: transparent;
+    border-top: 0; border-left: 0; border-right: 0;
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--text-primary); border-bottom-color: var(--coral-primary); }
+  .tab .count { color: var(--text-muted); margin-left: 4px; }
+  .tab.active .count { color: var(--coral-primary); }
+
+  /* Buttons */
+  .btn-coral {
+    background: var(--coral-primary); color: white;
+    padding: 8px 14px; border-radius: 4px;
+    font-size: 13px; font-weight: 500;
+    border: 0; cursor: pointer;
+  }
+  .btn-coral:hover { background: var(--coral-hover); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-primary);
+    padding: 7px 13px; border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+  }
+  .btn-ghost:hover { background: var(--bg-subtle); }
+  .btn-ghost-danger {
+    background: transparent;
+    color: var(--vino);
+    padding: 7px 13px; border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+  }
+  .btn-ghost-danger:hover { background: var(--evidence-tint); border-color: var(--vino); }
+
+  /* Sidebar pipeline */
+  .pipeline-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 14px 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--bg-surface);
+    transition: border-color .12s, background .12s;
+  }
+  .pipeline-row:hover { border-color: var(--text-muted); }
+  .pipeline-row.active { border-color: var(--coral-primary); background: var(--coral-tint); }
+  .pipeline-row.alarma.active { border-color: var(--coral-primary); }
+
+  /* Modals & drawers */
+  .modal-back {
+    position: fixed; inset: 0; background: rgba(31,30,28,0.55);
+    display: none; z-index: 60;
+    align-items: center; justify-content: center;
+  }
+  .modal-back.show { display: flex; }
+  .agent-back {
+    position: fixed; inset: 0; background: rgba(31,30,28,0.40);
+    display: none; z-index: 50;
+  }
+  .agent-back.show { display: block; }
+  .agent-panel {
+    position: fixed; right: 0; top: 0; bottom: 0;
+    width: 80vw; max-width: 1600px;
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-subtle);
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    z-index: 55;
+    display: flex; flex-direction: column;
+  }
+  .agent-panel.show { transform: translateX(0); }
+
+  /* Detail side drawer (item expand from feed click) */
+  .detail-back {
+    position: fixed; inset: 0; background: rgba(31,30,28,0.30);
+    display: none; z-index: 30;
+  }
+  .detail-back.show { display: block; }
+  .detail-drawer {
+    position: fixed; right: 0; top: 0; bottom: 0;
+    width: 560px; max-width: 100vw;
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-subtle);
+    transform: translateX(100%);
+    transition: transform .2s ease;
+    z-index: 35;
+    display: flex; flex-direction: column;
+  }
+  .detail-drawer.show { transform: translateX(0); }
+
+  /* Autocomplete */
+  .ac {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(31,30,28,0.10);
+    display: none; z-index: 20;
+  }
+  .ac.show { display: block; }
+  .ac-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; cursor: pointer;
+  }
+  .ac-row:hover { background: var(--bg-subtle); }
+  .ac-row .av {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--coral-tint); color: var(--coral-primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-family: "JetBrains Mono", monospace;
+    flex-shrink: 0;
+  }
+
+  /* Sparkline */
+  .spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .spark span { width: 3px; background: var(--text-muted); opacity: 0.4; border-radius: 1px; }
+  .spark span.hi { background: var(--coral-primary); opacity: 0.9; }
+
+  /* Tooltip */
+  .tip {
+    position: absolute; left: 0; top: calc(100% + 6px);
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: 4px; padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(31,30,28,0.10);
+    width: 260px; z-index: 25;
+    display: none; pointer-events: none;
+  }
+  .has-tip:hover .tip { display: block; }
+
+  /* Text edit diff */
+  .diff-add { background: var(--salvia-tint); text-decoration: underline; text-decoration-color: var(--salvia); }
+  .diff-del { background: rgba(139,47,47,0.10); text-decoration: line-through; color: var(--text-muted); }
+
+  /* Chat bubbles */
+  .bubble-am {
+    background: var(--bg-subtle);
+    padding: 10px 14px; border-radius: 4px 4px 4px 0;
+    max-width: 82%; align-self: flex-start;
+  }
+  .bubble-agent {
+    background: var(--coral-tint);
+    padding: 10px 14px; border-radius: 4px 4px 0 4px;
+    max-width: 82%; align-self: flex-end;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* Selection */
+  ::selection { background: var(--coral-tint); }
+
+  /* Pulse for alarma */
+  @keyframes pulse-coral {
+    0%, 100% { box-shadow: 0 0 0 0 var(--coral-tint); }
+    50% { box-shadow: 0 0 0 4px transparent; }
+  }
+  .pulse-coral { animation: pulse-coral 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<!-- ZONA 1 · HEADER STICKY -->
+<header class="sticky top-0 z-40" style="background: var(--bg-primary); border-bottom: 1px solid var(--border-subtle);">
+  <div class="px-7 pt-4 pb-3 flex items-start gap-6">
+    <!-- Wordmark vertical lockup -->
+    <div class="flex-shrink-0">
+      <div class="serif italic" style="font-size: 24px; line-height: 1.05; color: var(--text-primary);">Mesa de Control</div>
+      <div class="mono" style="font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px;">Cotizaciones Técnicas</div>
+    </div>
+
+    <!-- Search -->
+    <div class="flex-1 max-w-2xl mt-1 relative">
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search"
+          class="w-full mono surface rounded pl-9 pr-12 py-2 text-xs"
+          style="color: var(--text-primary); border: 1px solid var(--border-subtle);"
+          placeholder="trace · cuenta · thread       ej: trc_a8f2 · acc_indnte · thr_2046" />
+        <span class="absolute right-3 top-1/2 -translate-y-1/2 mono text-3" style="font-size: 10px;">⌘K</span>
+        <div id="search-ac" class="ac">
+          <div class="ac-row"><span class="av">tr</span><div class="flex-1"><div class="text-xs font-medium">trc_a8f2 · F1 quote intent</div><div class="mono text-3" style="font-size: 10px;">Industrias del Norte · 12m ago</div></div></div>
+          <div class="ac-row"><span class="av">ac</span><div class="flex-1"><div class="text-xs font-medium">acc_indnte · Industrias del Norte SA</div><div class="mono text-3" style="font-size: 10px;">Saltillo MX · tier gold</div></div></div>
+          <div class="ac-row"><span class="av">th</span><div class="flex-1"><div class="text-xs font-medium">thr_2046 · Petrolera del Bajío</div><div class="mono text-3" style="font-size: 10px;">3 mensajes · activo</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AM identity -->
+    <div class="flex items-center gap-3 mt-1">
+      <div class="text-right leading-tight">
+        <div class="text-sm font-medium">Álvaro Restrepo</div>
+        <div class="mono text-3" style="font-size: 10px;">MWT · operación</div>
+      </div>
+      <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0" style="background: var(--coral-tint); color: var(--coral-primary);">AR</div>
+      <button id="theme-toggle" class="btn-ghost p-2" style="line-height: 0;" title="cambiar tema">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-7.54-7.54A9.4 9.4 0 0 0 12 3z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sub-agente row · estados humanos -->
+  <div class="px-7 pb-3 flex items-center gap-5 flex-wrap">
+    <div class="flex items-baseline gap-2">
+      <span class="serif italic text-sm" style="color: var(--text-secondary);">Tu archetype</span>
+      <span class="mono text-3" style="font-size: 10px;">AG_AM_MWT</span>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <span class="flex items-center gap-1.5"><span class="dot dot-green"></span><span style="color: var(--text-secondary);">9 listos y operando</span></span>
+      <span class="text-3">·</span>
+      <span class="flex items-center gap-1.5"><span class="dot dot-blue"></span><span style="color: var(--text-secondary);">2 ajustando</span></span>
+      <span class="text-3">·</span>
+      <span class="flex items-center gap-1.5"><span class="dot dot-amber"></span><span style="color: var(--text-secondary);">0 necesitan visto bueno</span></span>
+    </div>
+    <span class="text-3">·</span>
+    <div class="flex items-center gap-2 text-xs">
+      <span class="serif italic" style="color: var(--text-secondary);">Pool de aprendizaje</span>
+      <span class="dot dot-green"></span>
+      <span style="color: var(--text-secondary);">curador al día</span>
+      <span class="gloss"><span class="gloss-arrow">→</span>3 patterns nuevos esta semana</span>
+    </div>
+  </div>
+
+  <!-- ZONA 2 · CINTILLA EDITORIAL -->
+  <div class="px-7 py-4 grid grid-cols-6 gap-6 border-t" style="border-color: var(--border-subtle); background: var(--bg-surface);">
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">RFQ esta semana</div>
+      <div class="serif" style="font-size: 32px; line-height: 1.1; color: var(--text-primary); font-weight: 400;">12</div>
+      <div class="gloss"><span class="gloss-arrow">→</span>3 esperando aprobación</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">RFQ recibidos · semana en curso</div>
+        <div class="text-xs text-2 mb-2 leading-relaxed">Solicitudes de cotización ingresadas vía email/portal a tu archetype · semana lunes-domingo.</div>
+        <div class="spark"><span></span><span class="hi"></span><span></span><span class="hi"></span><span class="hi"></span><span class="hi"></span><span class="hi"></span></div>
+        <div class="mono text-3" style="font-size: 10px; margin-top: 4px;">7d trend · pico mié</div>
+      </div>
+    </button>
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Cuentas activas</div>
+      <div class="serif" style="font-size: 32px; line-height: 1.1; font-weight: 400;">89</div>
+      <div class="gloss"><span class="gloss-arrow">→</span>tier gold · 12</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">Cuentas activas · MWT</div>
+        <div class="text-xs text-2 leading-relaxed">Cuentas con actividad ≤ 60d · gold/silver/bronze por volumen 12m.</div>
+      </div>
+    </button>
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Tu RFQ → cotización</div>
+      <div class="serif" style="font-size: 32px; line-height: 1.1; font-weight: 400;">4.2 <span style="font-size: 18px; color: var(--text-muted);">h</span></div>
+      <div class="gloss"><span class="gloss-arrow">→</span>meta &lt;24h cumplida</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">Tiempo medio RFQ a cotización</div>
+        <div class="text-xs text-2 leading-relaxed">Mediana 30d · desde ingreso del RFQ hasta envío de proforma firmada.</div>
+      </div>
+    </button>
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Drafts esperando firma</div>
+      <div class="serif" style="font-size: 32px; line-height: 1.1; font-weight: 400; color: var(--coral-primary);">3</div>
+      <div class="gloss"><span class="gloss-arrow">→</span>1 venció ack hace 1h</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">Drafts del agente esperando tu firma</div>
+        <div class="text-xs text-2 leading-relaxed">Cotizaciones devueltas por @cotizador · listas para revisar y enviar.</div>
+      </div>
+    </button>
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Sin actividad &gt;14d</div>
+      <div class="serif" style="font-size: 32px; line-height: 1.1; font-weight: 400; color: var(--amber);">4</div>
+      <div class="gloss"><span class="gloss-arrow">→</span>2 oro en pausa</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">Cuentas frías</div>
+        <div class="text-xs text-2 leading-relaxed">Sin email/RFQ/proforma en últimos 14 días · 2 son tier gold.</div>
+      </div>
+    </button>
+
+    <button class="metric text-left has-tip relative">
+      <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Cost hoy</div>
+      <div class="serif mono" style="font-size: 32px; line-height: 1.1; font-weight: 400;">$4.20</div>
+      <div class="gloss"><span class="gloss-arrow">→</span>−65% vs baseline</div>
+      <div class="tip">
+        <div class="text-xs font-medium mb-1.5">Costo de cómputo · hoy</div>
+        <div class="text-xs text-2 leading-relaxed">Tokens + tools de los 9 sub-agentes orquestados · vs. baseline pre-archetype.</div>
+      </div>
+    </button>
+
+  </div>
+
+  <div class="px-7 py-2 flex items-center justify-end" style="border-top: 1px solid var(--border-soft);">
+    <button class="btn-ghost text-xs flex items-center gap-1.5" style="font-size: 11px; padding: 4px 10px;">
+      <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
+      <span class="mono" style="font-size: 10px;">configurar · 6 de 28 métricas</span>
+    </button>
+  </div>
+</header>
+
+<!-- MAIN GRID · 65/35 -->
+<main class="px-7 py-6 max-w-[1920px] mx-auto" style="display: grid; grid-template-columns: minmax(0, 1.86fr) minmax(0, 1fr); gap: 28px;">
+
+  <!-- IZQUIERDA · HOY ENTRA -->
+  <section>
+    <div class="mb-4 flex items-baseline justify-between">
+      <div>
+        <h2 class="serif italic" style="font-size: 22px; line-height: 1.1; font-weight: 400;">Hoy entra</h2>
+        <p class="text-xs text-2 mt-1">Lo que requiere tu atención · ordenado por urgencia × monto × edad</p>
+      </div>
+      <div class="text-xs text-3 mono" style="font-size: 10px;">priorización editorial · severity-weighted</div>
+    </div>
+
+    <!-- Tabs filtro -->
+    <div class="flex items-center gap-1 mb-4" style="border-bottom: 1px solid var(--border-subtle);">
+      <button class="tab active" data-filter="all">Todo<span class="count">13</span></button>
+      <button class="tab" data-filter="alarma">ALARMA<span class="count">1</span></button>
+      <button class="tab" data-filter="listo">LISTO<span class="count">4</span></button>
+      <button class="tab" data-filter="recibido">RECIBIDO<span class="count">8</span></button>
+    </div>
+
+    <div id="feed" class="space-y-2.5">
+
+      <!-- ALARMA item · #1 -->
+      <article class="feed-card kind-alarma" data-kind="alarma" data-id="al-1" onclick="openDetail('al-1')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono" style="color: var(--coral-primary);">ALARMA</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">@cotizador · tu agente</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 8 min</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Industrias del Norte SA · 240 pares BC-7240</div>
+        <div class="text-xs text-2 mb-2.5">No supo cerrar · esperando que entres y le enseñes</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>policy gate bloqueó · validez no especificada</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>confianza 0.41 · umbral 0.70</div>
+        </div>
+      </article>
+
+      <!-- LISTO #1 -->
+      <article class="feed-card kind-listo" data-kind="listo" data-id="li-1" onclick="openListo('li-1')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono" style="color: var(--salvia);">LISTO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">@cotizador devolvió · hace 2 min</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">DRAFT-MWT-2026-04-1284</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Cotización · Industrias del Norte · 120 pares BC-7240</div>
+        <div class="text-xs text-2 mb-2.5">Total $48,200 MXN · 30d validez · DDP MX</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>margen 27.5% sobre floor 22%</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>close-prob 67% · patterns industria similar</div>
+        </div>
+      </article>
+
+      <!-- RECIBIDO #1 -->
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-1" onclick="openDetail('re-1')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">email · Marluvas</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 12 min</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Industrias del Norte SA · Saltillo MX</div>
+        <div class="text-xs text-2 mb-2.5">RFQ · 240 pares BC-7240 dieléctrica · talla 27-28 · entrega Saltillo</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>cliente tier gold · último RFQ ganado 3-mar 180 pares</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>BC-7240 stock 285 · lead 5d · cert ASTM F2413-18 vigente</div>
+        </div>
+      </article>
+
+      <!-- LISTO #2 -->
+      <article class="feed-card kind-listo" data-kind="listo" data-id="li-2" onclick="openListo('li-2')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono" style="color: var(--salvia);">LISTO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">@cotizador devolvió · hace 18 min</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">DRAFT-MWT-2026-04-1283</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Cotización · Construsur Andina · 80 pares BC-3120A</div>
+        <div class="text-xs text-2 mb-2.5">Total $14,800 USD · 15d validez · CIF Bogotá</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>margen 24% sobre floor 22%</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>close-prob 54% · cliente silver con histórico ok</div>
+        </div>
+      </article>
+
+      <!-- RECIBIDO #2 -->
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-2" onclick="openDetail('re-2')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">portal · Tecmater</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 47 min</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Petrolera del Bajío · Querétaro MX</div>
+        <div class="text-xs text-2 mb-2.5">RFQ · 600 pares TC-7800 minera · entrega plataforma · urgencia alta</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>cliente tier platinum · 3 RFQ activos en backlog</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>TC-7800 stock 142 · faltan 458 · lead 12d</div>
+        </div>
+      </article>
+
+      <!-- RECIBIDO #3 -->
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-3" onclick="openDetail('re-3')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">email · Marluvas</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 1h 14m</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Minera Andes Centrales · Lima PE · cliente nuevo</div>
+        <div class="text-xs text-2 mb-2.5">Consulta inicial · interesado en BC-7240 + BC-3120 · pide ficha técnica + listas</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>nuevo · sin historial · DPA pendiente</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>BC-7240 stock 285 ok · BC-3120 stock 91 limitado</div>
+        </div>
+      </article>
+
+      <!-- LISTO #3 -->
+      <article class="feed-card kind-listo" data-kind="listo" data-id="li-3" onclick="openListo('li-3')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono" style="color: var(--salvia);">LISTO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">@cotizador devolvió · hace 1h 38m</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">DRAFT-MWT-2026-04-1281</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Cotización · Logística Terminal · 40 pares TC-5500</div>
+        <div class="text-xs text-2 mb-2.5">Total $2,160 USD · 30d validez · DAP San José</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>margen 31% holgado</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>close-prob 71% · re-orden silver mensual</div>
+        </div>
+      </article>
+
+      <!-- RECIBIDO #4 -->
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-4" onclick="openDetail('re-4')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">email · Tecmater</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 2h 03m</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Construsur Andina · Bogotá CO</div>
+        <div class="text-xs text-2 mb-2.5">Seguimiento OC-4821 · solicitan ETA actualizado y prefactura ajustada</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>OC en preparación · embarque programado 3-may</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>tier silver · histórico 11 OC últimos 12m</div>
+        </div>
+      </article>
+
+      <!-- LISTO #4 -->
+      <article class="feed-card kind-listo" data-kind="listo" data-id="li-4" onclick="openListo('li-4')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono" style="color: var(--salvia);">LISTO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">@redactor devolvió · hace 2h 47m</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">EMAIL-MWT-2026-04-892</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Respuesta a Petrolera del Bajío · ETA orden previa</div>
+        <div class="text-xs text-2 mb-2.5">Borrador email · 3 párrafos · adjunta tracking</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>tono formal · alineado con histórico cuenta</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>tracking validado · 3min freshness</div>
+        </div>
+      </article>
+
+      <!-- RECIBIDO #5..8 colapsados visualmente al final -->
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-5" onclick="openDetail('re-5')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">call · transcrita</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 3h 12m</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Industrias del Norte SA · llamada con Mariana López</div>
+        <div class="text-xs text-2 mb-2.5">Consulta condiciones de pago para próxima orden grande · pidió respuesta hoy</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>tier gold · pago 30d aprobado</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>compromiso de respuesta hoy &lt;18:00</div>
+        </div>
+      </article>
+
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-6" onclick="openDetail('re-6')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">email · Marluvas</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 4h 28m</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Distribuidora Sur · Mérida MX · prospecto</div>
+        <div class="text-xs text-2 mb-2.5">Solicita catálogo Marluvas + Tecmater para reseller pilot</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>prospecto · sin DPA · proceso onboarding pendiente</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>política reseller pide approve director</div>
+        </div>
+      </article>
+
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-7" onclick="openDetail('re-7')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">email · Tecmater</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">hace 5h 03m</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Construsur Andina · queja calidad lote LX-2098</div>
+        <div class="text-xs text-2 mb-2.5">3 pares BC-3120 reportan despegue de plantilla &lt;30d uso</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>lote LX-2098 · 1 queja previa registrada</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>política garantía cubre &lt;90d defecto fábrica</div>
+        </div>
+      </article>
+
+      <article class="feed-card kind-recibido" data-kind="recibido" data-id="re-8" onclick="openDetail('re-8')">
+        <header class="flex items-baseline justify-between mb-1.5">
+          <div class="flex items-baseline gap-2.5">
+            <span class="label-mono text-3">RECIBIDO</span>
+            <span class="text-3 mono" style="font-size: 10px;">·</span>
+            <span class="text-xs text-2">portal · Marluvas</span>
+          </div>
+          <span class="text-3 mono" style="font-size: 10px;">ayer 17:42</span>
+        </header>
+        <div class="text-sm font-medium mb-0.5">Logística Terminal · San José CR</div>
+        <div class="text-xs text-2 mb-2.5">Re-orden mensual · 40 pares TC-5500 talla 26-29</div>
+        <div class="space-y-1">
+          <div class="gloss"><span class="gloss-arrow">→</span>re-orden recurrente · histórico 11 meses</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>TC-5500 stock 320 ok · cotización lista en LISTO #3</div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- DERECHA · MI PIPELINE -->
+  <aside>
+    <div class="mb-4">
+      <h2 class="serif italic" style="font-size: 22px; line-height: 1.1; font-weight: 400;">Mi pipeline</h2>
+      <p class="text-xs text-2 mt-1">Estado del trabajo · click para filtrar el feed</p>
+    </div>
+
+    <div class="space-y-2 mb-7">
+      <button class="pipeline-row w-full text-left" data-pipe="encurso" onclick="filterPipe('encurso', this)">
+        <div>
+          <div class="mono" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);">EN CURSO</div>
+          <div class="text-xs text-3 mt-0.5">tareas que asignaste · agentes trabajando</div>
+        </div>
+        <span class="serif" style="font-size: 28px; font-weight: 400; line-height: 1;">3</span>
+      </button>
+
+      <button class="pipeline-row w-full text-left" data-pipe="listo" onclick="filterPipe('listo', this)">
+        <div>
+          <div class="mono" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);">ESPERA FIRMA</div>
+          <div class="text-xs text-3 mt-0.5">drafts devueltos · listos para tu firma</div>
+        </div>
+        <span class="serif" style="font-size: 28px; font-weight: 400; line-height: 1;">4</span>
+      </button>
+
+      <button class="pipeline-row w-full text-left alarma" data-pipe="alarma" onclick="filterPipe('alarma', this)">
+        <div>
+          <div class="mono" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--coral-primary);">ALARMA</div>
+          <div class="text-xs text-3 mt-0.5">agentes pidiendo iteración</div>
+        </div>
+        <span class="serif" style="font-size: 28px; font-weight: 400; line-height: 1; color: var(--coral-primary);">1</span>
+      </button>
+    </div>
+
+    <!-- EN CURSO expand · siempre visible compacto -->
+    <div class="surface rounded p-4 mb-5">
+      <div class="serif italic mb-3" style="font-size: 15px;">En curso ahora</div>
+      <div class="space-y-2.5 text-xs">
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium truncate">@cotizador · Petrolera del Bajío</div>
+            <div class="text-3 mono" style="font-size: 10px;">cotización 600× TC-7800</div>
+          </div>
+          <span class="mono text-2" style="font-size: 10px;">~3m restante</span>
+        </div>
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium truncate">@redactor · Distribuidora Sur</div>
+            <div class="text-3 mono" style="font-size: 10px;">email apertura reseller</div>
+          </div>
+          <span class="mono text-2" style="font-size: 10px;">~1m restante</span>
+        </div>
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium truncate">@analista · Construsur</div>
+            <div class="text-3 mono" style="font-size: 10px;">queja lote LX-2098 · análisis</div>
+          </div>
+          <span class="mono text-2" style="font-size: 10px;">~estima n/a</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cuenta foco · contextual al item activo -->
+    <div class="surface rounded p-4">
+      <div class="mono text-3 mb-1.5" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Cuenta en foco</div>
+      <div class="serif italic mb-1" style="font-size: 17px;">Industrias del Norte SA</div>
+      <div class="text-xs text-2 mb-3">Saltillo MX · tier gold · acc_indnte</div>
+      <div class="space-y-1.5 text-xs">
+        <div class="flex items-baseline justify-between"><span class="text-3">items abiertos</span><span class="font-medium">3</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">última actividad</span><span class="font-medium">12m</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">RFQ ganados 90d</span><span class="font-medium">7 / 11</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">payment</span><span class="font-medium" style="color: var(--salvia);">al día</span></div>
+      </div>
+      <div class="gloss mt-3 pt-3" style="border-top: 1px solid var(--border-soft);"><span class="gloss-arrow">→</span>último RFQ ganado 3-mar · 180 pares · margen 28%</div>
+    </div>
+  </aside>
+</main>
+
+<!-- ZONA 4 · FOOTER -->
+<footer class="px-7 py-4 mt-2 flex items-baseline justify-between" style="border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+  <div class="text-xs text-3">
+    Tu episódica L2 · 89 días retention · datos anonymized antes de Layer 1
+    <span class="gloss ml-2"><span class="gloss-arrow">→</span>DPA pendiente · firma director esperada</span>
+  </div>
+  <div class="text-xs text-3">
+    powered by <span class="wm"><span class="wm-faber">Faber</span><span class="wm-loom">loom</span></span>
+  </div>
+</footer>
+
+
+<!-- ============ DETAIL DRAWER (RECIBIDO + ALARMA expand) ============ -->
+<div class="detail-back" id="detail-back" onclick="closeDetail()"></div>
+<aside class="detail-drawer" id="detail-drawer">
+  <header class="px-6 py-4 flex items-start justify-between" style="border-bottom: 1px solid var(--border-subtle);">
+    <div class="flex-1 min-w-0">
+      <div class="mono text-3 mb-1" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;" id="detail-kind-label">RECIBIDO · email · marluvas</div>
+      <div class="serif italic" style="font-size: 18px; line-height: 1.2;" id="detail-title">Industrias del Norte SA</div>
+      <div class="text-xs text-2 mt-0.5" id="detail-sub">Saltillo MX · tier gold</div>
+    </div>
+    <button class="btn-ghost ml-3" onclick="closeDetail()" style="padding: 4px 10px;">✕</button>
+  </header>
+
+  <div class="flex-1 overflow-y-auto p-6 space-y-5" id="detail-body">
+    <!-- Body se llena por JS · placeholder default -->
+  </div>
+
+  <footer class="px-6 py-4 relative" style="border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+    <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Asignar a un agente</div>
+    <div class="relative">
+      <input id="assign-input"
+        class="w-full surface rounded px-3 py-2.5 text-sm"
+        style="color: var(--text-primary); border: 1px solid var(--border-subtle);"
+        placeholder="@agente   tarea libre   ej: @cotizador entrega ya con descuento 8%, urgente"
+        oninput="onAssignInput(event)" onkeydown="onAssignKey(event)" />
+      <div id="assign-ac" class="ac">
+        <div class="ac-row" onclick="pickAgent('cotizador')"><span class="av">co</span><div class="flex-1"><div class="text-sm font-medium">@cotizador</div><div class="text-3" style="font-size: 11px;">arma proformas con evidence bundle · éxito 71%</div></div></div>
+        <div class="ac-row" onclick="pickAgent('redactor')"><span class="av">re</span><div class="flex-1"><div class="text-sm font-medium">@redactor</div><div class="text-3" style="font-size: 11px;">borradores email tono cuenta · éxito 84%</div></div></div>
+        <div class="ac-row" onclick="pickAgent('analista')"><span class="av">an</span><div class="flex-1"><div class="text-sm font-medium">@analista</div><div class="text-3" style="font-size: 11px;">incidencias · análisis lote · éxito 62%</div></div></div>
+        <div class="ac-row" onclick="pickAgent('investigador')"><span class="av">in</span><div class="flex-1"><div class="text-sm font-medium">@investigador</div><div class="text-3" style="font-size: 11px;">research cuenta · KB profunda · éxito 78%</div></div></div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 mt-3">
+      <button class="btn-ghost" onclick="closeDetail()">Cancelar</button>
+      <button class="btn-coral" id="assign-btn" onclick="doAssign()">Asignar</button>
+    </div>
+  </footer>
+</aside>
+
+
+<!-- ============ LISTO MODAL · expanded card ============ -->
+<div class="modal-back" id="listo-back" onclick="if(event.target===this) closeListo()">
+  <div class="surface rounded" style="width: 720px; max-height: 88vh; overflow-y: auto;">
+    <header class="px-6 py-4 flex items-start justify-between" style="border-bottom: 1px solid var(--border-subtle);">
+      <div>
+        <div class="mono text-3 mb-1" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">DRAFT · esperando tu firma</div>
+        <div class="serif italic" style="font-size: 20px; line-height: 1.15;" id="listo-title">Proforma · Industrias del Norte SA</div>
+        <div class="mono text-3 mt-1" style="font-size: 11px;" id="listo-id">DRAFT-MWT-2026-04-1284</div>
+      </div>
+      <button class="btn-ghost" onclick="closeListo()" style="padding: 4px 10px;">✕</button>
+    </header>
+
+    <div class="p-6 space-y-5">
+      <!-- Proforma preview -->
+      <div class="surface rounded" style="border-color: var(--border-soft);">
+        <div class="px-4 py-3" style="border-bottom: 1px solid var(--border-soft); background: var(--bg-subtle);">
+          <div class="flex items-baseline justify-between">
+            <div class="serif italic" style="font-size: 15px;">Proforma · MWT · Marluvas</div>
+            <div class="mono text-3" style="font-size: 11px;">2026-04-30</div>
+          </div>
+        </div>
+        <div class="px-4 py-3 text-sm">
+          <div class="grid grid-cols-[1fr_60px_90px_90px] gap-3 mono" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); padding-bottom: 6px; border-bottom: 1px solid var(--border-soft);">
+            <span>SKU · descripción</span>
+            <span class="text-right">cant</span>
+            <span class="text-right">u/par</span>
+            <span class="text-right">subtotal</span>
+          </div>
+          <div class="grid grid-cols-[1fr_60px_90px_90px] gap-3 py-2.5" style="border-bottom: 1px solid var(--border-soft);">
+            <div>
+              <div class="font-medium">BC-7240 · bota dieléctrica</div>
+              <div class="text-3 text-xs">talla 25-28 · puntera composite · ASTM F2413-18</div>
+            </div>
+            <span class="text-right mono">120</span>
+            <span class="text-right mono">$325.00</span>
+            <span class="text-right mono font-medium">$39,000</span>
+          </div>
+          <div class="grid grid-cols-[1fr_60px_90px_90px] gap-3 py-2.5" style="border-bottom: 1px solid var(--border-soft);">
+            <div>
+              <div class="font-medium">Flete DDP MX</div>
+              <div class="text-3 text-xs">3PL Saltillo → Saltillo · 5d</div>
+            </div>
+            <span class="text-right mono">·</span>
+            <span class="text-right mono">·</span>
+            <span class="text-right mono">$1,200</span>
+          </div>
+          <div class="grid grid-cols-[1fr_60px_90px_90px] gap-3 pt-3 mt-1">
+            <div class="font-medium">Total · MXN · 30d validez</div>
+            <span></span>
+            <span></span>
+            <span class="text-right serif italic" style="font-size: 18px;">$48,200</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evidence per-line -->
+      <div>
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Evidence per-line · BC-7240</div>
+        <div class="surface rounded p-4 space-y-1.5" style="border-color: var(--border-soft);">
+          <div class="gloss"><span class="gloss-arrow">→</span>precio $325/par · lista 2026-04-01 · 12d freshness</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>stock 285 · 3PL Saltillo · 3min freshness</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>ASTM F2413-18 vigente · cert hasta 2027-08</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>margen 27.5% · sobre floor 22%</div>
+        </div>
+      </div>
+
+      <!-- Per-quote -->
+      <div>
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Per-quote</div>
+        <div class="grid grid-cols-3 gap-3 text-xs">
+          <div class="surface rounded p-3" style="border-color: var(--border-soft);">
+            <div class="text-3 mono mb-1" style="font-size: 10px;">total</div>
+            <div class="serif" style="font-size: 17px;">$48,200</div>
+            <div class="text-3" style="font-size: 11px;">MXN · 30d val · DDP MX</div>
+          </div>
+          <div class="surface rounded p-3" style="border-color: var(--border-soft);">
+            <div class="text-3 mono mb-1" style="font-size: 10px;">margen global</div>
+            <div class="serif" style="font-size: 17px; color: var(--salvia);">27.2%</div>
+            <div class="text-3" style="font-size: 11px;">sobre floor 22% ✓</div>
+          </div>
+          <div class="surface rounded p-3" style="border-color: var(--border-soft);">
+            <div class="text-3 mono mb-1" style="font-size: 10px;">close-prob</div>
+            <div class="serif" style="font-size: 17px;">67%</div>
+            <div class="text-3" style="font-size: 11px;">patterns industria similar</div>
+          </div>
+        </div>
+        <div class="gloss mt-3 flex items-baseline gap-1.5"><span class="gloss-arrow">→</span>hash <span class="mono">a3f9b2c…</span> · verified ✓</div>
+      </div>
+
+      <!-- Warning -->
+      <div class="rounded p-3 flex items-start gap-3" style="background: var(--amber-tint); border: 1px solid var(--amber);">
+        <span class="dot dot-amber mt-1.5"></span>
+        <div class="text-xs">
+          <div class="font-medium" style="color: var(--amber);">1 warning · revisar antes de firmar</div>
+          <div class="text-2 mt-0.5">Lead 5d de almacén vs. pedido del cliente "para ya" · podés ajustar tu mensaje al enviar.</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="px-6 py-4 flex items-center gap-2" style="border-top: 1px solid var(--border-subtle); background: var(--bg-subtle);">
+      <button class="btn-coral flex-1 py-2.5">Aprobar y enviar</button>
+      <button class="btn-ghost flex-1 py-2.5" onclick="openEdit()">Editar</button>
+      <button class="btn-ghost-danger flex-1 py-2.5" onclick="openReject()">✕ Rechazar</button>
+    </footer>
+  </div>
+</div>
+
+
+<!-- ============ EDIT MODAL ============ -->
+<div class="modal-back" id="edit-back" onclick="if(event.target===this) closeEdit()">
+  <div class="surface rounded" style="width: 700px; max-height: 88vh; overflow-y: auto;">
+    <header class="px-6 py-4 flex items-start justify-between" style="border-bottom: 1px solid var(--border-subtle);">
+      <div>
+        <div class="mono text-3 mb-1" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Editar draft</div>
+        <div class="serif italic" style="font-size: 18px;">Proforma · Industrias del Norte SA</div>
+      </div>
+      <button class="btn-ghost" onclick="closeEdit()" style="padding: 4px 10px;">✕</button>
+    </header>
+    <div class="p-6 space-y-5">
+      <div>
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Texto del email · tracking de cambios</div>
+        <div class="surface rounded p-4 text-sm leading-relaxed" style="border-color: var(--border-soft); min-height: 200px;" contenteditable>
+          <p>Estimada Mariana,</p>
+          <p style="margin-top: 12px;">Adjunto la proforma para los <span class="diff-del">240</span><span class="diff-add">120</span> pares de bota dieléctrica BC-7240 solicitados, con un descuento por volumen aplicado. <span class="diff-add">Sé que la entrega era urgente — ajustamos a 5 días hábiles desde almacén Saltillo, es lo más rápido que podemos comprometer en firme.</span></p>
+          <p style="margin-top: 12px;">La cotización tiene validez de 30 días. Quedo a la orden ante cualquier ajuste.</p>
+          <p style="margin-top: 12px;">Saludos,<br/>Álvaro Restrepo · MWT</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">¿Por qué editaste este draft?</div>
+        <div class="space-y-2">
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="editreason" /> Dato incorrecto</label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="editreason" /> Tono incorrecto</label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="editreason" /> Fuente incorrecta</label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="editreason" /> Acción incorrecta</label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="editreason" defaultChecked /> Faltó contexto</label>
+        </div>
+        <textarea
+          class="w-full mt-3 surface rounded p-3 text-sm"
+          style="border: 1px solid var(--border-subtle); min-height: 60px; color: var(--text-primary);"
+          placeholder="Texto libre adicional opcional"></textarea>
+      </div>
+    </div>
+    <footer class="px-6 py-4 flex justify-end gap-2" style="border-top: 1px solid var(--border-subtle);">
+      <button class="btn-ghost" onclick="closeEdit()">Cancelar</button>
+      <button class="btn-coral" onclick="closeEdit(); closeListo()">Guardar y enviar</button>
+    </footer>
+  </div>
+</div>
+
+
+<!-- ============ REJECT MODAL ============ -->
+<div class="modal-back" id="reject-back" onclick="if(event.target===this) closeReject()">
+  <div class="surface rounded" style="width: 520px;">
+    <header class="px-6 py-4" style="border-bottom: 1px solid var(--border-subtle);">
+      <div class="mono text-3 mb-1" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Rechazar draft</div>
+      <div class="serif italic" style="font-size: 18px;">Razón del rechazo · obligatoria</div>
+    </header>
+    <div class="p-6 space-y-3">
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="rejreason" /> Dato incorrecto</label>
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="rejreason" /> Tono incorrecto</label>
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="rejreason" /> Fuente incorrecta</label>
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="rejreason" /> Acción incorrecta</label>
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="rejreason" /> Faltó contexto</label>
+      <textarea
+        maxlength="200"
+        class="w-full mt-2 surface rounded p-3 text-sm"
+        style="border: 1px solid var(--border-subtle); min-height: 70px; color: var(--text-primary);"
+        placeholder="Texto libre adicional · 200 chars max"></textarea>
+    </div>
+    <footer class="px-6 py-4 flex justify-end gap-2" style="border-top: 1px solid var(--border-subtle);">
+      <button class="btn-ghost" onclick="closeReject()">Cancelar</button>
+      <button class="btn-ghost-danger" onclick="closeReject(); closeListo()">Rechazar</button>
+    </footer>
+  </div>
+</div>
+
+
+<!-- ============ AGENT CONSOLE v2 · slide-in 80% ============ -->
+<div class="agent-back" id="agent-back" onclick="closeAgent()"></div>
+<aside class="agent-panel" id="agent-panel">
+  <header class="px-6 py-4 flex items-center gap-4" style="border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface);">
+    <div class="w-10 h-10 rounded-full flex items-center justify-center font-medium flex-shrink-0" style="background: var(--coral-tint); color: var(--coral-primary);">co</div>
+    <div class="flex-1 min-w-0">
+      <div class="serif italic" style="font-size: 18px; line-height: 1.1;">@cotizador · iterando con vos</div>
+      <div class="text-xs text-2 mt-0.5 flex items-center gap-2.5">
+        <span class="flex items-center gap-1.5"><span class="dot dot-amber"></span>necesita visto bueno</span>
+        <span class="text-3">·</span>
+        <span>última actividad hace 8 min</span>
+      </div>
+    </div>
+    <button class="btn-coral" style="background: var(--amber); color: white;">Aprobaciones pendientes · 1</button>
+    <button class="btn-ghost" onclick="closeAgent()">← volver a Mesa</button>
+  </header>
+
+  <div class="flex-1 flex min-h-0">
+
+    <!-- 20% CONTEXT (snapshot cuenta) -->
+    <aside class="flex-shrink-0 p-5 overflow-y-auto" style="width: 20%; min-width: 240px; border-right: 1px solid var(--border-subtle); background: var(--bg-subtle);">
+      <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Cuenta de la tarea</div>
+      <div class="serif italic mb-1" style="font-size: 17px; line-height: 1.15;">Industrias del Norte SA</div>
+      <div class="text-xs text-2 mb-4">Saltillo MX · tier gold</div>
+
+      <div class="space-y-2 text-xs mb-5">
+        <div class="flex items-baseline justify-between"><span class="text-3">items abiertos</span><span class="font-medium">3</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">última actividad</span><span class="font-medium">12m</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">RFQ ganados 90d</span><span class="font-medium">7 / 11</span></div>
+        <div class="flex items-baseline justify-between"><span class="text-3">payment</span><span class="font-medium" style="color: var(--salvia);">al día</span></div>
+      </div>
+
+      <div class="gloss pt-3" style="border-top: 1px solid var(--border-subtle);"><span class="gloss-arrow">→</span>último RFQ ganado 3-mar · 180 pares · margen 28%</div>
+      <div class="gloss mt-2"><span class="gloss-arrow">→</span>contacto · Mariana López · directora compras</div>
+    </aside>
+
+    <!-- CHAT 65-70% -->
+    <main class="flex-1 flex flex-col min-w-0">
+      <div class="flex-1 overflow-y-auto px-7 py-6 flex flex-col gap-3 min-h-0">
+
+        <div class="bubble-am">
+          <div class="mono text-3 mb-1" style="font-size: 10px;">Álvaro · hace 12m</div>
+          <div class="text-sm">@cotizador ve este RFQ de Industrias del Norte 240 pares BC-7240, entrega ya con descuento 8%, urgente, validez 15d.</div>
+        </div>
+
+        <div class="bubble-agent">
+          <div class="mono text-3 mb-1" style="font-size: 10px;">@cotizador · hace 11m</div>
+          <div class="text-sm">Listo, recibo. Estoy revisando stock + lista vigente + política descuento por volumen.</div>
+        </div>
+
+        <div class="bubble-agent">
+          <div class="mono text-3 mb-1" style="font-size: 10px;">@cotizador · hace 8m</div>
+          <div class="text-sm mb-3">No supe cerrar. Encontré dos cosas que me trabaron · necesito que me orientes:</div>
+          <div class="surface rounded p-3" style="border-color: var(--border-soft); background: var(--bg-surface);">
+            <div class="space-y-1.5">
+              <div class="gloss" style="color: var(--vino);"><span class="gloss-arrow" style="color: var(--vino);">→</span>policy gate bloqueó · validez 15d no especificada en el draft (default 30d, pediste 15d)</div>
+              <div class="gloss" style="color: var(--vino);"><span class="gloss-arrow" style="color: var(--vino);">→</span>descuento 8% para 240 pares · no encontré regla para urgencia con cliente sin tier explícito</div>
+              <div class="gloss"><span class="gloss-arrow">→</span>confianza interna 0.41 · umbral aprobación 0.70</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bubble-am">
+          <div class="mono text-3 mb-1" style="font-size: 10px;">Álvaro · escribiendo…</div>
+          <div class="text-sm" style="color: var(--text-muted); font-style: italic;">Industrias del Norte ES tier gold (revisá CRM acc_indnte). Para urgencia + gold el descuento autorizado llega hasta 10%. Validez 15d es decisión del cliente — usala como dato, no como regla a validar.</div>
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <footer class="px-7 py-4" style="border-top: 1px solid var(--border-subtle); background: var(--bg-surface);">
+        <div class="surface rounded p-3" style="border-color: var(--border-subtle);">
+          <textarea
+            class="w-full bg-transparent text-sm resize-none outline-none"
+            style="color: var(--text-primary); min-height: 40px;"
+            placeholder="Enseñale al agente · explicá qué hizo bien, qué corregir, dónde buscar…"></textarea>
+          <div class="flex items-center justify-between mt-2">
+            <div class="flex items-center gap-2 text-xs text-3">
+              <span class="mono" style="font-size: 10px;">⏎ enviar</span>
+              <span>·</span>
+              <span class="mono" style="font-size: 10px;">⌘+enter aprobar candidato</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button class="btn-ghost">Reasignar a otro agente</button>
+              <button class="btn-coral">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- RAIL DERECHO 30% -->
+    <aside class="flex-shrink-0 overflow-y-auto" style="width: 28%; min-width: 320px; border-left: 1px solid var(--border-subtle); background: var(--bg-surface);">
+      <div class="p-5" style="border-bottom: 1px solid var(--border-subtle);">
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Ahora mismo</div>
+        <div class="serif italic mb-1" style="font-size: 15px;">Esperando tu input</div>
+        <div class="text-xs text-2">El agente pausó tras 2 obstáculos · iterando contigo este turno se va a guardar como candidate sample si lo aprobás.</div>
+      </div>
+      <div class="p-5" style="border-bottom: 1px solid var(--border-subtle);">
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Qué usó</div>
+        <div class="space-y-2 text-xs">
+          <div>
+            <div class="font-medium">KB · catálogo Marluvas v4.2</div>
+            <div class="text-3 gloss mt-0.5"><span class="gloss-arrow">→</span>BC-7240 ficha técnica + ASTM</div>
+          </div>
+          <div>
+            <div class="font-medium">Lista pricing · 2026-04-01</div>
+            <div class="text-3 gloss mt-0.5"><span class="gloss-arrow">→</span>$325/par · 12d freshness</div>
+          </div>
+          <div>
+            <div class="font-medium">Política descuentos · v1.7</div>
+            <div class="text-3 gloss mt-0.5"><span class="gloss-arrow">→</span>regla volumen ok · regla urgencia faltó</div>
+          </div>
+          <div>
+            <div class="font-medium">Gold samples · 12 cotizaciones</div>
+            <div class="text-3 gloss mt-0.5"><span class="gloss-arrow">→</span>aprobadas tier gold últimos 90d</div>
+          </div>
+          <div>
+            <div class="font-medium">Perfil cuenta · acc_indnte</div>
+            <div class="text-3 gloss mt-0.5"><span class="gloss-arrow">→</span>tier · histórico · contactos</div>
+          </div>
+        </div>
+      </div>
+      <div class="p-5">
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Siguiente paso · sugerencia del agente</div>
+        <div class="text-xs text-2 leading-relaxed">"Si confirmás que tier gold autoriza hasta 10% descuento por urgencia, puedo cerrar la proforma a $324k MXN con margen 26%. Tomo validez 15d como input cliente, no como regla."</div>
+        <button class="btn-coral w-full mt-3" style="padding: 8px 14px;">Aprobar candidato y entrenar pool</button>
+      </div>
+
+      <div class="p-5" style="border-top: 1px solid var(--border-subtle); background: var(--bg-subtle);">
+        <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">@cotizador · 30 días</div>
+        <div class="grid grid-cols-3 gap-3 text-xs">
+          <div>
+            <div class="serif" style="font-size: 18px;">71<span style="font-size: 12px; color: var(--text-muted);">%</span></div>
+            <div class="text-3" style="font-size: 10px;">acceptance</div>
+          </div>
+          <div>
+            <div class="serif" style="font-size: 18px;">18<span style="font-size: 12px; color: var(--text-muted);">%</span></div>
+            <div class="text-3" style="font-size: 10px;">edit rate</div>
+          </div>
+          <div>
+            <div class="serif" style="font-size: 18px;">0.79</div>
+            <div class="text-3" style="font-size: 10px;">confianza</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</aside>
+
+
+<script>
+  // Theme
+  const themeBtn = document.getElementById('theme-toggle');
+  themeBtn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    document.documentElement.setAttribute('data-theme', cur === 'dark' ? '' : 'dark');
+  });
+
+  // Search autocomplete
+  const search = document.getElementById('search');
+  const searchAc = document.getElementById('search-ac');
+  search.addEventListener('focus', () => searchAc.classList.add('show'));
+  search.addEventListener('blur', () => setTimeout(() => searchAc.classList.remove('show'), 150));
+
+  // Tabs
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    applyFilter(t.dataset.filter);
+    // also clear pipeline active
+    document.querySelectorAll('.pipeline-row').forEach(r => r.classList.remove('active'));
+  }));
+
+  function applyFilter(kind) {
+    document.querySelectorAll('.feed-card').forEach(c => {
+      if (kind === 'all' || c.dataset.kind === kind) c.style.display = '';
+      else c.style.display = 'none';
+    });
+  }
+
+  // Pipeline rows · also map to feed kind
+  function filterPipe(pipe, btn) {
+    document.querySelectorAll('.pipeline-row').forEach(r => r.classList.remove('active'));
+    btn.classList.add('active');
+    if (pipe === 'encurso') {
+      // EN CURSO · no items in feed; show empty filtered state by hiding all
+      document.querySelectorAll('.feed-card').forEach(c => c.style.display = 'none');
+      tabs.forEach(x => x.classList.remove('active'));
+    } else if (pipe === 'listo') {
+      tabs.forEach(x => x.classList.remove('active'));
+      document.querySelector('.tab[data-filter="listo"]').classList.add('active');
+      applyFilter('listo');
+    } else if (pipe === 'alarma') {
+      tabs.forEach(x => x.classList.remove('active'));
+      document.querySelector('.tab[data-filter="alarma"]').classList.add('active');
+      applyFilter('alarma');
+    }
+  }
+
+  // Detail drawer
+  const detailBack = document.getElementById('detail-back');
+  const detailDrawer = document.getElementById('detail-drawer');
+
+  const detailContent = {
+    're-1': {
+      kind: 'RECIBIDO · email · marluvas',
+      title: 'Industrias del Norte SA',
+      sub: 'Saltillo MX · tier gold · acc_indnte',
+      body: `
+        <div class="mono text-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Mensaje original · 12m ago</div>
+        <div class="surface rounded p-4 text-sm leading-relaxed" style="border-color: var(--border-soft);">
+          <div class="text-3 mb-2" style="font-size: 11px;">de · mariana.lopez@indnte.mx</div>
+          <p class="serif italic">"Buenas tardes Álvaro, queremos cotización para 240 pares BC-7240 talla 27-28 entrega Saltillo, condiciones 30d. Necesitamos para arrancar obra el lunes. ¿Puedes mandarme proforma hoy?"</p>
+        </div>
+        <div>
+          <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">Evidence bundle · listo</div>
+          <div class="space-y-1.5">
+            <div class="gloss"><span class="gloss-arrow">→</span>cliente tier gold · último RFQ ganado 3-mar 180 pares</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>BC-7240 stock 285 · lead 5d · 3PL Saltillo</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>cert ASTM F2413-18 vigente hasta 2027-08</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>spec ASTM confirmada · NIOSH no aplica vertical safety_footwear</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>contacto histórico · Mariana López · directora compras</div>
+          </div>
+        </div>
+      `
+    },
+    'al-1': {
+      kind: 'ALARMA · @cotizador · tu agente',
+      title: 'Industrias del Norte SA · 240 pares BC-7240',
+      sub: 'No supo cerrar · esperando que entres y le enseñes',
+      body: `
+        <div class="rounded p-4" style="background: var(--coral-tint); border-left: 3px solid var(--coral-primary);">
+          <div class="mono mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--coral-primary);">Tu tarea original</div>
+          <p class="text-sm serif italic">"@cotizador ve este RFQ de Industrias Norte 240 pares BC-7240, entrega ya con descuento 8%, urgente, validez 15d"</p>
+        </div>
+        <div>
+          <div class="mono text-3 mb-2" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;">El agente intentó pero se trabó</div>
+          <div class="space-y-2">
+            <div class="gloss"><span class="gloss-arrow">→</span>policy gate bloqueó · validez 15d no especificada como regla (default 30d)</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>no encontró regla descuento para urgencia con cliente sin tier explícito</div>
+            <div class="gloss"><span class="gloss-arrow">→</span>confianza 0.41 · umbral aprobación 0.70</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-2">
+          <button class="btn-coral" onclick="openAgent()">▶ Entrar al agente · iterar</button>
+          <button class="btn-ghost">↻ Reasignar a otro agente</button>
+        </div>
+      `
+    }
+  };
+
+  function openDetail(id) {
+    const data = detailContent[id] || {
+      kind: 'RECIBIDO · email',
+      title: 'Detalle del item',
+      sub: '',
+      body: `
+        <div class="text-2 text-sm">Detalle completo del item en el feed · evidence bundle, mensaje original y opciones de asignación.</div>
+        <div class="space-y-1.5">
+          <div class="gloss"><span class="gloss-arrow">→</span>contexto extendido del RFQ</div>
+          <div class="gloss"><span class="gloss-arrow">→</span>stock y certificaciones validados</div>
+        </div>
+      `
+    };
+    document.getElementById('detail-kind-label').textContent = data.kind;
+    document.getElementById('detail-title').textContent = data.title;
+    document.getElementById('detail-sub').textContent = data.sub;
+    document.getElementById('detail-body').innerHTML = data.body;
+    detailBack.classList.add('show');
+    detailDrawer.classList.add('show');
+  }
+  function closeDetail() {
+    detailBack.classList.remove('show');
+    detailDrawer.classList.remove('show');
+  }
+
+  // Assign autocomplete
+  const assignInput = document.getElementById('assign-input');
+  const assignAc = document.getElementById('assign-ac');
+  function onAssignInput(e) {
+    const v = e.target.value;
+    if (v.startsWith('@')) assignAc.classList.add('show');
+    else assignAc.classList.remove('show');
+  }
+  function onAssignKey(e) {
+    if (e.key === 'Escape') assignAc.classList.remove('show');
+  }
+  function pickAgent(name) {
+    assignInput.value = '@' + name + ' ';
+    assignAc.classList.remove('show');
+    assignInput.focus();
+  }
+  function doAssign() {
+    if (!assignInput.value.trim()) {
+      assignInput.focus();
+      return;
+    }
+    closeDetail();
+    assignInput.value = '';
+  }
+
+  // LISTO modal
+  function openListo(id) {
+    document.getElementById('listo-back').classList.add('show');
+  }
+  function closeListo() {
+    document.getElementById('listo-back').classList.remove('show');
+  }
+
+  // Edit / Reject modals
+  function openEdit() { document.getElementById('edit-back').classList.add('show'); }
+  function closeEdit() { document.getElementById('edit-back').classList.remove('show'); }
+  function openReject() { document.getElementById('reject-back').classList.add('show'); }
+  function closeReject() { document.getElementById('reject-back').classList.remove('show'); }
+
+  // Agent panel
+  function openAgent() {
+    closeDetail();
+    document.getElementById('agent-back').classList.add('show');
+    document.getElementById('agent-panel').classList.add('show');
+  }
+  function closeAgent() {
+    document.getElementById('agent-back').classList.remove('show');
+    document.getElementById('agent-panel').classList.remove('show');
+  }
+
+  // Esc closes top-most overlay
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('reject-back').classList.contains('show')) return closeReject();
+    if (document.getElementById('edit-back').classList.contains('show')) return closeEdit();
+    if (document.getElementById('listo-back').classList.contains('show')) return closeListo();
+    if (document.getElementById('agent-panel').classList.contains('show')) return closeAgent();
+    if (detailDrawer.classList.contains('show')) return closeDetail();
+  });
+
+  // ⌘K focuses search
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      search.focus();
+    }
+  });
+</script>
+
+</body>
+</html>

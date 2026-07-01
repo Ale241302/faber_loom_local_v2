@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaberLoom · Workspace · Mock v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;1,400;1,500;1,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ─────────────────────────────────────────────────────────────────
+     FaberLoom Mock v1 — usa tokens DTCG indexados (mayo 2026)
+     Source of truth: docs/faberloom/tokens/{base,semantic}.dtcg.json
+     ─────────────────────────────────────────────────────────────── */
+  :root {
+    /* Cream family */
+    --cream-100: #fcfbfa;
+    --cream-200: #f9f8f6;
+    --cream-300: #f6f4f1;
+    --cream-500: #f4f1ed;
+    --cream-600: #e2dfdc;
+    --cream-700: #c8c6c2;
+    /* Ink family */
+    --ink-300: #adaba9;
+    --ink-400: #8c8b88;
+    --ink-500: #1f1e1c;
+    --ink-700: #181816;
+    /* Coral family */
+    --coral-100: #f6e6de;
+    --coral-200: #eecfc2;
+    --coral-500: #c96442;
+    --coral-600: #b75b3c;
+    --coral-700: #a15035;
+    --coral-800: #87432c;
+    /* Pizarra family */
+    --pizarra-100: #e6e7e7;
+    --pizarra-300: #b4bbc1;
+    --pizarra-400: #88939f;
+    --pizarra-500: #5a6b7c;
+    --pizarra-700: #485663;
+    /* Functional */
+    --success-100: #e0e9e0;
+    --success-500: #4e8a66;
+    --success-700: #407254;
+    --warning-100: #f4eadb;
+    --warning-500: #c48e48;
+    --danger-100: #f0ddd9;
+    --danger-500: #b54a3a;
+    /* Neutral */
+    --neutral-0: #ffffff;
+    --neutral-50: #fefdfc;
+    --neutral-200: #ebe8e4;
+    --neutral-300: #dad6d1;
+    --neutral-700: #6c6761;
+    /* Spacing */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    /* Radius */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    /* Type */
+    --font-display: 'Crimson Pro', Georgia, serif;
+    --font-ui: 'Inter', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-ui);
+    color: var(--ink-500);
+    background: var(--cream-500);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* ─── App shell ───────────────────────────────────────────────── */
+  .app { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--cream-300);
+    border-right: 1px solid var(--cream-600);
+    display: flex; flex-direction: column;
+    padding: var(--space-5) var(--space-4);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: var(--space-8); }
+  .brand-iso { width: 32px; height: 32px; }
+  .brand-text { display: flex; align-items: baseline; line-height: 1; }
+  .brand-faber {
+    font-family: var(--font-display); font-style: italic; font-weight: 500;
+    font-size: 22px; color: var(--ink-500); letter-spacing: -0.005em;
+    margin-right: 4px;
+  }
+  .brand-loom {
+    font-family: var(--font-ui); font-weight: 700; font-size: 18px;
+    color: var(--coral-500); letter-spacing: -0.028em;
+  }
+  .nav-section { margin-bottom: var(--space-6); }
+  .nav-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--pizarra-500);
+    margin-bottom: var(--space-3); padding: 0 var(--space-2);
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+    color: var(--ink-500); font-size: 13px; cursor: pointer;
+    margin-bottom: 2px; transition: background 0.12s;
+  }
+  .nav-item:hover { background: var(--cream-200); }
+  .nav-item.active { background: var(--cream-100); border: 1px solid var(--cream-600); }
+  .nav-icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--pizarra-500); }
+  .nav-item.active .nav-icon { color: var(--coral-500); }
+  .nav-meta {
+    margin-left: auto; font-size: 11px;
+    color: var(--pizarra-400); font-family: var(--font-mono);
+  }
+  .sidebar-footer {
+    margin-top: auto; padding-top: var(--space-4);
+    border-top: 1px solid var(--cream-600);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--coral-500); color: var(--neutral-0);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 11px;
+  }
+  .footer-info { display: flex; flex-direction: column; line-height: 1.2; }
+  .footer-name { font-size: 12px; font-weight: 500; }
+  .footer-role { font-size: 11px; color: var(--pizarra-500); }
+
+  /* Workspace */
+  .workspace { display: flex; flex-direction: column; min-width: 0; }
+
+  /* Top bar */
+  .topbar {
+    background: var(--cream-500);
+    border-bottom: 1px solid var(--cream-600);
+    padding: var(--space-4) var(--space-6);
+    display: flex; align-items: center; gap: var(--space-4);
+  }
+  .breadcrumb {
+    display: flex; align-items: center; gap: var(--space-2);
+    color: var(--pizarra-500); font-size: 13px;
+  }
+  .breadcrumb-current { color: var(--ink-500); font-weight: 500; }
+  .breadcrumb-sep { color: var(--pizarra-300); }
+  .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: var(--radius-sm);
+    font-size: 11px; font-weight: 500;
+    font-family: var(--font-ui);
+  }
+  .badge-trust {
+    background: var(--success-100); color: var(--success-700);
+  }
+  .badge-trust .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success-500);
+  }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: var(--radius-md);
+    background: transparent; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--pizarra-500);
+  }
+  .icon-btn:hover { background: var(--cream-300); color: var(--ink-500); }
+
+  /* Tabs */
+  .tabs {
+    background: var(--cream-500);
+    padding: 0 var(--space-6);
+    border-bottom: 1px solid var(--cream-600);
+    display: flex; gap: var(--space-2); align-items: stretch;
+  }
+  .tab {
+    padding: var(--space-4) var(--space-5);
+    border: none; background: transparent; cursor: pointer;
+    color: var(--pizarra-500); font-family: var(--font-ui);
+    font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border 0.12s;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tab:hover { color: var(--ink-500); }
+  .tab.active { color: var(--ink-500); border-bottom-color: var(--coral-500); }
+  .tab-icon { width: 14px; height: 14px; }
+
+  /* Main panel */
+  .main {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr;
+    min-height: 0; background: var(--cream-500);
+  }
+
+  /* Chat panel */
+  .chat {
+    border-right: 1px solid var(--cream-600);
+    display: flex; flex-direction: column; min-width: 0;
+  }
+  .chat-header {
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--cream-600);
+    display: flex; align-items: center; gap: var(--space-3);
+  }
+  .agent-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px 4px 4px; background: var(--cream-100);
+    border: 1px solid var(--cream-600); border-radius: var(--radius-lg);
+    font-size: 12px; font-weight: 500; color: var(--ink-500);
+  }
+  .agent-state {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .agent-state.running { background: var(--coral-100); color: var(--coral-700); }
+  .agent-state-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--coral-500); animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+  .chat-meta {
+    margin-left: auto; font-family: var(--font-mono);
+    font-size: 11px; color: var(--pizarra-500);
+  }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: var(--space-5);
+    display: flex; flex-direction: column; gap: var(--space-5);
+  }
+  .msg { display: flex; gap: var(--space-3); }
+  .msg-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600;
+  }
+  .msg-avatar.user { background: var(--ink-500); color: var(--cream-100); }
+  .msg-avatar.agent { background: var(--coral-500); color: var(--neutral-0); }
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .msg-name { font-size: 12px; font-weight: 600; color: var(--ink-500); }
+  .msg-time {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--pizarra-400);
+  }
+  .msg-text { font-size: 13px; color: var(--ink-500); line-height: 1.6; }
+  .msg-text p { margin-bottom: var(--space-2); }
+  .msg-text p:last-child { margin-bottom: 0; }
+
+  /* Thinking block — voice "calmo, preciso, respetuoso del oficio" */
+  .thinking {
+    margin-top: var(--space-3);
+    background: var(--cream-200);
+    border-left: 2px solid var(--pizarra-300);
+    padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 12px; color: var(--pizarra-700);
+    font-family: var(--font-display); font-style: italic;
+    line-height: 1.6;
+  }
+  .thinking-label {
+    font-family: var(--font-ui); font-style: normal; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 10px; color: var(--pizarra-500);
+    margin-bottom: 4px; display: block;
+  }
+
+  /* Tool call block */
+  .toolcall {
+    margin-top: var(--space-3); border: 1px solid var(--cream-600);
+    border-radius: var(--radius-md); background: var(--cream-100);
+    overflow: hidden;
+  }
+  .toolcall-header {
+    padding: 8px 12px; display: flex; align-items: center; gap: 8px;
+    font-size: 11px; font-family: var(--font-mono); color: var(--pizarra-700);
+  }
+  .toolcall-icon { width: 14px; height: 14px; color: var(--coral-500); }
+  .toolcall-status {
+    margin-left: auto; padding: 2px 6px; border-radius: 3px;
+    font-size: 10px; background: var(--success-100); color: var(--success-700);
+  }
+  .toolcall-body {
+    padding: 10px 12px; border-top: 1px solid var(--cream-600);
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-500);
+    background: var(--cream-200); white-space: pre-wrap;
+  }
+
+  /* Approval panel */
+  .approval {
+    margin-top: var(--space-3); padding: var(--space-4);
+    background: var(--cream-100); border: 1px solid var(--cream-600);
+    border-radius: var(--radius-md);
+  }
+  .approval-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-3);
+  }
+  .approval-title {
+    font-size: 12px; font-weight: 600; color: var(--ink-500);
+  }
+  .approval-confidence {
+    margin-left: auto; font-size: 11px; color: var(--pizarra-500);
+    font-family: var(--font-mono);
+  }
+  .approval-body {
+    font-size: 12px; color: var(--pizarra-700); margin-bottom: var(--space-4);
+    line-height: 1.6;
+  }
+  .approval-actions { display: flex; gap: var(--space-2); }
+  .btn {
+    padding: 8px 14px; border-radius: var(--radius-md);
+    font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+    border: 1px solid transparent; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn-primary {
+    background: var(--coral-500); color: var(--neutral-0);
+  }
+  .btn-primary:hover { background: var(--coral-600); }
+  .btn-secondary {
+    background: transparent; color: var(--ink-500);
+    border-color: var(--cream-700);
+  }
+  .btn-secondary:hover { background: var(--cream-200); }
+  .btn-tertiary {
+    background: transparent; color: var(--pizarra-500);
+  }
+  .btn-tertiary:hover { color: var(--ink-500); }
+
+  /* Chat input */
+  .chat-input {
+    padding: var(--space-4) var(--space-5);
+    border-top: 1px solid var(--cream-600);
+    background: var(--cream-300);
+  }
+  .input-wrapper {
+    background: var(--neutral-50);
+    border: 1px solid var(--cream-700);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    display: flex; align-items: flex-end; gap: var(--space-3);
+    transition: border-color 0.12s;
+  }
+  .input-wrapper:focus-within { border-color: var(--coral-500); }
+  .input-field {
+    flex: 1; border: none; background: transparent; outline: none;
+    font-family: var(--font-ui); font-size: 13px; color: var(--ink-500);
+    resize: none; min-height: 22px; max-height: 100px;
+  }
+  .input-field::placeholder { color: var(--pizarra-400); }
+  .input-actions { display: flex; align-items: center; gap: 6px; }
+  .input-icon {
+    width: 28px; height: 28px; border-radius: var(--radius-md);
+    background: transparent; border: none; cursor: pointer;
+    color: var(--pizarra-500); display: flex; align-items: center; justify-content: center;
+  }
+  .input-icon:hover { background: var(--cream-300); color: var(--ink-500); }
+  .input-send {
+    background: var(--coral-500); color: var(--neutral-0);
+  }
+  .input-send:hover { background: var(--coral-600); }
+  .input-hint {
+    font-size: 11px; color: var(--pizarra-500);
+    margin-top: 6px; padding: 0 var(--space-2);
+  }
+
+  /* Preview panel */
+  .preview {
+    background: var(--cream-300);
+    display: flex; flex-direction: column;
+  }
+  .preview-header {
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--cream-600);
+    display: flex; align-items: center; gap: var(--space-3);
+  }
+  .preview-title {
+    font-family: var(--font-display); font-style: italic;
+    font-weight: 500; font-size: 16px; color: var(--ink-500);
+  }
+  .preview-actions { margin-left: auto; display: flex; gap: var(--space-2); }
+  .preview-body {
+    flex: 1; padding: var(--space-5); overflow-y: auto;
+  }
+  .preview-card {
+    background: var(--neutral-50); border: 1px solid var(--cream-700);
+    border-radius: var(--radius-md); padding: var(--space-5);
+    margin-bottom: var(--space-4);
+  }
+  .preview-card-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--pizarra-500);
+    margin-bottom: var(--space-2);
+  }
+  .preview-card-title {
+    font-family: var(--font-display); font-style: italic; font-weight: 500;
+    font-size: 22px; color: var(--ink-500); margin-bottom: var(--space-3);
+    line-height: 1.2;
+  }
+  .preview-card-meta {
+    display: flex; gap: var(--space-4); font-size: 11px;
+    font-family: var(--font-mono); color: var(--pizarra-500);
+    margin-bottom: var(--space-4);
+  }
+  .preview-card-body {
+    font-size: 13px; color: var(--ink-500); line-height: 1.7;
+  }
+  .preview-card-body p { margin-bottom: var(--space-3); }
+
+  .draft-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; background: var(--warning-100); color: var(--warning-500);
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; border-radius: var(--radius-sm);
+  }
+
+  /* Status bar */
+  .statusbar {
+    background: var(--ink-500); color: var(--cream-200);
+    padding: 6px var(--space-6);
+    display: flex; align-items: center; gap: var(--space-4);
+    font-family: var(--font-mono); font-size: 11px;
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; opacity: 0.9; }
+  .status-item .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .status-item.success .dot { background: var(--success-500); }
+  .status-item.coral .dot { background: var(--coral-500); }
+  .status-spacer { margin-left: auto; opacity: 0.6; }
+
+  /* Tagline / manifesto edge */
+  .manifest-edge {
+    font-family: var(--font-display); font-style: italic;
+    font-size: 11px; color: var(--cream-200); opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ─── Sidebar ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-iso" viewBox="0 0 32 32" fill="none">
+        <!-- Iso "Hilos entrelazados" — placeholder simple inspirado en SVG canónico -->
+        <path d="M6 10 Q16 22 26 10" stroke="#1f1e1c" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M6 22 Q16 10 26 22" stroke="#c96442" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-faber">Faber</span><span class="brand-loom">Loom</span>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Workspace</div>
+      <div class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span>Curaduría · destilar</span>
+        <span class="nav-meta">3</span>
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Tu criterio · HITL</span>
+        <span class="nav-meta">12</span>
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>SpaceLoom</span>
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span>StackLoom</span>
+        <span class="nav-meta">8</span>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Sistema</div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Auditoría</span>
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span>Ajustes</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="avatar">A</div>
+      <div class="footer-info">
+        <span class="footer-name">Álvaro</span>
+        <span class="footer-role">CEO · MWT</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ─── Workspace ───────────────────────────────────────────── -->
+  <main class="workspace">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="breadcrumb">
+        <span>Curaduría</span>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">Brief para Marluvas Q3</span>
+      </div>
+      <div class="topbar-actions">
+        <span class="badge badge-trust"><span class="dot"></span>Trust nivel 1 · revisar antes de aplicar</span>
+        <button class="icon-btn" title="Subir archivo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </button>
+        <button class="icon-btn" title="Notificaciones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Configurar
+      </button>
+      <button class="tab active">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Iterar
+      </button>
+      <button class="tab">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Sanidad
+        <span style="margin-left:6px; background:var(--coral-100); color:var(--coral-700); font-size:10px; padding:1px 6px; border-radius:8px;">2</span>
+      </button>
+    </div>
+
+    <!-- Main split panel -->
+    <div class="main">
+
+      <!-- Chat -->
+      <section class="chat">
+        <div class="chat-header">
+          <div class="agent-pill">
+            <div class="agent-state running"><span class="agent-state-dot"></span></div>
+            <span>Curador · brief-builder</span>
+          </div>
+          <div class="chat-meta">12:34 · 2.4k tokens</div>
+        </div>
+
+        <div class="chat-messages">
+
+          <!-- User -->
+          <div class="msg">
+            <div class="msg-avatar user">A</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Álvaro</span>
+                <span class="msg-time">12:33</span>
+              </div>
+              <div class="msg-text">
+                <p>Necesito un brief para la propuesta de Marluvas Q3. Cliente: Industrias del Sur, sector calzado de seguridad. Contexto en el doc adjunto del último pedido.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agent -->
+          <div class="msg">
+            <div class="msg-avatar agent">C</div>
+            <div class="msg-body">
+              <div class="msg-header">
+                <span class="msg-name">Curador</span>
+                <span class="msg-time">12:33</span>
+              </div>
+              <div class="msg-text">
+                <p>Preparé tres borradores. Elegí cuál ajustar.</p>
+              </div>
+
+              <div class="thinking">
+                <span class="thinking-label">Razonamiento</span>
+                Industrias del Sur ya pidió Marluvas en Q1. El brief debe partir del pedido previo, no presentar a la marca como nueva. Cito el contrato del 4 de junio.
+              </div>
+
+              <div class="toolcall">
+                <div class="toolcall-header">
+                  <svg class="toolcall-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <span>kb.search · "Industrias del Sur Marluvas Q1"</span>
+                  <span class="toolcall-status">3 hits</span>
+                </div>
+                <div class="toolcall-body">contract_marluvas_2026-06-04.pdf
+order_history_industrias_del_sur.csv
+ENT_COMERCIAL_CLIENTES section E.42</div>
+              </div>
+
+              <div class="approval">
+                <div class="approval-header">
+                  <span class="approval-title">Solicitud de aprobación</span>
+                  <span class="approval-confidence">confidence 0.87</span>
+                </div>
+                <div class="approval-body">
+                  Voy a generar tres borradores del brief con tonos distintos: técnico, comercial-cálido, y ejecutivo-corto. Cada uno cita el contrato de Q1 y el historial de pedidos. ¿Procedo?
+                </div>
+                <div class="approval-actions">
+                  <button class="btn btn-primary">Aprobar</button>
+                  <button class="btn btn-secondary">Iterar</button>
+                  <button class="btn btn-tertiary">Descartar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Input -->
+        <div class="chat-input">
+          <div class="input-wrapper">
+            <textarea class="input-field" placeholder="Acotá el ámbito o pedí algo nuevo..." rows="1"></textarea>
+            <div class="input-actions">
+              <button class="input-icon" title="Adjuntar archivo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <button class="input-icon" title="Mencionar agente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>
+              </button>
+              <button class="input-icon input-send" title="Enviar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="input-hint">Enter para enviar · Shift+Enter para salto de línea · @ para invocar otro agente</div>
+        </div>
+      </section>
+
+      <!-- Preview -->
+      <section class="preview">
+        <div class="preview-header">
+          <span class="preview-title">Borrador 1 · técnico</span>
+          <span class="draft-badge">Pendiente</span>
+          <div class="preview-actions">
+            <button class="icon-btn" title="Versiones">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
+            <button class="icon-btn" title="Comparar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="preview-body">
+          <div class="preview-card">
+            <div class="preview-card-label">Brief · MWT × Marluvas Q3</div>
+            <div class="preview-card-title">Continuidad de programa: Industrias del Sur, expansión de línea técnica</div>
+            <div class="preview-card-meta">
+              <span>Cliente: ID-7842</span>
+              <span>Bloque: técnico</span>
+              <span>Versión 1 de 3</span>
+            </div>
+            <div class="preview-card-body">
+              <p>Industrias del Sur opera el modelo Marluvas Argo desde el contrato firmado el 4 de junio de 2026. La rotación promedio observada en planta (12 meses) confirma el dimensionamiento; la propuesta Q3 extiende cobertura a la línea de soldadura sin modificar el patrón ya aprobado.</p>
+              <p>Recomendación técnica: incorporar el modelo Marluvas 80E04 BSI con suela nitrílica resistente a hidrocarburos y puntera composite. La transición desde Argo se hace por talla intercalada en dos compras semestrales, evitando salida masiva de stock vigente.</p>
+              <p>Disponibilidad confirmada en almacén regional (San José, México DF, Bogotá). Plazo de entrega 18 a 22 días desde orden firme. Garantía operativa 90 días.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <span class="status-item coral"><span class="dot"></span>1 agente activo</span>
+      <span class="status-item success"><span class="dot"></span>Sanidad: 0 fallos</span>
+      <span class="status-item">12 acciones esta sesión · 1 pendiente de aprobación</span>
+      <span class="status-spacer"></span>
+      <span class="manifest-edge">La IA prepara · vos tejés</span>
+    </div>
+
+  </main>
+
+</div>
+
+<script>
+  // Mock interaction: aprobar avanza a Sanidad
+  document.querySelectorAll('.btn-primary').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const approval = btn.closest('.approval');
+      if (approval) {
+        approval.style.opacity = '0.5';
+        approval.style.pointerEvents = 'none';
+        setTimeout(() => {
+          alert('Aprobado. El curador continúa generando los 3 borradores.\n\nEn el producto real: el tab Sanidad recibe trace + scorecard automático.');
+        }, 200);
+      }
+    });
+  });
+
+  // Tabs visuales (mock, sin contenido)
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+
+  // Sidebar nav
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+
+  // Auto-grow textarea
+  const ta = document.querySelector('.input-field');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+    });
+  }
+</script>
+
+</body>
+</html>

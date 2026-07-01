@@ -1,0 +1,542 @@
+case_id: case_sf_05
+industry: safety_footwear
+severity: high
+description: |
+  RFQ por 500 pares Marluvas BC-7240 talla 27 · stock disponible solo 200.
+  Sistema debe propuesta + escalación AM+supervisor (>50% del pedido).
+
+setup:
+  vertical_spec_object: safety_footwear
+  catalog:
+    - sku: "BC-7240"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera composite · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "composite"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240-2025-005"
+            expiry_date: "2026-04-15"
+            lab_acreditado: "Intertek Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-BC7240-2025-005"
+      stock:
+        available: 200
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 120
+            reserved: 30
+          - location: "CDMX Hub"
+            qty: 80
+            reserved: 20
+        freshness_seconds: 120
+      pricing:
+        list_price: 68.50
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 45
+        source: "factory"
+        freshness_hours: 24
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.4
+      sku_status: "active"
+      margin_calculated: 0.28
+    - sku: "BC-7240-STEEL"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera acero · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "steel"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240ST-2025-005"
+            expiry_date: "2026-05-20"
+            lab_acreditado: "Intertek Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-BC7240ST-2025-005"
+      stock:
+        available: 350
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 150
+            reserved: 20
+          - location: "CDMX Hub"
+            qty: 200
+            reserved: 30
+        freshness_seconds: 120
+      pricing:
+        list_price: 62.00
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.5
+      sku_status: "active"
+      margin_calculated: 0.30
+  customer:
+    customer_id: "CLI-MX-005"
+    name: "Minera del Norte S.A. de C.V."
+    country: "MX"
+    city: "Chihuahua"
+    tier: "gold"
+    credit_status: "ok"
+    payment_terms: "Net 45 días"
+    incoterm_default: "DDP"
+    tax_id: "MDN-9876543210"
+    vertical: "mineria_mexicana"
+    historical_data:
+      last_order_date: "2025-03-15"
+      avg_order_value_usd: 18500
+      orders_ytd: 4
+      complaints_12m: 0
+      preferred_delivery: "CDMX Hub"
+    regulatory_context:
+      requires_astm_f2413: true
+      requires_NOM_113: true
+      max_cert_age_days: 365
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_PRICING_CALCULATOR"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_MX"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:safety_footwear"]
+      layer_3b_metadata: ["compliance_profile:safety_footwear", "tenant:MWT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+    glossary_overrides:
+      - term: "punto"
+        meaning: "talla_numérica_regional"
+        applies_to: ["MX"]
+      - term: "bota dieléctrica"
+        meaning: "clase_electrical_hazard_EH"
+        applies_to: ["MX", "CO"]
+
+input:
+  channel: email
+  from:
+    name: "Ing. Luis Torres"
+    email: "l.torres@mineranorte.mx"
+    role: "Superintendente de Compras"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización urgente 500 pares BC-7240 talla 27 — Mina La Colorada"
+  body_text: |
+    Estimados,
+
+    Solicitamos cotización urgente para 500 pares de bota dieléctrica
+    Marluvas BC-7240, talla 27 (9 punto), ancho normal, puntera
+    composite, plantilla acero.
+
+    Uso: mina subterránea La Colorada, Chihuahua. Requerimos entrega
+    DDP en máximo 15 días hábiles.
+
+    Certificación ASTM F2413-18 y NOM-113 obligatorias.
+
+    Este es nuestro pedido anual de calzado safety. Agradecemos su
+    pronta respuesta.
+
+    Ing. Luis Torres
+    Superintendente de Compras
+    Minera del Norte S.A. de C.V.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-05-02T11:00:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["urgent_delivery", "annual_order"]
+      urgency: "high"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.91
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "bota dieléctrica BC-7240"
+          qty: 500
+        - type: "variant_sizing"
+          value: "talla 27 (MX)"
+        - type: "variant_toe"
+          value: "composite"
+        - type: "variant_midsole"
+          value: "acero"
+        - type: "certification_requirement"
+          value: "ASTM F2413-18 + NOM-113"
+        - type: "delivery_location"
+          value: "Chihuahua, MX"
+        - type: "incoterm"
+          value: "DDP"
+      latency_ms_max: 1200
+      triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-MX-005", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-MDN-2025-Q1"
+      freshness: "2025-05-02T10:58:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: BC-7240"
+      - "qty_breakdown: {27:500}"
+      - "variant_constraints: {ancho: normal, puntera: composite, plantilla: acero}"
+    expected_output:
+      items:
+        - sku: "BC-7240"
+          warehouse: "Bogotá Principal"
+          available: 120
+          reserved: 30
+          in_transit: 0
+          fulfillable_qty: 90
+        - sku: "BC-7240"
+          warehouse: "CDMX Hub"
+          available: 80
+          reserved: 20
+          in_transit: 0
+          fulfillable_qty: 60
+      total_fulfillable: 150
+      stock_status: "PARTIAL"
+      shortfall: 350
+      shortfall_pct: 70
+      freshness: "2025-05-02T10:55:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "safety_footwear"
+      tenant: "MWT"
+      items: ["BC-7240"]
+      certifications_required: ["ASTM F2413-18", "NOM-113-STPS-2009"]
+      customer_country: "MX"
+      use_case: "mina subterránea Chihuahua"
+    expected_output:
+      pass: true
+      warnings: []
+      blocking_issues: []
+      pii_detected: false
+      policies_violated: []
+    latency_ms_max: 1000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 5
+    sub_agent: "AG_SUB_PRICING_CALCULATOR"
+    inputs:
+      sku: "BC-7240"
+      qty: 500
+      list_price: 68.50
+      customer_tier: "gold"
+      payment_terms: "Net 45"
+      incoterm: "DDP"
+      stock_partial: true
+      fulfillable_qty: 150
+      shortfall: 350
+    expected_output:
+      base_subtotal: 34250.00
+      margin_calculated: 0.28
+      stock_partial_analysis:
+        fulfillable_now: 150
+        backorder_qty: 350
+        backorder_lead_time_days: 45
+        total_order_value: 34250.00
+        fulfillable_value: 10275.00
+        backorder_value: 23975.00
+    latency_ms_max: 800
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_INVENTORY_FETCHER"
+      exception_codes: ["STOCK_PARCIAL"]
+      severity: "high"
+      tenant: "MWT"
+      stock_shortfall_pct: 70
+    expected_output:
+      route_to: "AM_MWT_SUPERVISOR"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email_priority"
+      urgency_override: "high"
+      fallback_route: null
+      sla_target_minutes: 60
+      vertical_context: "safety_footwear"
+      reason: "stock parcial >50% (70% faltante) — requiere decisión AM+supervisor"
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "draft_proforma_with_notes"
+      recipient_role: "cliente"
+      context:
+        customer: "Minera del Norte S.A. de C.V."
+        rfq_items: "500 pares BC-7240 talla 27"
+        exception: "STOCK_PARCIAL — solo 150 disponibles (30%), 350 en backorder (45 días)"
+        severity: "high"
+        vertical: "safety_footwear"
+    expected_output:
+      draft_type: "proforma_draft_with_stock_note"
+      subject: "Proforma BC-7240 — Nota stock parcial / Minera del Norte"
+      body: |
+        Estimado Ing. Torres,
+
+        Agradecemos su solicitud de 500 pares BC-7240 para Mina La
+        Colorada.
+
+        **NOTA IMPORTANTE — Stock parcial:**
+        Disponible inmediatamente: 150 pares (entrega 5 días DDP
+        Chihuahua).
+        Backorder: 350 pares (lead time 45 días desde fábrica Brasil).
+
+        Opciones propuestas:
+        1. Entrega única en 45 días (500 pares completos).
+        2. Entrega parcial: 150 pares inmediatos + 350 pares en 45 días.
+           Sin costo adicional por split.
+        3. Entrega parcial con alternativa BC-7240-STEEL (puntera acero)
+           para los 350 pares faltantes — ver nota técnica adjunta.
+
+        Valor total pedido: $34,250 USD.
+        Valor entrega inmediata: $10,275 USD.
+        Valor backorder: $23,975 USD.
+
+        Esta propuesta requiere confirmación de su parte dado el
+        volumen y lead time extendido.
+      tone: "professional_with_logistics_detail"
+      internal_note: "Cliente gold minera. Pedido anual. Stock parcial 70% = decisión estratégica AM."
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 8
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs:
+      - "stock_partial: true"
+      - "fulfillable_now: 150"
+      - "backorder_qty: 350"
+      - "backorder_lead_days: 45"
+    expected_output:
+      status: "DRAFT_GENERATED"
+      draft_type: "proforma_with_stock_split"
+      total_value: 34250.00
+      immediate_value: 10275.00
+      backorder_value: 23975.00
+      line_items:
+        - sku: "BC-7240"
+          qty: 150
+          unit_price: 68.50
+          subtotal: 10275.00
+          delivery: "inmediata"
+        - sku: "BC-7240"
+          qty: 350
+          unit_price: 68.50
+          subtotal: 23975.00
+          delivery: "backorder_45d"
+    latency_ms_max: 6000
+    triggered: true
+
+expected_outputs:
+  primary_output:
+    type: "draft_proforma_with_notes"
+    content:
+      status: "DRAFT_GENERATED"
+      reason: "STOCK_PARCIAL — 150 disponibles, 350 backorder"
+      customer_notified: true
+      proforma_generated: true
+      draft_type: "proforma_with_stock_split"
+      approval_pending: true
+    glosses_required:
+      - "Stock disponible: 150 pares (30% del pedido)"
+      - "Backorder: 350 pares (70% faltante, lead 45 días)"
+      - "Cliente gold minera — pedido anual de calzado safety"
+      - "Valor total: $34,250 USD"
+      - "Opciones: entrega única 45d, split sin costo, o alternativa BC-7240-STEEL"
+      - "Requiere AM+supervisor decisión logística"
+  evidence_bundle:
+    per_line:
+      - sku: "BC-7240"
+        qty_requested: 500
+        variant_constraints: "talla 27, ancho normal, composite+steel"
+        stock_fulfillable: 150
+        stock_shortfall: 350
+        shortfall_pct: 70
+        pricing_list: 68.50
+        margin_estimated: 0.28
+        status: "STOCK_PARCIAL"
+    per_quote:
+      status: "DRAFT_GENERATED"
+      exception_codes: ["STOCK_PARCIAL"]
+      aprobador: "AM+supervisor"
+      hash: null
+    audit_view:
+      source_precio: "2025-04-15"
+      version_lista: "2025-04-15"
+      timestamp_stock: "2025-05-02T10:55:00-06:00"
+      technical_spec_rule: "safety_footwear"
+      margen_calculado: 0.28
+      aprobador: "AM+supervisor (stock partial)"
+      vigencia: null
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "factory"
+      sku_status: "active"
+      cert_doc_version: "vigente"
+      country_rule_applied: null
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=24, packaging=12/box"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-MDN-2025-Q1"
+      exception_codes: ["STOCK_PARCIAL"]
+      vertical_spec_object: "safety_footwear"
+      tenant: "MWT"
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email_priority"
+        sla_minutes: 60
+    - type: "create_open_item"
+      details:
+        item_type: "stock_partial_decision"
+        sku: "BC-7240"
+        priority: "high"
+        due_date: "2025-05-02T18:00:00-06:00"
+        vertical: "safety_footwear"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_DRAFT_STOCK_PARTIAL"
+        severity: "high"
+        trace_id: "TRACE-caseSF05-20250502"
+        tenant: "MWT"
+  exceptions_raised:
+    - "STOCK_PARCIAL"
+  hitl_gate_triggered: true
+  output_destination: "draft_approval"
+
+edge_cases:
+  - description: "Cliente acepta entrega única en 45 días — proforma confirma backorder completo"
+    expected_behavior: "Proforma final con backorder 45 días. AM aprueba. Cliente notificado con confirmación.",
+    variant_data:
+      client_choice: "entrega_unica_45d"
+      expected_proforma: true
+  - description: "Cliente cancela pedido al ver stock parcial — sistema registra lost opportunity"
+    expected_behavior: "Audit event 'QUOTE_CANCELLED_CLIENT'. AM notificado. Oportunidad $34,250 perdida. SKU flagged para reabastecimiento.",
+    variant_data:
+      client_choice: "cancela"
+      expected_action: "lost_opportunity"
+  - description: "Cliente pide 500 pares talla 27 pero ancho extra_ancho — stock extra_ancho solo 50 unidades (90% faltante)"
+    expected_behavior: "Escalamiento a CEO. Shortfall 90% = no viable logísticamente. Alternativa: ofrecer talla 26 extra_ancho o backorder completo.",
+    variant_data:
+      width: "extra_ancho"
+      available: 50
+      shortfall_pct: 90
+      expected_escalation: "CEO"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'STOCK_PARCIAL'"
+    - "output.primary_output.status == 'DRAFT_GENERATED'"
+    - "output.primary_output.proforma_generated == true"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 60"
+    - "evidence_bundle.per_line[0].shortfall_pct == 70"
+    - "evidence_bundle.per_quote.aprobador == 'AM+supervisor'"
+    - "expected_pipeline[2].expected_output.shortfall == 350"
+    - "expected_pipeline[2].expected_output.shortfall_pct == 70"
+  must_not_do:
+    - "output contains proforma sin nota de stock parcial"
+    - "system promises 500 pares inmediatos when only 150 available"
+    - "system ignores 70% shortfall as 'normal'"
+    - "agente solo confirma backorder 45 días sin AM approval"
+    - "system auto-splits delivery without client confirmation"
+    - "output.primary_output.customer_notified == false"
+
+severity_weight_validation:
+  expected_severity: "high"
+  if_misclassified_as_lower: |
+    Si clasificado como Medium: stock parcial podría enviarse como
+    "nota menor" en proforma sin escalamiento AM+supervisor.
+    Consecuencia: cliente minera recibe 150 pares cuando pidió 500,
+    sin clarificación de entrega parcial. Disrupción operativa en
+    mina subterránea = parada producción, riesgo HSE por trabajadores
+    sin calzado safety. Además, 70% shortfall indica problema de
+    supply chain que AM debe resolver estratégicamente.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico Minera del Norte MX. No promovible.
+    Patrón abstracto (stock parcial >50% en safety_footwear con
+    backorder opciones) puede promoverse a GLOBAL_PROMOTABLE tras
+    anonimización.
+
+gaps_detected: []

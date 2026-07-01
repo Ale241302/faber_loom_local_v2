@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proforma MWT — PF 2467-2026 · DISTRIBUIDORA COMTEK S.A.S.</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy:#013A57;--navy-h:#0a4d6e;--mint:#75CBB3;--mint-s:#E8F5F0;
+  --ice:#A8D8EA;--ice-s:#EDF6FB;--bg:#F8FAFB;--srf:#FFFFFF;--raised:#F1F5F9;
+  --brd:#E2E8F0;--brd2:#CBD5E1;--t1:#0F172A;--t2:#475569;--t3:#94A3B8;
+  --ok:#0E8A6D;--ok-bg:#F0FAF6;--warn:#B45309;--warn-bg:#FFF7ED;
+  --crit:#DC2626;--crit-bg:#FEF2F2;--info:#0369A1;
+  --purple:#7C3AED;--purple-bg:#F5F3FF;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;-webkit-font-smoothing:antialiased;}
+.top{position:fixed;top:0;left:0;right:0;z-index:100;background:var(--navy);height:52px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;}
+.top-left{display:flex;align-items:center;gap:16px;}
+.top h1{color:white;font-size:13px;font-weight:700;letter-spacing:-.3px;}
+.top h1 span{opacity:.45;font-weight:400;}
+.tabs{display:flex;gap:2px;background:rgba(255,255,255,.08);padding:3px;border-radius:8px;}
+.tab{padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;color:rgba(255,255,255,.45);cursor:pointer;border:none;background:none;transition:all .15s;white-space:nowrap;}
+.tab.active{background:white;color:var(--navy);}
+.tab:hover:not(.active){color:white;}
+.view{display:none;padding-top:52px;}
+.view.active{display:block;}
+.dash{max-width:1200px;margin:0 auto;padding:24px;}
+.head{background:var(--srf);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:start;}
+.head h2{font-size:18px;font-weight:800;color:var(--navy);letter-spacing:-.4px;}
+.head .meta{font-size:12px;color:var(--t2);margin-top:4px;line-height:1.8;}
+.badge{display:inline-flex;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;}
+.bg-draft{background:var(--warn-bg);color:var(--warn);}
+.bg-ceo{background:var(--crit-bg);color:var(--crit);}
+.bg-mlv{background:rgba(1,58,87,.08);color:var(--navy);}
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+.tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;}
+.card{background:var(--srf);border:1px solid var(--brd);border-radius:12px;overflow:hidden;}
+.card-h{padding:12px 18px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center;}
+.card-h h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.card-h.cost h3{color:var(--navy);}
+.card-h.rev h3{color:var(--ok);}
+.card-h.info h3{color:var(--info);}
+.card-h.mlv h3{color:var(--navy);}
+.card-b{padding:16px 18px;}
+.sr{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--raised);font-size:12px;}
+.sr:last-child{border-bottom:none;}
+.sr .k{color:var(--t2);}
+.sr .v{font-weight:700;font-variant-numeric:tabular-nums;}
+.sr.big{border-top:2px solid var(--navy);margin-top:6px;padding-top:10px;}
+.sr.big .v{font-size:18px;}
+.sect{background:var(--srf);border:1px solid var(--brd);border-radius:12px;overflow:hidden;margin-bottom:16px;}
+.sect-h{padding:12px 18px;border-bottom:1px solid var(--brd);}
+.sect-h h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--navy);}
+table.ct{width:100%;border-collapse:collapse;font-size:12px;}
+table.ct thead th{padding:8px 12px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);background:var(--raised);border-bottom:2px solid var(--brd);}
+table.ct thead th.r{text-align:right;}
+table.ct tbody td{padding:8px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+table.ct tbody td.r{text-align:right;font-variant-numeric:tabular-nums;}
+table.ct tbody td.m{font-family:'JetBrains Mono',monospace;font-size:11px;}
+table.ct .cb{background:rgba(1,58,87,.02);}
+table.ct .rb{background:rgba(14,138,109,.03);}
+table.ct .trow{background:var(--raised);font-weight:700;}
+table.ct .trow td{border-top:2px solid var(--navy);}
+.desc-it{font-size:9.5px;font-weight:400;color:var(--t2);font-style:italic;margin-top:2px;}
+.pill-group{margin-bottom:14px;}
+.pill-group .pl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:6px;}
+.pills{display:flex;flex-wrap:wrap;gap:5px;}
+.pill{display:inline-flex;flex-direction:column;align-items:center;padding:5px 9px;border:1px solid var(--brd);border-radius:6px;min-width:50px;background:var(--srf);}
+.pill .s{font-size:9px;color:var(--t3);font-weight:600;}
+.pill .q{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--navy);}
+.arb{background:var(--srf);border:1px solid var(--brd);border-radius:12px;padding:18px;margin-bottom:16px;}
+.arb h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--navy);margin-bottom:12px;}
+.actions{display:flex;gap:8px;padding:16px 0;}
+.btn{padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;border:none;cursor:pointer;}
+.btn-p{background:var(--navy);color:white;}
+.btn-o{background:none;border:1.5px solid var(--brd2);color:var(--t1);}
+.btn-d{background:none;border:1.5px solid var(--crit);color:var(--crit);margin-left:auto;}
+.notes-card{background:var(--raised);border:1px solid var(--brd);border-radius:8px;padding:14px 18px;font-size:11px;color:var(--t2);line-height:1.7;margin-bottom:16px;}
+.notes-card strong{color:var(--t1);}
+.pend{color:var(--warn);font-style:italic;font-size:10px;font-weight:600;}
+@media(max-width:900px){.dual,.tri{grid-template-columns:1fr;}}
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important;}
+  .top{display:none!important;}
+  .actions{display:none!important;}
+  .print-actions{display:none!important;}
+  .bg-mlv{display:none!important;}
+  .bg-draft,.bg-ceo{display:none!important;}
+  .arb{display:none!important;}
+  .view{display:none!important;}
+  .view.active{display:block!important;padding-top:0!important;}
+  @page{margin:6mm 8mm;size:letter;}
+  body{background:white!important;font-size:11px;}
+  .dash{max-width:100%;padding:0;}
+  table.ct{font-size:10px;}
+  table.ct thead th{font-size:8.5px;padding:6px 8px;background:#f1f5f9!important;border-bottom:2px solid #999!important;}
+  table.ct tbody td{padding:6px 8px;}
+  table.ct .trow{background:#f1f5f9!important;}
+  table.ct .trow td{border-top:2px solid #333!important;}
+  .card,.sect,.head{border:1px solid #ccc!important;}
+  .card-h{border-bottom:1px solid #ccc!important;}
+  .sect,.card{margin-bottom:10px;}
+  .head{margin-bottom:12px;}
+  .notes-card{border:1px solid #ccc!important;margin-bottom:10px;}
+  .tri{grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .dual{grid-template-columns:1fr 1fr;gap:10px;}
+  .tri .card-b{font-size:10px;}
+  .tri .card-b .sr{padding:4px 0;}
+  .tri .card-h{padding:8px 14px;}
+  .tri .card-b{padding:10px 14px;}
+  .card,.sect,.head,.notes-card{break-inside:avoid;page-break-inside:avoid;}
+  table.ct{break-inside:avoid;page-break-inside:avoid;}
+  table.ct tr{break-inside:avoid;page-break-inside:avoid;}
+  .pill-group{break-inside:avoid;page-break-inside:avoid;}
+  .sect:last-of-type{break-before:auto;}
+  .pill{padding:3px 7px;min-width:40px;}
+  .pill .s{font-size:8px;}
+  .pill .q{font-size:11px;}
+  .pill-group .pl{font-size:9px;margin-bottom:4px;}
+  .pill-group{margin-bottom:10px;}
+  .pills{gap:4px;}
+  a{text-decoration:none;color:inherit;}
+  .badge{border:1px solid currentColor;}
+  .desc-it{font-size:8.5px;}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-left"><h1>ART-02 Proforma <span>· PF 2467-2026 · COMTEK</span></h1></div>
+  <div class="tabs">
+    <button class="tab active" onclick="sw('ceo',event)">CEO</button>
+    <button class="tab" onclick="sw('marluvas',event)">Marluvas</button>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- CEO VIEW                                      -->
+<!-- ============================================ -->
+<div id="v-ceo" class="view active">
+<div class="dash">
+
+  <div class="head">
+    <div>
+      <h2>MARLUVAS &middot; PF 2467-2026 &middot; DISTRIBUIDORA COMTEK</h2>
+      <div class="meta">
+        <strong>OC Cliente:</strong> COMTEK 002-2026 &nbsp;&middot;&nbsp; <strong>Cliente:</strong> DISTRIBUIDORA COMTEK S.A.S. &nbsp;&middot;&nbsp; <strong>Modelo:</strong> B (Comisi&oacute;n mixta 5% / 10%)<br>
+        <strong>C&oacute;d. SAP Marluvas:</strong> 4000000102 &nbsp;&middot;&nbsp; <strong>Pa&iacute;s:</strong> Colombia &nbsp;&middot;&nbsp; <strong>Fecha PO:</strong> 4/may/2026 (lunes) &nbsp;&middot;&nbsp; <strong>Creada:</strong> 6/may/2026<br>
+        <strong>Contacto:</strong> Jose Angel Avila &middot; jose.avila@comtek.la &middot; +1 305 831 5815<br>
+        <strong>NIT:</strong> 900895760-4 &middot; <strong>Direcci&oacute;n:</strong> CR 43 A # 1-50, T3 OFC 805, San Fernando Plaza, Medell&iacute;n
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+      <span class="badge bg-draft">BORRADOR</span>
+      <span class="badge bg-ceo">CEO-ONLY &middot; INTERNAL</span>
+    </div>
+  </div>
+
+  <div class="dual">
+    <div class="card">
+      <div class="card-h cost"><h3>Condiciones de compra &middot; Marluvas</h3></div>
+      <div class="card-b">
+        <div class="sr"><span class="k">Lista de precios</span><span class="v" style="font-size:11px;">Tabela COMEX 2026 v6</span></div>
+        <div class="sr"><span class="k">Comisi&oacute;n pactada</span><span class="v" style="color:var(--purple);font-size:11px;">5% (100A) / 10% (70B22)</span></div>
+        <div class="sr"><span class="k">Condici&oacute;n pago</span><span class="v" style="font-size:11px;">Cr&eacute;dito 90 d&iacute;as</span></div>
+        <div class="sr"><span class="k">Medio de pago</span><span class="v" style="font-size:11px;">Transferencia Bancaria</span></div>
+        <div class="sr"><span class="k">Total pares</span><span class="v">4,485</span></div>
+        <div class="sr big"><span class="k" style="font-weight:700;">Total compra (Marluvas)</span><span class="v" style="color:var(--navy);">$30,581.85</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h rev"><h3>Condiciones de venta &middot; Comtek</h3></div>
+      <div class="card-b">
+        <div class="sr"><span class="k">PO Comtek</span><span class="v" style="font-family:'JetBrains Mono';font-size:11px;">COMTEK 002-2026</span></div>
+        <div class="sr"><span class="k">Fecha PO</span><span class="v" style="font-size:11px;">4/may/2026</span></div>
+        <div class="sr"><span class="k">Cr&eacute;dito</span><span class="v" style="font-size:11px;">90 d&iacute;as</span></div>
+        <div class="sr big"><span class="k" style="font-weight:700;">Total venta (Comtek)</span><span class="v" style="color:var(--ok);">$30,581.85</span></div>
+        <div class="sr"><span class="k" style="font-weight:600;">Delta (sobreprecio)</span><span class="v" style="color:var(--t2);">$0.00</span></div>
+        <div class="sr"><span class="k" style="font-weight:600;">Comisi&oacute;n MWT</span><span class="v" style="color:var(--purple);">$1,716.89</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-h"><h3>L&iacute;neas &mdash; Precios paralelos + Comisi&oacute;n por l&iacute;nea</h3></div>
+    <table class="ct">
+      <thead>
+        <tr>
+          <th>#</th><th>C&oacute;digo</th><th>Referencia</th><th class="r">Qty</th>
+          <th class="r cb">P. Marluvas</th><th class="r cb">Subtotal ML</th>
+          <th class="r" style="background:rgba(124,58,237,.04);">Com %</th>
+          <th class="r rb">P. Comtek</th><th class="r rb">Subtotal CMK</th>
+          <th class="r">Comisi&oacute;n $</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td><td class="m">701414</td><td>100AWORKF-CA-BR-A</td>
+          <td class="r">4,185</td>
+          <td class="r cb">$6.41</td><td class="r cb">$26,825.85</td>
+          <td class="r" style="color:var(--purple);">5%</td>
+          <td class="r rb">$6.41</td><td class="r rb">$26,825.85</td>
+          <td class="r" style="color:var(--purple);">$1,341.29</td>
+        </tr>
+        <tr>
+          <td>2</td><td class="m">700198</td><td>70B22-BP-HIDRO</td>
+          <td class="r">300</td>
+          <td class="r cb">$12.52</td><td class="r cb">$3,756.00</td>
+          <td class="r" style="color:var(--purple);">10%</td>
+          <td class="r rb">$12.52</td><td class="r rb">$3,756.00</td>
+          <td class="r" style="color:var(--purple);">$375.60</td>
+        </tr>
+        <tr class="trow">
+          <td colspan="3">TOTAL</td><td class="r">4,485</td>
+          <td class="r cb"></td><td class="r cb" style="font-weight:700;">$30,581.85</td>
+          <td class="r" style="color:var(--purple);font-size:10px;">mixta</td>
+          <td class="r rb"></td><td class="r rb">$30,581.85</td>
+          <td class="r" style="color:var(--purple);">$1,716.89</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sect">
+    <div class="sect-h"><h3>Tallas BRA</h3></div>
+    <div style="padding:16px 18px;">
+      <div class="pill-group"><div class="pl">701414 &middot; 100AWORKF-CA-BR-A &middot; 4,185 pares</div><div class="pills">
+        <div class="pill"><span class="s">33/34</span><span class="q">20</span></div>
+        <div class="pill"><span class="s">35/36</span><span class="q">700</span></div>
+        <div class="pill"><span class="s">37</span><span class="q">720</span></div>
+        <div class="pill"><span class="s">38</span><span class="q">630</span></div>
+        <div class="pill"><span class="s">39</span><span class="q">660</span></div>
+        <div class="pill"><span class="s">40</span><span class="q">680</span></div>
+        <div class="pill"><span class="s">41</span><span class="q">340</span></div>
+        <div class="pill"><span class="s">42</span><span class="q">290</span></div>
+        <div class="pill"><span class="s">43</span><span class="q">100</span></div>
+        <div class="pill"><span class="s">44</span><span class="q">40</span></div>
+        <div class="pill"><span class="s">45</span><span class="q">5</span></div>
+      </div></div>
+      <div class="pill-group"><div class="pl">700198 &middot; 70B22-BP-HIDRO &middot; 300 pares</div><div class="pills">
+        <div class="pill"><span class="s">34</span><span class="q">20</span></div>
+        <div class="pill"><span class="s">35</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">36</span><span class="q">70</span></div>
+        <div class="pill"><span class="s">37</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">38</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">39</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">40</span><span class="q">70</span></div>
+        <div class="pill"><span class="s">42</span><span class="q">20</span></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-h"><h3>Comisiones &mdash; Proyecci&oacute;n de ingreso</h3></div>
+    <div style="padding:18px;">
+      <div class="dual" style="margin-bottom:0;">
+        <div>
+          <div class="sr"><span class="k">Base 100AWORKF (5%)</span><span class="v">$26,825.85</span></div>
+          <div class="sr"><span class="k">Comisi&oacute;n 100AWORKF</span><span class="v" style="color:var(--purple);">$1,341.29</span></div>
+          <div class="sr"><span class="k">Base 70B22-HIDRO (10%)</span><span class="v">$3,756.00</span></div>
+          <div class="sr"><span class="k">Comisi&oacute;n 70B22-HIDRO</span><span class="v" style="color:var(--purple);">$375.60</span></div>
+          <div class="sr big"><span class="k" style="font-weight:700;">Comisi&oacute;n bruta total</span><span class="v" style="color:var(--purple);font-size:16px;">$1,716.89</span></div>
+        </div>
+        <div>
+          <div class="sr"><span class="k">&#9312; Despacho</span><span class="v" style="font-size:11px;color:var(--warn);">Programado</span></div>
+          <div class="sr"><span class="k">&#9313; Aviso embarque</span><span class="v pend">[PENDIENTE]</span></div>
+          <div class="sr"><span class="k">&#9314; Cobro Marluvas</span><span class="v" style="font-size:11px;color:var(--t2);">Aviso + 90 d&iacute;as cr&eacute;dito</span></div>
+          <div class="sr"><span class="k">&#9315; MWT recibe comisi&oacute;n</span><span class="v" style="font-size:11px;color:var(--ok);">10-15 mes siguiente al cobro</span></div>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding:12px 16px;background:var(--raised);border-radius:8px;font-size:11px;color:var(--t2);line-height:1.7;">
+        <strong style="color:var(--navy);">Cadena determinista:</strong> Aviso embarque &rarr; + cr&eacute;dito 90 d&iacute;as = fecha cobro Marluvas &rarr; comisi&oacute;n se paga del 10 al 15 del mes siguiente al cobro.
+      </div>
+    </div>
+  </div>
+
+  <div class="arb">
+    <h3>Arbitraje CEO-ONLY</h3>
+    <div style="padding:14px;background:var(--raised);border-radius:8px;font-size:11px;color:var(--t2);line-height:1.8;">
+      <strong style="color:var(--navy);">Modelo B puro &mdash; comisi&oacute;n.</strong> P.Marluvas = P.Comtek en ambas l&iacute;neas. Delta/par = $0.00.<br>
+      Ingreso MWT exclusivamente por comisi&oacute;n: <strong style="color:var(--purple);">5%</strong> sobre 100AWORKF + <strong style="color:var(--purple);">10%</strong> sobre 70B22-HIDRO = <strong style="color:var(--purple);">$1,716.89</strong>.<br>
+      <strong style="color:var(--info);">Volumen relevante:</strong> 4,185 pares de 100AWORKF concentran 87.7% del valor; 70B22-HIDRO complementa 12.3%.<br>
+      <span style="color:var(--ok);">NCM extra&iacute;dos de Tabela COMEX 2026 v6 &middot; medio de pago: Transferencia Bancaria &middot; incoterm FOB Brasil.</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-p">Enviar a Marluvas</button>
+    <button class="btn btn-o">Duplicar</button>
+    <button class="btn btn-o">Editar</button>
+    <button class="btn btn-o">PDF Marluvas</button>
+    <button class="btn btn-d">Descartar</button>
+  </div>
+
+</div>
+</div>
+
+<!-- ============================================ -->
+<!-- MARLUVAS VIEW                                 -->
+<!-- ============================================ -->
+<div id="v-marluvas" class="view">
+<div class="dash">
+
+  <div class="head">
+    <div>
+      <h2>MARLUVAS &middot; PF 2467-2026 &middot; DISTRIBUIDORA COMTEK</h2>
+      <div class="meta">
+        <strong>Emisor:</strong> Muito Work Limitada 3-102-751710 &middot; <strong>Representante Regional Marluvas</strong><br>
+        <strong>Cliente:</strong> DISTRIBUIDORA COMTEK S.A.S. &middot; <strong>C&oacute;d. SAP:</strong> 4000000102
+      </div>
+    </div>
+    <span class="badge bg-mlv">VISTA MARLUVAS</span>
+  </div>
+
+  <div class="tri">
+    <div class="card">
+      <div class="card-h info"><h3>Cliente</h3></div>
+      <div class="card-b">
+        <div class="sr"><span class="k">Cliente</span><span class="v" style="font-size:11px;">DISTRIBUIDORA COMTEK S.A.S.</span></div>
+        <div class="sr"><span class="k">NIT</span><span class="v" style="font-family:'JetBrains Mono';font-size:11px;">900895760-4</span></div>
+        <div class="sr"><span class="k">C&oacute;d. SAP</span><span class="v" style="font-family:'JetBrains Mono';font-size:11px;">4000000102</span></div>
+        <div class="sr"><span class="k">Contacto</span><span class="v">Jose Angel Avila</span></div>
+        <div class="sr"><span class="k">Direcci&oacute;n</span><span class="v" style="font-size:10px;text-align:right;">CR 43 A # 1-50, T3 OFC 805<br>San Fernando Plaza, Medell&iacute;n</span></div>
+        <div class="sr"><span class="k">Pa&iacute;s</span><span class="v">Colombia</span></div>
+        <div class="sr"><span class="k">Tel&eacute;fono</span><span class="v" style="font-size:11px;">+1 305 831 5815</span></div>
+        <div class="sr"><span class="k">Email</span><span class="v" style="font-size:10px;">jose.avila@comtek.la</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h info"><h3>Condiciones</h3></div>
+      <div class="card-b">
+        <div class="sr"><span class="k">Forma de Pago</span><span class="v">Cr&eacute;dito</span></div>
+        <div class="sr"><span class="k">Plazo de pago</span><span class="v">90 d&iacute;as</span></div>
+        <div class="sr"><span class="k">Medio de pago</span><span class="v" style="font-size:11px;">Transferencia Bancaria</span></div>
+        <div class="sr"><span class="k">Moneda</span><span class="v" style="font-size:11px;">D&oacute;lares estadounidenses (USD)</span></div>
+        <div class="sr"><span class="k">Valor Neto</span><span class="v" style="font-size:9.5px;font-style:italic;text-align:right;">Treinta mil quinientos<br>ochenta y uno con 85/100</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h mlv"><h3>Datos proforma</h3></div>
+      <div class="card-b">
+        <div class="sr"><span class="k">Proforma</span><span class="v" style="font-family:'JetBrains Mono';font-size:11px;">2467-2026</span></div>
+        <div class="sr"><span class="k">Orden de Compra</span><span class="v" style="font-family:'JetBrains Mono';font-size:11px;">COMTEK 002-2026</span></div>
+        <div class="sr"><span class="k">Fecha PO</span><span class="v" style="font-size:11px;">4/may/2026</span></div>
+        <div class="sr"><span class="k">Incoterm</span><span class="v">FOB</span></div>
+        <div class="sr"><span class="k">Total pares</span><span class="v">4,485</span></div>
+        <div class="sr big"><span class="k" style="font-weight:700;">Total</span><span class="v" style="color:var(--navy);">$30,581.85</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-h"><h3>L&iacute;neas de producto</h3></div>
+    <table class="ct">
+      <thead>
+        <tr>
+          <th>#</th><th>C&oacute;digo</th><th>Referencia</th><th>NCM</th><th>Color</th>
+          <th class="r">Cantidad</th><th class="r">Precio $</th><th class="r">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td><td class="m">701414</td>
+          <td>100AWORKF-CA-BR-A<div class="desc-it">Bota PVC con forro, ca&ntilde;a alta, color blanco, puntera de acero.</div></td>
+          <td class="m" style="font-size:10px;">6401.10.00</td><td>BLANCO</td>
+          <td class="r">4,185</td><td class="r">$6.41</td><td class="r">$26,825.85</td>
+        </tr>
+        <tr>
+          <td>2</td><td class="m">700198</td>
+          <td>70B22-BP-HIDRO<div class="desc-it">Bota microfibra negra 1.6 mm, puntera pl&aacute;stica, resistente a hidrocarburos.</div></td>
+          <td class="m" style="font-size:10px;">6405.90.00</td><td>NEGRO</td>
+          <td class="r">300</td><td class="r">$12.52</td><td class="r">$3,756.00</td>
+        </tr>
+        <tr class="trow">
+          <td colspan="5"><strong>TOTAL</strong></td>
+          <td class="r"><strong>4,485</strong></td><td></td><td class="r"><strong>$30,581.85</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="notes-card">
+    <strong>Observaciones:</strong> Los precios base son dados en reales brasile&ntilde;os y estos son din&aacute;micos; para el c&aacute;lculo a d&oacute;lares de los EUA se calcula con el tipo de cambio autorizado. Las facturas y remisiones deben hacer referencia a la Orden de Compra No. <strong>COMTEK 002-2026</strong>. Los precios de esta proforma deben coincidir con los valores facturados.
+  </div>
+
+  <div class="sect">
+    <div class="sect-h"><h3>Tallas BRA</h3></div>
+    <div style="padding:16px 18px;">
+      <div class="pill-group"><div class="pl">701414 &middot; 100AWORKF-CA-BR-A &middot; 4,185 pares</div><div class="pills">
+        <div class="pill"><span class="s">33/34</span><span class="q">20</span></div>
+        <div class="pill"><span class="s">35/36</span><span class="q">700</span></div>
+        <div class="pill"><span class="s">37</span><span class="q">720</span></div>
+        <div class="pill"><span class="s">38</span><span class="q">630</span></div>
+        <div class="pill"><span class="s">39</span><span class="q">660</span></div>
+        <div class="pill"><span class="s">40</span><span class="q">680</span></div>
+        <div class="pill"><span class="s">41</span><span class="q">340</span></div>
+        <div class="pill"><span class="s">42</span><span class="q">290</span></div>
+        <div class="pill"><span class="s">43</span><span class="q">100</span></div>
+        <div class="pill"><span class="s">44</span><span class="q">40</span></div>
+        <div class="pill"><span class="s">45</span><span class="q">5</span></div>
+      </div></div>
+      <div class="pill-group"><div class="pl">700198 &middot; 70B22-BP-HIDRO &middot; 300 pares</div><div class="pills">
+        <div class="pill"><span class="s">34</span><span class="q">20</span></div>
+        <div class="pill"><span class="s">35</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">36</span><span class="q">70</span></div>
+        <div class="pill"><span class="s">37</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">38</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">39</span><span class="q">30</span></div>
+        <div class="pill"><span class="s">40</span><span class="q">70</span></div>
+        <div class="pill"><span class="s">42</span><span class="q">20</span></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="actions print-actions">
+    <button class="btn btn-p" onclick="printMLV('portrait')">Imprimir Carta Vertical</button>
+    <button class="btn btn-o" onclick="printMLV('landscape')">Imprimir Carta Horizontal</button>
+  </div>
+
+</div>
+</div>
+
+<style id="print-orientation"></style>
+<script>
+function sw(v,e){
+  document.querySelectorAll('.view').forEach(function(el){el.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('v-'+v).classList.add('active');
+  e.target.classList.add('active');
+}
+function printMLV(orientation){
+  var origTitle=document.title;
+  var origActiveView=document.querySelector('.view.active');
+  var origActiveTab=document.querySelector('.tab.active');
+  document.title='PF_2467-2026_Marluvas_COMTEK';
+  document.querySelectorAll('.view').forEach(function(el){el.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('v-marluvas').classList.add('active');
+  var style=document.getElementById('print-orientation');
+  var css='@media print { @page { size: letter '+orientation+'; margin: 6mm 8mm; }';
+  if(orientation==='landscape'){
+    css+=' table.ct { font-size: 10px; }';
+    css+=' table.ct thead th { font-size: 8.5px; padding: 6px 8px; }';
+    css+=' table.ct tbody td { padding: 6px 8px; }';
+    css+=' .tri { grid-template-columns: 1fr 1fr 1fr; gap: 10px; }';
+  }
+  css+=' }';
+  style.textContent=css;
+  function restore(){
+    document.title=origTitle;
+    document.querySelectorAll('.view').forEach(function(el){el.classList.remove('active');});
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+    if(origActiveView) origActiveView.classList.add('active');
+    if(origActiveTab) origActiveTab.classList.add('active');
+    window.removeEventListener('afterprint',restore);
+  }
+  window.addEventListener('afterprint',restore);
+  setTimeout(function(){window.print();},100);
+}
+</script>
+</body>
+</html>

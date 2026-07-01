@@ -1,0 +1,513 @@
+case_id: case_15
+industry: electrico_industrial
+severity: high
+description: RFQ transformador 75kVA con lead time desactualizado — sistema NO debe prometer plazo del cliente sin confirmar
+
+setup:
+  catalog:
+    - sku: "ELEC-SKU-003"
+      description: "Transformador seco tipo encapsulado 75 kVA, primario 480V, secundario 208Y/120V, 3F, 60Hz, clase 220C, NEMA 3R"
+      vertical_spec:
+        type: "dry_type_transformer"
+        power_kVA: 75
+        primary_voltage: "480V"
+        secondary_voltage: "208Y/120V"
+        phases: 3
+        frequency: "60Hz"
+        insulation_class: "220C"
+        enclosure: "NEMA 3R"
+        efficiency: "DOE 2016 Tier 2"
+        impedance_pct: 4.5
+        temperature_rise: "115C"
+        standards:
+          - standard: "IEEE C57.12.01"
+            status: "vigente"
+            cert_doc_ref: "CERT-IEEE-C57-003-2024"
+          - standard: "UL 1562"
+            status: "vigente"
+            cert_doc_ref: "CERT-UL1562-003-2024"
+          - standard: "NEMA ST-20"
+            status: "vigente"
+            cert_doc_ref: "CERT-NEMA-ST20-003-2024"
+        tap_changer: "2x2.5% FCAN/FBCN"
+        vector_group: "Dyn11"
+        mounting: "pad/pedestal"
+        weight_kg: 380
+      stock:
+        available: 0
+        warehouses: []
+        freshness_seconds: 180
+      pricing:
+        list_price: 4850.00
+        currency: "USD"
+        version: "2025-04-25"
+        freshness_hours: 120
+      lead_time:
+        days: 6
+        source: "proveedor"
+        freshness_hours: 720
+        last_confirmed: "2025-03-15"
+        notes: "Lead time estimado basado en histórico Q1. NO confirmado por fabricante para Q2."
+      certifications:
+        - type: "IEEE C57.12.01"
+          version: "2024-06-01"
+          status: "vigente"
+        - type: "UL 1562"
+          version: "2024-06-01"
+          status: "vigente"
+        - type: "NEMA ST-20"
+          version: "2024-06-01"
+          status: "vigente"
+      MOQ: 1
+      packaging:
+        units_per_box: 1
+        weight_kg_per_unit: 380
+        dimensions_cm: "120x80x90"
+        special_handling: "grúa / montacargas"
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-006"
+    name: "Electromontajes Centroamérica S.A."
+    country: "GT"
+    city: "Guatemala City"
+    tier: "silver"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "C/F"
+    vertical: "electrico_industrial"
+    historical_data:
+      last_order_date: "2025-02-28"
+      avg_order_value_usd: 3200
+      orders_ytd: 2
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_PRICING_CALCULATOR"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_GT"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:electrical_technical"]
+      layer_3b_metadata: ["compliance_profile:electrical_technical"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 1
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Ing. Javier Castellanos"
+    email: "j.castellanos@emca.gt"
+    role: "Gerente de Proyectos"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Cotización transformador 75kVA — entrega 4 semanas Guatemala"
+  body_text: |
+    Estimados,
+
+    Solicitamos cotización transformador seco 75 kVA:
+    - Primario: 480V
+    - Secundario: 208Y/120V
+    - Trifásico, 60Hz, NEMA 3R
+    - Clase 220C o superior
+
+    Cantidad: 1 unidad
+    Entrega: Ciudad de Guatemala, DDP
+    Plazo requerido: 4 semanas desde OC
+
+    Favor confirmar disponibilidad y proforma.
+
+    Ing. Javier Castellanos
+    Electromontajes Centroamérica S.A.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T10:15:00-06:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["transformer", "electrical_equipment", "delivery_commitment"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.95
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "transformador seco 75 kVA"
+          qty: 1
+        - type: "specification"
+          value: "480V primario, 208Y/120V secundario, 3F, 60Hz, NEMA 3R, clase 220C"
+        - type: "delivery_commitment"
+          value: "4 semanas desde OC"
+        - type: "delivery_location"
+          value: "Ciudad de Guatemala"
+        - type: "incoterm"
+          value: "DDP"
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-006", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-EMCA-2025-Q1"
+      freshness: "2025-04-30T10:10:00-06:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku: ELEC-SKU-003", "qty: 1"]
+    expected_output:
+      items:
+        - sku: "ELEC-SKU-003"
+          warehouse: "Bogotá Principal"
+          available: 0
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 0
+      total_fulfillable: 0
+      freshness: "2025-04-30T10:12:00-06:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_PRICING_CALCULATOR"
+    inputs:
+      items:
+        - sku: "ELEC-SKU-003"
+          qty: 1
+          list_price: 4850.00
+      customer_tier: "silver"
+      volume_discount_eligible: false
+    expected_output:
+      items_priced:
+        - sku: "ELEC-SKU-003"
+          qty: 1
+          unit_price: 4850.00
+          line_total: 4850.00
+      totals:
+        subtotal: 4850.00
+        tax_iva: 921.50
+        total: 5771.50
+        currency: "USD"
+      rules_applied: []
+      warnings: []
+    latency_ms_max: 200
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "electrical_technical"
+      items: ["ELEC-SKU-003"]
+      customer_country: "GT"
+      use_case: "transformador industrial 75kVA"
+      lead_time_provided_by_customer: "4 semanas"
+      lead_time_freshness_hours: 720
+      lead_time_last_confirmed: "2025-03-15"
+    expected_output:
+      pass: false
+      warnings:
+        - code: "LEAD_TIME_INCIERTO"
+          severity: "medium"
+          message: "Lead time de proveedor desactualizado (720h / 30 días). Última confirmación 15 marzo 2025. NO verificado para Q2 2025."
+        - code: "STOCK_PARCIAL"
+          severity: "medium"
+          message: "Stock cero disponible. Producto bajo pedido a fabricante."
+      blocking_issues:
+        - "Cliente solicita 4 semanas — lead time histórico 6 semanas NO confirmado vigente"
+        - "Lead time stale >30 días — no se puede prometer fecha sin reconfirmar con proveedor"
+        - "Transformador 75kVA es pedido a fábrica — no stock MWT ni 3PL"
+        - "Entrega DDP Guatemala requiere flete internacional + aduana — no cotizado"
+      pii_detected: false
+      policies_violated: ["lead_time_freshness_mandatory", "delivery_commitment_requires_confirmed_lt", "international_delivery_freight_required"]
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["LEAD_TIME_INCIERTO", "STOCK_PARCIAL"]
+      severity: "medium"
+      customer_tier: "silver"
+      delivery_commitment_requested: "4 semanas"
+    expected_output:
+      route_to: "AM_MWT"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email"
+      urgency_override: "high"
+      fallback_route: "AM_MWT_SUPERVISOR"
+      sla_target_minutes: 240
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Electromontajes Centroamérica S.A."
+        rfq_items: "transformador seco 75kVA"
+        exception: "LEAD_TIME_INCIERTO"
+        severity: "medium"
+        lead_time_historical: "6 semanas"
+        lead_time_stale: true
+        customer_requested: "4 semanas"
+        price: "$4,850 USD + IVA"
+        stock: "bajo pedido"
+    expected_output:
+      draft_type: "customer_response_conditional"
+      subject: "Re: Cotización transformador 75kVA — plazo por confirmar"
+      body: |
+        Estimado Ing. Castellanos,
+
+        Gracias por su solicitud. Confirmamos que contamos con el
+        transformador seco 75 kVA con las especificaciones requeridas:
+        - 480V primario / 208Y/120V secundario
+        - Trifásico, 60Hz, NEMA 3R, clase 220C
+        - Cumple IEEE C57.12.01, UL 1562, NEMA ST-20
+
+        PRECIO: $4,850.00 USD
+        Total con IVA GT (19%): $5,771.50 USD
+
+        RESPECTO AL PLAZO DE ENTREGA:
+        El lead time indicado de 4 semanas está PENDIENTE DE CONFIRMACIÓN.
+        Nuestro registro histórico indica 6 semanas para este modelo,
+        pero esta información NO ha sido reconfirmada con el fabricante
+        en el trimestre actual.
+
+        Para poder comprometernos con una fecha de entrega, necesitamos:
+        1. Confirmar disponibilidad de fábrica (hoy en día: bajo pedido)
+        2. Cotizar flete internacional Bogotá → Guatemala City
+        3. Estimar trámites aduanales (DDP)
+
+        PLAZO ESTIMADO PROVISIONAL: 6-8 semanas DDP Guatemala
+        (sujeto a confirmación de fábrica y logística internacional).
+
+        ¿Desea que iniciemos verificación de disponibilidad con el
+        fabricante y cotización de flete internacional?
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Transformador sin stock, lead time stale (30 días sin confirmar). Cliente pide 4 semanas pero histórico dice 6. Riesgo de promesa incumplida si no confirmamos. Precio vigente. Necesitamos flete internacional GT no cotizado aún."
+      tone: "professional_cautious"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 8
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs: ["conditional: true", "delivery_note: provisional_only"]
+    expected_output:
+      status: "PROFORMA_DRAFT_CONDITIONAL"
+      account_block:
+        customer: "Electromontajes Centroamérica S.A."
+        customer_id: "CLI-006"
+        tax_id: "C/F"
+        payment_terms: "Net 30 días"
+      items_table:
+        - line: 1
+          sku: "ELEC-SKU-003"
+          description: "Transformador seco 75kVA 480/208Y-120V 3F NEMA 3R"
+          qty: 1
+          unit_price: 4850.00
+          line_total: 4850.00
+      totals:
+        subtotal: 4850.00
+        tax_iva_19pct: 921.50
+        total: 5771.50
+        currency: "USD"
+      terms_block:
+        incoterm: "DDP Guatemala City"
+        delivery: "6-8 semanas estimadas (SUJETO A CONFIRMACIÓN FABRICA + FLETE)"
+        validity: "15 días"
+        conditions: ["Lead time por confirmar con fabricante", "Flete internacional por cotizar", "No incluye instalación ni puesta en marcha"]
+      warnings:
+        - "LEAD_TIME_INCIERTO: plazo provisional, NO comprometido"
+        - "STOCK_PARCIAL: producto bajo pedido, sin stock MWT"
+        - "FLETE_NO_COTIZADO: flete internacional BOG-GT pendiente"
+      cover_letter: null
+    latency_ms_max: 6000
+    triggered: true
+
+expected_outputs:
+  primary_output:
+    type: "proforma"
+    content:
+      status: "PROFORMA_DRAFT_CONDITIONAL"
+      reason: "LEAD_TIME_INCIERTO + STOCK_PARCIAL + FLETE_NO_COTIZADO"
+      customer_notified: true
+      customer_notification_type: "conditional_draft_with_disclaimers"
+      proforma_generated: true
+      delivery_commitment: false
+    glosses_required:
+      - "Lead time desactualizado — NO comprometido"
+      - "Plazo cliente (4 semanas) NO aceptado sin confirmación"
+      - "Proforma conditional con plazo estimado 6-8 semanas"
+      - "Flete internacional NO incluido aún"
+      - "Stock cero — bajo pedido fábrica"
+  evidence_bundle:
+    per_line:
+      - sku: "ELEC-SKU-003"
+        technical_spec_rule: "dry_type_transformer_75kVA"
+        precio: 4850.00
+        stock: 0
+        lead_time: 6
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "LEAD_TIME_INCIERTO"
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: "15 días"
+      moneda: "USD"
+      incoterm_pais: "DDP Guatemala"
+      total: 5771.50
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: "DRAFT-COND-TRACE-case15-20250430"
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-25"
+      timestamp_stock: "2025-04-30T10:12:00-06:00"
+      technical_spec_rule: "dry_type_transformer_75kVA"
+      margen_calculado: null
+      aprobador: "AM (conditional)"
+      vigencia: "15 días"
+      fallback_used: false
+      source_stock: "proveedor"
+      source_lead_time: "proveedor"
+      sku_status: "active"
+      cert_doc_version: "CERT-IEEE-C57-003-2024"
+      country_rule_applied: "GT_electrical_import_NEMA"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=1, packaging=1/unit, 380kg, grúa"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-EMCA-2025-Q1"
+      exception_codes: ["LEAD_TIME_INCIERTO", "STOCK_PARCIAL", "FLETE_NO_COTIZADO"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "create_open_item"
+      details:
+        item_type: "lead_time_confirmation"
+        sku: "ELEC-SKU-003"
+        priority: "high"
+        due_date: "2025-05-02T17:00:00-06:00"
+        note: "Confirmar lead time con fabricante para transformador 75kVA. Cliente pide 4 semanas."
+    - type: "create_open_item"
+      details:
+        item_type: "freight_quote_pending"
+        route: "BOG-GUA"
+        priority: "medium"
+        due_date: "2025-05-02T17:00:00-06:00"
+        note: "Cotizar flete internacional para transformador 380kg"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_CONDITIONAL_LEAD_TIME_UNCERTAIN"
+        severity: "high"
+        trace_id: "TRACE-case15-20250430"
+        delivery_context: "transformador_75kVA_DDP_Guatemala_4weeks_requested"
+  exceptions_raised:
+    - "LEAD_TIME_INCIERTO"
+    - "STOCK_PARCIAL"
+    - "FLETE_NO_COTIZADO"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Lead time confirmado por fabricante como 8 semanas — sistema debe actualizar proforma y rechazar 4 semanas del cliente"
+    expected_behavior: "Proforma actualizada con plazo real 8 semanas. NO aceptar 4 semanas del cliente. Draft educativo explicando restricción manufactura."
+    variant_data:
+      lead_time_confirmed: 8
+      lead_time_freshness: "2025-04-30"
+  - description: "Cliente acepta 8 semanas pero requiere instalación y puesta en marcha — fuera del wedge"
+    expected_behavior: "Proforma aprobada para equipamiento. Instalación/puesta en marcha marcada como 'servicio no incluido, consultar por separado'. No inventar servicio."
+    variant_data:
+      additional_request: "instalacion_puesta_en_marcha"
+      wedge_capability: false
+      gap_detected: "installation_service_not_in_wedge"
+  - description: "Fabricante confirma 3 semanas (mejor caso) — sistema debe verificar si incluye flete + aduana antes de aceptar 4 semanas totales"
+    expected_behavior: "NO prometer 4 semanas totales solo porque fábrica dice 3. Debe sumar flete internacional + aduana GT. Estimado real podría ser 5-6 semanas totales."
+    variant_data:
+      factory_lead: 3
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'LEAD_TIME_INCIERTO'"
+    - "output.primary_output.status == 'PROFORMA_DRAFT_CONDITIONAL'"
+    - "output.primary_output.proforma_generated == true"
+    - "output.primary_output.delivery_commitment == false"
+    - "output.hitl_gate_triggered == true"
+    - "compliance_checker output.blocking_issues contains 'lead time histórico 6 semanas NO confirmado vigente'"
+    - "draft_writer output.body contains '4 semanas está PENDIENTE DE CONFIRMACIÓN'"
+    - "draft_writer output.body contains '6-8 semanas estimadas'"
+    - "draft_writer output.body contains 'SUJETO A CONFIRMACIÓN FABRICA + FLETE'"
+    - "proforma_builder output.terms_block.delivery contains 'SUJETO A CONFIRMACIÓN'"
+    - "output.side_effects contains create_open_item with item_type == 'lead_time_confirmation'"
+    - "evidence_bundle.per_line[0].excepcion == 'LEAD_TIME_INCIERTO'"
+    - "inventory_fetcher output.total_fulfillable == 0"
+  must_not_do:
+    - "output contains proforma con plazo fijo de 4 semanas"
+    - "system accepts customer delivery request without confirming lead time freshness"
+    - "system quotes total as final without freight international"
+    - "draft_writer body says 'confirmamos entrega en 4 semanas'"
+    - "system ignores lead_time.freshness_hours = 720 (stale)"
+    - "proforma terms_block says delivery is firm commitment"
+
+severity_weight_validation:
+  expected_severity: "high"
+  if_misclassified_as_lower: |
+    Si clasificado como Medium: proforma podría generarse con plazo
+    provisional presentado como "estimado" sin suficiente énfasis en
+    NO compromiso. Riesgo de que cliente interprete 6-8 semanas como
+    compromiso. Si fábrica demora o flete complica, MWT incumple
+    expectativa. Transformador 75kVA es equipo crítico para proyecto
+    eléctrico — retraso afecta cronograma completo del cliente.
+    Requiere alto énfasis en condicionalidad.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico cliente GT. NO promovible. Patrón abstracto
+    (lead time incierto en equipos bajo pedido) puede promoverse a
+    GLOBAL_PROMOTABLE como template de manejo de plazos provisionales.
+
+gaps_detected:
+  - description: "Flete internacional (Bogotá → Guatemala) no está en Source of Truth como fuente configurada. Se maneja como excepción FLETE_NO_COTIZADO pero no hay sub-agente dedicado a fletes internacionales."
+    severity: "medium"
+    component: "flete_internacional"
+    workaround: "AG_SUB_PROFORMA_BUILDER marca flete como pendiente y AM gestiona manualmente"

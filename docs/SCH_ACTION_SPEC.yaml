@@ -1,0 +1,357 @@
+# SCH_ACTION_SPEC — Schema de Acción Registrable
+# id: SCH_ACTION_SPEC
+# version: 1.1
+# status: VIGENTE
+# visibility: [INTERNAL]
+# domain: Plataforma (IDX_PLATAFORMA)
+# type: SCH
+# stamp: VIGENTE — 2026-04-28
+# aprobador: CEO (delegado al Arquitecto Cowork)
+# aplica_a: [MWT, FaberLoom]
+# relacionado: SPEC_ACTION_ENGINE.md (D9 D10) · POL_DATA_CLASSIFICATION.md · ENT_PLAT_ACTION_REGISTRY.md
+#
+# Schema declarativo para registrar acciones en el Action Engine.
+# Cada acción del sistema (LLM call, API externa, tool local, MCP, KB access)
+# se describe con esta estructura. Validación con Pydantic v2.
+
+action_spec_schema:
+  version: "1.0"
+  description: |
+    Schema de cada acción registrable en el Action Engine.
+    Cumple D3 (schema enforcement estricto) y D6 (observability) del SPEC_ACTION_ENGINE.
+
+  required_fields:
+
+    # Identificación
+    action_id:
+      type: string
+      pattern: "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$"
+      description: |
+        Identificador único namespace.local_name.
+        Namespaces canónicos: llm | api | tool | mcp | kb | local
+        Ejemplos:
+          llm.claude_opus_47
+          llm.deepseek_v4_pro
+          api.amazon_sp_api
+          api.helium_10
+          tool.regex_extract_amount
+          mcp.search_registry
+          kb.pgvector_retrieve
+          local.bash_execute
+
+    category:
+      type: enum
+      values: [llm_provider, data_api, communication_api, tool_local, tool_browser, mcp_server, kb_access]
+      description: Categoría de alto nivel para Routing Policy
+
+    description:
+      type: string
+      max_length: 500
+      description: Qué hace la acción en lenguaje natural
+
+    # I/O Contract (D3)
+    input_schema:
+      type: pydantic_model_ref
+      description: |
+        Referencia a un Pydantic v2 model que valida el input.
+        Ej: "mwt_action_engine.schemas.ParseInvoiceInput"
+
+    output_schema:
+      type: pydantic_model_ref
+      description: |
+        Referencia a un Pydantic v2 model que valida el output.
+        Ej: "mwt_action_engine.schemas.ParseInvoiceOutput"
+
+    # Capability Map (Capability Map central del Engine)
+    capability:
+      tier_hint:
+        type: enum
+        values: [carpenteria, calidad]
+        description: |
+          Carpintería = trabajo verificable, descomponible, schema-strict.
+          Calidad = requiere juicio, síntesis, no descomponible.
+          Sirve a Routing Policy para preferir modelos baratos en carpintería.
+
+      input_type:
+        type: enum
+        values: [text, structured, binary, multimodal]
+
+      output_type:
+        type: enum
+        values: [text, structured, side_effect, stream]
+
+      capability_tags:
+        type: list[string]
+        description: |
+          Tags semánticos para matching intent → action.
+          Ej: [reasoning, code_generation, web_search, parsing,
+               classification, multilingual_es, multilingual_pt]
+
+    # Performance profile (alimenta routing decisions)
+    performance:
+      latency_p50_ms:
+        type: integer
+        description: Latencia mediana esperada
+      latency_p95_ms:
+        type: integer
+      cost_per_call_usd:
+        type: float
+        description: |
+          Costo unitario o función. Para LLMs: per call con prompt típico
+          de 1000 tokens. Para APIs: per request.
+      rate_limit_per_min:
+        type: integer
+        nullable: true
+      max_tokens_input:
+        type: integer
+        nullable: true
+      max_tokens_output:
+        type: integer
+        nullable: true
+
+    # Side effects (D5 multi-tenant + P3 Draft-first)
+    side_effects:
+      type: enum
+      values: [none, reversible, irreversible]
+      description: |
+        none: read-only, no afecta estado externo (LLM call, regex)
+        reversible: cambia estado pero deshacible (write to DB con audit)
+        irreversible: write externo definitivo (send email, payment, post)
+
+      requires_human_gate:
+        type: boolean
+        description: |
+          Si side_effects=irreversible, debe ser true por default (P3).
+          Override solo con justificación en POL_ACTION_OVERRIDE.
+
+      gate_threshold:
+        type: object
+        nullable: true
+        description: |
+          Condiciones que disparan el gate (impact level, monto,
+          confidence threshold, etc.). Cumple ImpactVector de
+          SPEC_AUTONOMY_CONTROL_ENGINE.
+
+    # Multi-tenant (D5)
+    multi_tenant:
+      org_isolation:
+        type: enum
+        values: [shared, per_org, per_user]
+        description: |
+          shared: dato es global (LLM call sin contexto org)
+          per_org: RLS aplicado por org_id (DB queries, gold samples)
+          per_user: RLS aplicado por user_id
+
+      org_overrides_allowed:
+        type: list[string]
+        description: |
+          Qué campos del ActionSpec pueden tener overlay per-org.
+          Ej: [rate_limit_per_min, gate_threshold, model_variant]
+
+    # Data Classification Routing (D9, v1.1)
+    data_classification:
+      dpa_available:
+        type: boolean
+        description: |
+          Si el provider tiene Data Processing Agreement reconocido para LATAM
+          (LGPD, Ley 1581 CO, Ley 25.326 AR). Bloquea N2+ si false.
+          Anthropic/OpenAI/Google: true. DeepSeek/Kimi managed China: false.
+          Self-host: depende de tu propio DPA con clientes.
+
+      accepts_data_class:
+        type: list[enum]
+        values_per_item: [N0, N1, N2, N3, N4]
+        description: |
+          Niveles de classification que esta acción acepta procesar.
+          Default safe: [N0, N1] si dpa_available=false.
+          Ejemplo Anthropic: [N0, N1, N2, N3, N4].
+          Ejemplo DeepSeek managed: [N0, N1] solo.
+
+      max_anonymization_level:
+        type: enum
+        values: [L0, L1, L2, L3]
+        description: |
+          Nivel máximo de anonimización que esta acción soporta.
+          L3 (synthetic) requiere infraestructura adicional.
+
+      requires_audit_entry:
+        type: boolean
+        default: true
+        description: |
+          Si true (default), cada call genera AuditEntry inmutable (D10).
+          False solo para acciones triviales sin side-effects (ej. health check).
+
+    # Failure handling (D8)
+    failure:
+      circuit_breaker_threshold:
+        type: integer
+        default: 3
+        description: Fallos consecutivos antes de abrir breaker
+
+      retry_policy:
+        type: enum
+        values: [none, linear, exponential]
+        default: exponential
+        max_retries:
+          type: integer
+          default: 3
+
+      fallback_action_id:
+        type: string
+        nullable: true
+        description: |
+          ID de acción a invocar si esta falla persistentemente.
+          Cumple D8 (circuit breaker + fallback).
+
+    # Versionado (D4)
+    versioning:
+      version:
+        type: semver
+        description: Versión del ActionSpec, no de la implementación
+
+      deprecated_in:
+        type: semver
+        nullable: true
+
+      sunset_in:
+        type: semver
+        nullable: true
+        description: 2 versiones major después de deprecated_in (D4)
+
+      replaces:
+        type: list[string]
+        nullable: true
+        description: action_ids que esta acción reemplaza
+
+    # Observability (D6)
+    observability:
+      log_input: boolean
+      log_output: boolean
+      log_pii_redacted: boolean
+        description: |
+          Si log_input/output=true, qué campos contienen PII y deben
+          redactarse antes de log. Default: redactar todo PII.
+
+      cost_tracking: boolean
+        description: |
+          Si true, el Engine suma cost_per_call al budget del org.
+
+      fact_attribution: boolean
+        description: |
+          Si true, cada output lleva referencia a esta acción en
+          ActionResult.fact_attribution.
+
+  optional_fields:
+
+    provider:
+      type: string
+      description: |
+        Vendor o proveedor (Anthropic, OpenAI, DeepSeek, Moonshot,
+        Amazon, Google, Helium 10, etc.)
+
+    region:
+      type: string
+      description: |
+        Región del provider (us-east-1, ap-south-1, etc.).
+        Crítico para data residency FaberLoom.
+
+    data_residency:
+      type: enum
+      values: [us, eu, latam, china, multi]
+      description: |
+        Dónde reside el dato durante el call. Crítico para
+        compliance multi-tenant FaberLoom (GDPR, LFPDPPP, LGPD,
+        Habeas Data Colombia).
+
+    license:
+      type: string
+      nullable: true
+      description: |
+        Licencia del provider (MIT, Apache 2.0, proprietary, etc.).
+        Relevante para self-host (ej. Kimi K2.6 MIT modificada).
+
+    deployment_mode:
+      type: enum
+      values: [api_managed, self_hosted, library, local]
+      description: |
+        api_managed: provider hostea, llamada HTTP
+        self_hosted: nosotros hosteamos (ej. Kimi K2.6 self-host)
+        library: Python package importable
+        local: ejecutado en el proceso del consumer
+
+    notes:
+      type: text
+      description: Comentarios adicionales para auditoría
+
+# Ejemplo de uso
+
+example_action_spec:
+  action_id: "llm.deepseek_v4_flash"
+  category: llm_provider
+  description: "DeepSeek V4-Flash para razonamiento estructurado y carpintería"
+  input_schema: "mwt_action_engine.schemas.LLMCallInput"
+  output_schema: "mwt_action_engine.schemas.LLMCallOutput"
+  capability:
+    tier_hint: carpenteria
+    input_type: text
+    output_type: text
+    capability_tags: [reasoning, structured_output, classification, multilingual_es]
+  performance:
+    latency_p50_ms: 800
+    latency_p95_ms: 1500
+    cost_per_call_usd: 0.0042
+    rate_limit_per_min: 1000
+    max_tokens_input: 1000000
+    max_tokens_output: 8192
+  side_effects:
+    type: none
+    requires_human_gate: false
+  multi_tenant:
+    org_isolation: shared
+    org_overrides_allowed: [rate_limit_per_min]
+  failure:
+    circuit_breaker_threshold: 3
+    retry_policy: exponential
+    max_retries: 3
+    fallback_action_id: "llm.haiku_45"
+  versioning:
+    version: "1.0.0"
+  observability:
+    log_input: true
+    log_output: true
+    log_pii_redacted: true
+    cost_tracking: true
+    fact_attribution: true
+  provider: DeepSeek
+  region: cn-north-1
+  data_residency: china
+  license: "MIT (open weights)"
+  deployment_mode: api_managed
+  notes: "75% off válido hasta 2026-05-05 — costo efectivo $0.435/$0.87"
+
+# Reglas de validación adicionales
+
+validation_rules:
+  - rule: |
+      Si side_effects = irreversible, requires_human_gate DEBE ser true.
+      Override solo via POL_ACTION_OVERRIDE.md.
+  - rule: |
+      Si data_residency = china y el consumer tiene org_context con
+      compliance_zone = LATAM/EU/US, la acción NO se permite sin override
+      explícito del CEO de FaberLoom.
+  - rule: |
+      Si tier_hint = calidad, el cost_per_call DEBE ser >$0.01 (heurística).
+      Modelos baratos en slot de calidad requieren justificación.
+  - rule: |
+      Si deployment_mode = self_hosted, el ActionSpec DEBE incluir
+      infrastructure_cost_monthly_usd en notes.
+  - rule: |
+      Si versioning.deprecated_in está set, sunset_in DEBE ser ≥2
+      versiones major mayor (D4).
+
+# Changelog
+# - v1.1 (2026-04-28): +data_classification block (dpa_available, accepts_data_class,
+#   max_anonymization_level, requires_audit_entry). Cumple SPEC_ACTION_ENGINE D9 + D10.
+#   Origen: indexa hallazgos data classification + audit module.
+# - v1.0 (2026-04-28): Creación. Schema completo con todas las restricciones
+#   de SPEC_ACTION_ENGINE D1-D8.

@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaberLoom — v4.9 · Toolset izquierda + Selector derecha</title>
+<style>
+  :root{
+    --bg-canvas:#1C1A17; --bg-surface:#26231F; --bg-raised:#322E29; --bg-hover:#2B2823;
+    --text-primary:#F4F1ED; --text-secondary:#D2CCC1; --text-muted:#9E988C;
+    --border-subtle:#3A3631; --border-default:#4A4540;
+    --coral:#E8896A; --coral-deep:#87432c; --coral-soft:rgba(232,137,106,.12);
+    --amber:#e1af5f; --sage:#78b991; --slate:#a0afbe; --vino:#E89B8A;
+    --ease:cubic-bezier(.25,.8,.25,1);
+    --shadow:0 4px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg-canvas);color:var(--text-primary);
+    font:13.5px/1.55 "Segoe UI",system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+  ::selection{background:var(--coral-deep);color:var(--text-primary)}
+  ::-webkit-scrollbar{width:8px}
+  ::-webkit-scrollbar-thumb{background:var(--border-subtle);border-radius:4px;border:2px solid var(--bg-canvas)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-default)}
+  button{font-family:inherit}
+  :focus-visible{outline:2px solid var(--coral);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+  /* TOPBAR */
+  .topbar{height:52px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;
+    padding:0 14px;gap:12px;flex-shrink:0;z-index:30}
+  .ceja{width:32px;height:32px;border:none;background:none;border-radius:8px;cursor:pointer;
+    display:grid;place-items:center;color:var(--text-muted);transition:background .18s,color .18s;flex-shrink:0}
+  .ceja:hover{background:var(--bg-surface);color:var(--text-primary)}
+  .ceja svg{width:17px;height:17px}
+  .logo{display:flex;align-items:center;gap:9px;margin-right:16px}
+  .logo .mark{width:26px;height:26px;min-width:26px;border-radius:7px;background:var(--coral);display:grid;
+    place-items:center;color:#1C1A17;font-family:Georgia,serif;font-weight:700;font-size:15px}
+  .logo .name{font-family:Georgia,serif;font-size:16.5px;white-space:nowrap}
+  .logo small{font-size:9.5px;color:var(--text-muted);display:block;font-family:"Segoe UI",sans-serif}
+
+  .modebar{display:flex;gap:2px;background:var(--bg-surface);border-radius:10px;padding:3px}
+  .modebar button{background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:600;
+    padding:7px 14px;border-radius:8px;cursor:pointer;transition:all .2s var(--ease);display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .modebar button:hover{color:var(--text-secondary)}
+  .modebar button.on{background:var(--bg-raised);color:var(--text-primary);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .modebar button .ico{font-size:13px}
+
+  .cmdk{flex:1;max-width:340px;margin:0 auto;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-radius:10px;padding:7px 12px;color:var(--text-muted);font-size:12.5px;display:flex;gap:8px;
+    cursor:pointer;transition:border-color .2s,background .2s}
+  .cmdk:hover{border-color:var(--border-default);background:var(--bg-hover)}
+  .cmdk kbd{margin-left:auto;border:1px solid var(--border-default);border-radius:4px;padding:0 6px;font-size:10px;font-family:inherit}
+
+  .frame{flex:1;display:flex;min-height:0}
+
+  /* RAIL 1 (IZQUIERDA) — TOOLSET del espacio activo */
+  .rail1{width:260px;min-width:260px;border-right:1px solid var(--border-subtle);display:flex;
+    flex-direction:column;padding:10px 8px;overflow:hidden;
+    transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s var(--ease),opacity .25s}
+  .rail1.hidden{width:0;min-width:0;padding:10px 0;opacity:0;pointer-events:none;border-right-color:transparent}
+  .toolwrap{flex:1;overflow-y:auto;overflow-x:hidden}
+
+  .toolSec{margin-bottom:16px}
+  .toolSec h4{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;
+    padding:6px 4px 8px;display:flex;align-items:center;gap:6px}
+  .toolSec h4 .tgl{margin-left:auto;font-size:10px;color:var(--text-secondary);cursor:pointer;transition:color .15s}
+  .toolSec h4 .tgl:hover{color:var(--text-primary)}
+  .toolItem{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;color:var(--text-secondary);
+    font-size:12.5px;cursor:pointer;margin-bottom:2px;transition:all .16s;position:relative}
+  .toolItem:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .toolItem.on{background:var(--coral-soft);border:1px solid var(--coral-deep);color:var(--text-primary)}
+  .toolItem .ico{width:20px;height:20px;border-radius:6px;background:var(--bg-raised);display:grid;place-items:center;
+    font-size:11px;color:var(--text-muted);flex-shrink:0}
+  .toolItem.on .ico{background:var(--coral);color:#1C1A17}
+  .toolItem .tag{margin-left:auto;font-size:9.5px;color:var(--text-muted);background:var(--bg-raised);border-radius:5px;padding:1px 6px}
+  .toolItem .tag.ok{background:rgba(120,185,145,.15);color:var(--sage)}
+  .toolItem .tag.warn{background:rgba(225,175,95,.15);color:var(--amber)}
+  .toolItem .tag.err{background:rgba(232,137,106,.15);color:var(--coral)}
+  .knowItem{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:11.5px;color:var(--text-secondary);
+    border-radius:6px;cursor:pointer;transition:padding-left .2s}
+  .knowItem:hover{padding-left:12px;color:var(--text-primary)}
+  .knowItem .lvl{margin-left:auto;font-size:9.5px;color:var(--text-muted);background:var(--bg-raised);border-radius:5px;padding:0 5px}
+  .knowItem .lvl.warn{color:var(--amber)}
+  .goldItem{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:11px;color:var(--text-secondary);
+    border-radius:6px;cursor:pointer;transition:padding-left .2s}
+  .goldItem:hover{padding-left:12px;color:var(--text-primary)}
+  .goldItem .num{margin-left:auto;font-size:9.5px;color:var(--text-muted)}
+  .toolHint{font-size:10px;color:var(--text-muted);padding:6px 8px;background:var(--bg-surface);border-radius:6px;margin-bottom:8px}
+
+  /* CANVAS */
+  .canvas{flex:1;min-width:0;overflow-y:auto;position:relative}
+  .view{display:none;min-height:100%}
+  .view.on{display:flex;flex-direction:column;animation:viewIn .3s var(--ease)}
+  @keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .grow{flex:1}
+  @keyframes itemIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+  /* SpaceLoom LIMPIO */
+  .spaceClean{display:flex;flex-direction:column;height:100%;max-width:800px;margin:0 auto;width:100%;padding:0 20px}
+  .spaceThread{flex:1;overflow-y:auto;padding:20px 0;display:flex;flex-direction:column;min-height:0}
+  .spaceThread .qmsg{margin-bottom:18px;animation:itemIn .3s var(--ease) backwards}
+  .spaceThread .qmsg .who{font-size:11px;color:var(--text-muted);margin-bottom:5px}
+  .spaceThread .qmsg .bub{background:var(--bg-raised);border-radius:14px;padding:12px 16px;max-width:85%;font-size:14px;line-height:1.6;display:inline-block}
+  .spaceThread .qmsg.me{text-align:right}
+  .spaceThread .qmsg.me .bub{background:var(--coral-soft);border:1px solid var(--coral-deep)}
+  .spaceThread .qmsg.ai .bub{background:none;padding:4px 2px;color:var(--text-secondary);max-width:92%;text-align:left}
+  .typing{display:inline-flex;gap:4px;padding:8px 4px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:tp 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+  @keyframes tp{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+
+  .draftClean{background:var(--bg-surface);border:1px solid var(--border-default);border-radius:14px;overflow:hidden;
+    margin-bottom:16px;animation:itemIn .35s var(--ease) backwards}
+  .draftClean.ok-state{border-color:rgba(120,185,145,.55)}
+  .draftClean .head{padding:12px 16px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:10px}
+  .state{font-size:10.5px;font-weight:700;color:#1C1A17;background:var(--amber);padding:2px 10px;border-radius:9px;text-transform:uppercase}
+  .dclass{margin-left:auto;font-size:10px;border:1px solid var(--slate);color:var(--slate);padding:1px 8px;border-radius:8px}
+  .draftClean .dbody{padding:15px 16px;font-size:14px;color:var(--text-secondary);line-height:1.6}
+  .draftClean .grounding{padding:10px 16px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-muted)}
+  .draftClean .grounding a{color:var(--vino);text-decoration:none;margin-right:12px}
+  .draftClean .tchips{padding:9px 16px;border-top:1px solid var(--border-subtle);display:flex;gap:7px;font-size:11px;
+    color:var(--text-muted);flex-wrap:wrap}
+  .draftClean .tchips .t{background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:6px;padding:2px 8px}
+  .draftClean .hitl{padding:12px 16px;border-top:1px solid var(--border-subtle);display:flex;gap:10px;align-items:center}
+  .btn{border:none;border-radius:9px;padding:8px 17px;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .16s var(--ease)}
+  .btn:active{transform:scale(.96)}
+  .btn.ok{background:var(--sage);color:#1C1A17}.btn.ok:hover{background:#8cc7a2}
+  .btn.iter{background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default)}
+  .btn.iter:hover{background:var(--bg-hover)}
+  .btn.no{background:none;color:var(--brick);border:1px solid rgba(220,120,105,.5)}
+  .boost{margin-left:auto;font-size:11.5px;color:var(--coral);background:none;border:1px dashed var(--coral-deep);
+    border-radius:8px;padding:6px 12px;cursor:pointer;transition:all .18s}
+  .boost:hover{background:var(--coral-soft)}
+  .spinner{width:13px;height:13px;border:2px solid rgba(28,26,23,.3);border-top-color:#1C1A17;border-radius:50%;
+    display:inline-block;vertical-align:-2px;margin-right:7px;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .composerClean{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg-canvas) 30%);padding:20px 0 16px}
+  .boxClean{background:var(--bg-surface);border:1px solid var(--border-default);border-radius:16px;padding:14px 16px;
+    transition:border-color .2s,box-shadow .2s}
+  .boxClean.focus{border-color:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-soft)}
+  .boxClean textarea{width:100%;background:none;border:none;color:var(--text-primary);font:14px/1.5 inherit;
+    outline:none;resize:none;height:24px;max-height:140px}
+  .boxClean .row{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:10.5px;color:var(--text-muted)}
+  .pedal{display:flex;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:9px;overflow:hidden}
+  .pedal button{background:none;border:none;color:var(--text-muted);font-size:11px;padding:5px 11px;cursor:pointer;transition:all .18s}
+  .pedal button.on{background:var(--coral-deep);color:var(--text-primary)}
+  .send{margin-left:auto;width:32px;height:32px;border-radius:9px;background:var(--bg-raised);border:none;
+    color:var(--text-muted);font-size:15px;cursor:pointer;transition:all .2s var(--ease)}
+  .send.ready{background:var(--coral);color:#1C1A17}
+  .send.ready:hover{transform:scale(1.07)}
+  .hintc{text-align:center;font-size:10.5px;color:var(--text-muted);margin-top:8px}
+
+  /* INBOX + MESA + APRENDER + ADMIN */
+  .classic{padding:24px 30px 10px;max-width:960px;margin:0 auto}
+  .vhead{margin-bottom:20px}
+  .vtitle{font-family:Georgia,serif;font-size:22px;margin-bottom:3px}
+  .vsub{font-size:12px;color:var(--text-muted)}
+  .cat{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted);margin:16px 0 9px;
+    display:flex;gap:8px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .mail{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;
+    padding:12px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:center;
+    transition:all .18s var(--ease);animation:itemIn .35s var(--ease) backwards}
+  .mail:hover{border-color:var(--border-default);transform:translateY(-1px);box-shadow:0 3px 14px rgba(0,0,0,.22)}
+  .mail .acct{font-size:9.5px;font-weight:700;letter-spacing:.5px;border:1px solid var(--border-default);
+    border-radius:5px;padding:2px 6px;color:var(--text-muted);min-width:56px;text-align:center}
+  .mail .mbody{flex:1;min-width:0}
+  .mail .from{font-size:12.5px;font-weight:600}
+  .mail .subj{font-size:12.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mail .meta{font-size:10.5px;color:var(--text-muted)}
+  .mail.unmatched{border-left:3px solid var(--amber)}
+  .routed{font-size:11px;color:var(--sage);white-space:nowrap}
+  .pill{font-size:11.5px;border-radius:8px;padding:5px 12px;cursor:pointer;border:1px solid var(--border-default);
+    background:none;color:var(--text-secondary);transition:all .16s var(--ease)}
+  .pill:hover{border-color:var(--text-muted);color:var(--text-primary);background:var(--bg-hover)}
+  .pill:active{transform:scale(.96)}
+  .pill.go{background:var(--coral);border-color:var(--coral);color:#1C1A17;font-weight:600}
+  .pill.go:hover{background:#eda184}
+  .pill.danger{color:var(--brick);border-color:rgba(220,120,105,.5)}
+  .kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+  .col h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;padding:4px 4px 10px;display:flex;gap:7px;align-items:center}
+  .col .cnt{font-size:10px;background:var(--bg-raised);border-radius:8px;padding:0 7px}
+  .card-k{background:var(--bg-surface);border:1px solid var(--border-subtle);border-left:3px solid var(--border-default);
+    border-radius:11px;padding:12px 13px;margin-bottom:9px;font-size:12px;cursor:pointer;
+    transition:all .18s var(--ease);animation:itemIn .35s var(--ease) backwards}
+  .card-k:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .card-k .score{float:right;font-size:11px;color:var(--text-muted)}
+  .card-k .cli{font-weight:600;font-size:13px;margin-bottom:2px}
+  .card-k .trace,.card-k .meta{font-size:10.5px;color:var(--text-muted);margin-bottom:5px}
+  .card-k .desc{color:var(--text-secondary);margin-bottom:9px}
+  .card-k .gok{font-size:11px;color:var(--coral)}
+  .c-crit{border-left-color:var(--coral)}.c-wait{border-left-color:var(--amber)}
+  .c-del{border-left-color:var(--slate)}.c-err{border-left-color:var(--vino)}
+
+  /* RAIL 3 (DERECHA) — Selector de espacios / contextos */
+  .rail3{width:240px;min-width:240px;border-left:1px solid var(--border-subtle);display:flex;
+    flex-direction:column;padding:10px 0 8px;overflow:hidden;
+    transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s var(--ease),opacity .25s}
+  .rail3.hidden{width:0;min-width:0;padding:10px 0;opacity:0;pointer-events:none;border-left-color:transparent}
+  .navwrap3{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 8px}
+
+  .ctxPill{display:flex;align-items:center;gap:8px;padding:8px 10px;margin:0 8px 10px;background:var(--bg-surface);
+    border:1px solid var(--border-subtle);border-radius:10px;cursor:pointer;transition:all .18s;position:relative}
+  .ctxPill:hover{border-color:var(--border-default);background:var(--bg-hover)}
+  .ctxPill .dot{width:8px;height:8px;border-radius:50%;background:var(--coral);flex-shrink:0}
+  .ctxPill .info{flex:1;min-width:0}
+  .ctxPill .info b{font-size:12.5px;display:block;color:var(--text-primary)}
+  .ctxPill .info span{font-size:10px;color:var(--text-muted);display:block}
+  .ctxPill .arrow{color:var(--text-muted);font-size:10px}
+
+  .navmode3{display:none}
+  .navmode3.on{display:block;animation:viewIn .25s var(--ease)}
+  .sec{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.9px;
+    padding:10px 4px 4px;display:flex;white-space:nowrap}
+  .it{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;color:var(--text-secondary);
+    font-size:13px;cursor:pointer;margin-bottom:1px;position:relative;white-space:nowrap;
+    transition:background .16s,color .16s}
+  .it:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .it:active{transform:scale(.985)}
+  .it.active{background:var(--bg-raised);color:var(--text-primary)}
+  .it.active::before{content:"";position:absolute;left:-8px;top:20%;bottom:20%;width:3px;
+    border-radius:2px;background:var(--coral);animation:slideIn .25s var(--ease)}
+  .b{margin-left:auto;font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px;
+    background:var(--bg-raised);color:var(--text-secondary)}
+  .b.op{background:var(--amber);color:#1C1A17}
+  .userfoot3{border-top:1px solid var(--border-subtle);margin-top:8px;padding:10px 8px 4px;display:flex;
+    gap:9px;align-items:center;cursor:pointer;border-radius:8px;transition:background .16s;margin:8px 8px 0}
+  .userfoot3:hover{background:var(--bg-hover)}
+  .avatar{width:27px;height:27px;min-width:27px;border-radius:50%;background:var(--bg-raised);display:grid;
+    place-items:center;font-size:10px;font-weight:700;color:var(--coral)}
+
+  /* MODALES */
+  .modal-bg{position:fixed;inset:0;background:rgba(15,13,11,.6);backdrop-filter:blur(3px);z-index:90;
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  .modal-bg.open{opacity:1;pointer-events:auto}
+  .palette{position:fixed;top:16%;left:50%;width:480px;transform:translateX(-50%) translateY(-8px) scale(.98);
+    background:var(--bg-raised);border:1px solid var(--border-default);border-radius:16px;box-shadow:var(--shadow);
+    z-index:95;opacity:0;pointer-events:none;transition:all .22s var(--ease);overflow:hidden}
+  .palette.open{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
+  .palette input{width:100%;background:none;border:none;border-bottom:1px solid var(--border-subtle);
+    color:var(--text-primary);font:14px inherit;padding:14px 18px;outline:none}
+  .palette .res{max-height:300px;overflow-y:auto;padding:8px}
+  .pres{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;
+    color:var(--text-secondary);transition:background .12s}
+  .pres:hover,.pres.sel{background:var(--bg-hover);color:var(--text-primary)}
+  .toast{position:fixed;bottom:26px;right:26px;background:var(--bg-raised);border:1px solid var(--border-default);
+    border-left:3px solid var(--sage);border-radius:12px;padding:13px 18px;font-size:12.5px;color:var(--text-secondary);
+    box-shadow:var(--shadow);z-index:99;transform:translateY(20px);opacity:0;transition:all .3s var(--ease);max-width:340px}
+  .toast.show{transform:none;opacity:1}
+  .toast b{color:var(--text-primary)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="ceja" id="cejaL" onclick="toggleL()" ondblclick="focusMode()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+  </button>
+
+  <div class="logo"><div class="mark">F</div>
+    <div><span class="name">Faber<span style="color:var(--coral)">*</span>loom</span>
+    <small>tenant · MWT</small></div></div>
+
+  <div class="modebar" id="modebar">
+    <button class="on" data-m="operar" onclick="setMode('operar')"><span class="ico">&#9707;</span>Operar</button>
+    <button data-m="aprender" onclick="setMode('aprender')"><span class="ico">&#9719;</span>Aprender</button>
+    <button data-m="admin" onclick="setMode('admin')"><span class="ico">&#9881;</span>Admin</button>
+  </div>
+
+  <div class="cmdk" onclick="openPalette()" tabindex="0"><span>&#8981;</span> Buscar o ejecutar... <kbd>&#8984;K</kbd></div>
+
+  <button class="ceja" id="cejaR" onclick="toggleR()" ondblclick="focusMode()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+  </button>
+</div>
+
+<div class="frame">
+
+<!-- RAIL 1 (IZQUIERDA) — TOOLSET del espacio activo -->
+<aside class="rail1" id="rail1">
+  <div class="toolwrap">
+
+    <div class="toolHint">&#9889; <b>Toolset</b> del espacio activo</div>
+
+    <!-- Agente activo -->
+    <div class="toolSec">
+      <h4>&#9670; Agente <span class="tgl" onclick="toast('Ver todos los agentes')">ver todos</span></h4>
+      <div class="toolItem on" onclick="setAgent(this,'cotizador')"><span class="ico">&#9670;</span>@cotizador<span class="tag ok">Activo</span></div>
+      <div class="toolItem" onclick="setAgent(this,'cobranza')"><span class="ico">&#9670;</span>@cobranza<span class="tag">Idle</span></div>
+      <div class="toolItem" onclick="setAgent(this,'research')"><span class="ico">&#9670;</span>@research<span class="tag">Idle</span></div>
+    </div>
+
+    <!-- Skills disponibles -->
+    <div class="toolSec">
+      <h4>&#9881; Skills <span class="tgl" onclick="toast('Ver todos los skills')">ver todos</span></h4>
+      <div class="toolItem" onclick="setSkill(this,'cotizar')"><span class="ico">&#9881;</span>Cotizar RFQ<span class="tag ok">Vigente</span></div>
+      <div class="toolItem" onclick="setSkill(this,'cobrar')"><span class="ico">&#9881;</span>Cobranza<span class="tag ok">Vigente</span></div>
+      <div class="toolItem" onclick="setSkill(this,'resumir')"><span class="ico">&#9881;</span>Resumir cuenta<span class="tag">Draft</span></div>
+      <div class="toolItem" onclick="setSkill(this,'voice')"><span class="ico">&#9881;</span>Ajustar voz<span class="tag warn">Test</span></div>
+    </div>
+
+    <!-- Conocimiento inyectado -->
+    <div class="toolSec">
+      <h4>&#128218; Conocimiento <span class="tgl" onclick="toast('Ver todo el conocimiento')">ver todo</span></h4>
+      <div class="knowItem">&#9673; Histórico Sondel<span class="lvl">L3</span></div>
+      <div class="knowItem">&#9673; Condiciones comerciales<span class="lvl">L3</span></div>
+      <div class="knowItem">&#9675; Lista precios T2<span class="lvl warn">L2 · vence 18d</span></div>
+      <div class="knowItem">&#9675; Voice MWT<span class="lvl">L2</span></div>
+      <div class="knowItem">&#9675; Normas EPP LATAM<span class="lvl">L0</span></div>
+    </div>
+
+    <!-- Golden samples -->
+    <div class="toolSec">
+      <h4>&#9673; Gold samples <span class="tgl" onclick="toast('Ver todos los gold samples')">42</span></h4>
+      <div class="goldItem">&#9673; Cotización Sondel · PF_2453<span class="num">12 usos</span></div>
+      <div class="goldItem">&#9673; Cobranza firme · F-1102<span class="num">8 usos</span></div>
+      <div class="goldItem">&#9673; Respuesta tracking<span class="num">5 usos</span></div>
+    </div>
+
+  </div>
+</aside>
+
+<!-- CANVAS — Iteración limpia -->
+<main class="canvas" id="canvas">
+
+  <section class="view on" id="v-space">
+    <div class="spaceClean">
+      <div class="spaceThread" id="spaceThread">
+        <div class="qmsg me"><div class="who">Alvaro · 10:42</div>
+          <div class="bub">Entró el RFQ de 500 pares. Armala con camino 2 DDP.</div></div>
+        <div class="qmsg ai"><div class="who" style="color:var(--coral)">@cotizador · Sondel SA</div>
+          <div class="bub">Tier 0 extrajo 7/9 campos. Excepción: curva de tallas no especificada — usé el histórico de Sondel y quedó marcada.</div></div>
+        <div class="draftClean" id="draft">
+          <div class="head"><span class="state" id="dstate">Esperando aprobación</span>
+            <span style="font-family:Georgia,serif;font-size:15px">Proforma PF_2468 — Sondel SA (v1)</span>
+            <span class="dclass">N1 · PARTNER_B2B</span></div>
+          <div class="dbody">500 × 50S5BR · mix histórico 38-44 · DDP Alajuela camino 2 · montos $ ——,——<br>
+            <span style="color:var(--amber);font-size:12px">&#9888; Curva de tallas asumida — confirmar antes de enviar.</span></div>
+          <div class="grounding">Evidencia: <a href="#">SCH_PROFORMA_MWT</a><a href="#">ENT_COMERCIAL_PRICING §C</a>
+            <a href="#">golden PF_2453</a><a href="#">Lista Marluvas T2</a> · SHA-256 &#10003;</div>
+          <div class="tchips"><span class="t">margen &#8805; floor &#10003;</span><span class="t">cliente al día &#10003;</span>
+            <span class="t" id="dmodel">modelo: sonnet</span><span class="t">$0.018</span><span class="t">conf 0.78</span></div>
+          <div class="hitl" id="dacts">
+            <button class="btn ok" id="btnOk" onclick="aprobar()">Aprobar y enviar</button>
+            <button class="btn iter" onclick="focusComposer('Decile qué cambiar…')">Editar</button>
+            <button class="btn no">Rechazar</button>
+            <button class="boost" onclick="boost()">&#9889; Rehacer con el mejor</button></div>
+        </div>
+      </div>
+
+      <div class="composerClean"><div class="boxClean" id="boxClean">
+        <textarea id="taClean" rows="1" placeholder="Iterá, investigá, o pedí a un agente… (@agente para invocar)"></textarea>
+        <div class="row"><div class="pedal"><button onclick="pedal(this)">Eco</button>
+          <button class="on" onclick="pedal(this)">Balanceado</button><button onclick="pedal(this)">Sport+</button></div>
+          <span><b style="color:var(--coral)">@cotizador</b> activo · contexto: Sondel SA</span>
+          <button class="send" id="sendClean" onclick="sendMsg()">&#8593;</button></div></div>
+        <div class="hintc">SpaceLoom: chat limpio. Selector de espacios en el panel derecho.</div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-inbox">
+    <div class="classic">
+      <div class="vhead"><div class="vtitle">Inbox</div>
+      <div class="vsub">Entrada de trabajo. Qué convertir en tarea y qué abrir en SpaceLoom.</div></div>
+      <div class="cat"><span class="dot" style="background:var(--sage)"></span> Ruteados</div>
+      <div class="mail"><span class="acct">VENTAS</span>
+        <div class="mbody"><div class="from">compras@sondel.cr</div>
+          <div class="subj">RFQ 500 pares 50S5BR — entrega Alajuela DDP</div>
+          <div class="meta">10:41 · vinculado a Sondel SA</div></div>
+        <span class="routed">&#10003; &#8594; Sondel SA</span>
+        <button class="pill" onclick="setContext('sondel');go('space')">abrir en SpaceLoom</button></div>
+      <div class="cat"><span class="dot" style="background:var(--amber)"></span> Sin match (3)</div>
+      <div class="mail unmatched"><span class="acct">LIC</span>
+        <div class="mbody"><div class="from">proveeduria@grupoconstrux.gt</div>
+          <div class="subj">Solicitud catálogo EPP + condiciones licitación Q3</div>
+          <div class="meta">08:30 · cliente nuevo · Guatemala</div></div>
+        <button class="pill go" onclick="toast('Workspace <b>Grupo Construx</b> creado')">+ Crear workspace</button></div>
+      <div class="grow"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-mesa">
+    <div class="classic">
+      <div class="vhead"><div class="vtitle">Mesa de Control</div>
+      <div class="vsub">Cola de aprobaciones. La resolución vive en SpaceLoom.</div></div>
+      <div class="kanban">
+        <div class="col"><h4><span class="dot" style="background:var(--coral)"></span> Tu criterio <span class="cnt">1</span></h4>
+          <div class="card-k c-crit" onclick="setContext('industrias');go('space')"><span class="score">0.96</span>
+            <div class="cli">Industrias del Norte SA</div>
+            <div class="meta">&#9684; 14m SLA · USD 12,400</div>
+            <div class="desc">240 pares BC-7240 · descuento platinum</div>
+            <span class="gok">Resolver en SpaceLoom &#8594;</span></div></div>
+        <div class="col"><h4><span class="dot" style="background:var(--amber)"></span> Esperando <span class="cnt">2</span></h4>
+          <div class="card-k c-wait" onclick="setContext('sondel');go('space')"><span class="score">0.78</span>
+            <div class="cli">Sondel SA</div><div class="meta">&#9684; 22m · PF_2468</div>
+            <div class="desc">500 pares 50S5BR DDP</div><span class="gok">Revisar en SpaceLoom &#8594;</span></div></div>
+        <div class="col"><h4><span class="dot" style="background:var(--slate)"></span> Delegado <span class="cnt">1</span></h4>
+          <div class="card-k c-del"><span class="score">0.41</span><div class="cli">Distribuidora Comtek</div>
+            <div class="meta">&#8594; [AF] Alejandro</div></div></div>
+        <div class="col"><h4><span class="dot" style="background:var(--vino)"></span> Error <span class="cnt">1</span></h4>
+          <div class="card-k c-err"><span class="score">—</span><div class="cli">Parser Excel — precios T2</div>
+            <div class="meta">&#9684; 3h · bloquea pricing</div></div></div>
+      </div><div class="grow"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-aprender">
+    <div class="classic">
+      <div class="vhead"><div class="vtitle">Aprendizaje</div>
+      <div class="vsub">Cola epistémica. Curación de lo que el sistema propone.</div></div>
+      <div class="cat"><span class="dot" style="background:var(--amber)"></span> Candidatos a indexar (3)</div>
+      <div class="draftClean">
+        <div class="head"><span class="state">Candidato</span>
+          <span style="font-family:Georgia,serif;font-size:14px">"SonDel acepta entregas parciales"</span>
+          <span class="dclass">&#8594; L3 · Sondel</span></div>
+        <div class="dbody">Detectado en SpaceLoom con contexto Sondel.</div>
+        <div class="hitl">
+          <button class="btn ok" onclick="toast('Indexado')">Aprobar a L3</button>
+          <button class="btn iter">Iterar</button><button class="btn no">Descartar</button></div>
+      </div>
+      <div class="grow"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-admin">
+    <div class="classic">
+      <div class="vhead"><div class="vtitle">Administrar</div>
+      <div class="vsub">Capacidades y gobernanza del tenant.</div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:13px;padding:16px;">
+          <span style="float:right;font-size:18px;font-family:Georgia,serif;color:var(--coral)">16</span><h4 style="font-family:Georgia,serif;font-size:15px">Skills</h4><p style="font-size:11.5px;color:var(--text-muted)">2 en SHADOW</p></div>
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:13px;padding:16px;">
+          <span style="float:right;font-size:18px;font-family:Georgia,serif;color:var(--coral)">7</span><h4 style="font-family:Georgia,serif;font-size:15px">Agentes</h4><p style="font-size:11.5px;color:var(--text-muted)">@cotizador · @cobranza</p></div>
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:13px;padding:16px;">
+          <span style="float:right;font-size:18px;font-family:Georgia,serif;color:var(--coral)">4</span><h4 style="font-family:Georgia,serif;font-size:15px">Presets</h4><p style="font-size:11.5px;color:var(--text-muted)">Balanceado activo</p></div>
+      </div><div class="grow"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- RAIL 3 (DERECHA) — Selector de espacios / contextos -->
+<aside class="rail3" id="rail3">
+  <div class="navwrap3">
+    <div class="navmode3 on" id="m3-operar">
+      <!-- Pill de contexto activo -->
+      <div class="ctxPill" onclick="openPalette()">
+        <span class="dot"></span>
+        <div class="info"><b>Sondel SA</b><span>B2B · CXC 90d · código SI0063</span></div>
+        <span class="arrow">&#9662;</span>
+      </div>
+
+      <div class="sec">Espacios</div>
+      <div class="it active" data-v="space" onclick="go('space')"><span class="ico">&#10047;</span>SpaceLoom</div>
+      <div class="it" data-v="inbox" onclick="go('inbox')"><span class="ico">&#9993;</span>Inbox<span class="b op">12</span></div>
+      <div class="it" data-v="mesa" onclick="go('mesa')"><span class="ico">&#9707;</span>Mesa<span class="b op">3</span></div>
+
+      <div class="sec">Contextos</div>
+      <div class="it" onclick="setContext('sondel')" id="ctx3-sondel"><span class="ico">&#9675;</span>Sondel SA</div>
+      <div class="it" onclick="setContext('rana')" id="ctx3-rana"><span class="ico">&#9675;</span>Rana Walk</div>
+      <div class="it" onclick="setContext('industrias')" id="ctx3-industrias"><span class="ico">&#9675;</span>Industrias Norte</div>
+      <div class="it" onclick="setContext('tema')" id="ctx3-tema"><span class="ico">&#9675;</span>Precios dieléctrica</div>
+    </div>
+
+    <div class="navmode3" id="m3-aprender">
+      <div class="it active" data-v="aprender" onclick="go('aprender')"><span class="ico">&#9636;</span>StackLoom<span class="b op">&#9719;5</span></div>
+      <div class="it"><span class="ico">&#128218;</span>Conocimiento L0-L4</div>
+      <div class="it"><span class="ico">&#9998;</span>Señales HITL</div>
+      <div class="it"><span class="ico">&#9673;</span>Gold samples</div>
+    </div>
+
+    <div class="navmode3" id="m3-admin">
+      <div class="it active" data-v="admin" onclick="go('admin')"><span class="ico">&#9881;</span>Skills<span class="b">16</span></div>
+      <div class="it"><span class="ico">&#9670;</span>Agentes<span class="b">7</span></div>
+      <div class="it"><span class="ico">&#127899;</span>IA: modelos y ruteo</div>
+      <div class="it"><span class="ico">&#9998;</span>Audit</div>
+      <div class="it"><span class="ico">&#9787;</span>Usuarios<span class="b">12</span></div>
+    </div>
+  </div>
+
+  <div class="userfoot3"><div class="avatar">AA</div>
+    <div style="font-size:12px">Alvaro<span style="color:var(--text-muted);display:block;font-size:10px">OWNER</span></div></div>
+</aside>
+
+</div>
+
+<div class="modal-bg" id="mbg" onclick="closePalette()"></div>
+<div class="palette" id="palette">
+  <input id="pin" placeholder="Buscar o ejecutar…" oninput="filterP()">
+  <div class="res" id="pres"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const contexts={
+  sondel:{name:'Sondel SA',type:'B2B',sub:'B2B · CXC 90d · código SI0063',color:'var(--coral)'},
+  rana:{name:'Rana Walk',type:'Marca',sub:'Marca propia · Amazon FBA · Costa Rica',color:'var(--sage)'},
+  industrias:{name:'Industrias del Norte',type:'B2B',sub:'Cuenta crítica · Platinum · override activo',color:'var(--amber)'},
+  tema:{name:'Precios dieléctrica',type:'Tema',sub:'Investigación activa · día 2',color:'var(--slate)'},
+  global:{name:'Sin contexto',type:'Global',sub:'KB tenant · cross-workspace',color:'var(--text-muted)'}
+};
+
+let currentCtx='sondel';
+
+function setContext(id){
+  const c=contexts[id]; currentCtx=id;
+  document.querySelectorAll('.ctxPill').forEach(pill=>{
+    pill.querySelector('b').textContent=c.name;
+    pill.querySelector('span:last-child').textContent=' · '+c.sub;
+    pill.querySelector('.dot').style.background=c.color;
+  });
+  document.querySelectorAll('.it').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('#ctx3-'+id).forEach(it=>it.classList.add('active'));
+  toast('Contexto: <b>'+c.name+'</b> · KB inyectado: L3 propio + L2 heredado');
+}
+function setAgent(el,name){
+  document.querySelectorAll('.toolItem').forEach(t=>{if(t.parentNode.querySelector('h4').textContent.includes('Agente'))t.classList.remove('on');});
+  el.classList.add('on');
+  toast('Agente: <b>@'+name+'</b> · ahora responde en SpaceLoom');
+}
+function setSkill(el,name){
+  el.classList.toggle('on');
+  toast('Skill <b>'+name+'</b> · '+(el.classList.contains('on')?'activado':'desactivado'));
+}
+
+function setMode(m){
+  document.querySelectorAll('.modebar button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  document.querySelectorAll('.navmode3').forEach(n=>n.classList.remove('on'));
+  document.getElementById('m3-'+m).classList.add('on');
+  go(m==='operar'?'space':m==='aprender'?'aprender':'admin');
+}
+function go(v){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  const el=document.getElementById('v-'+v); void el.offsetWidth; el.classList.add('on');
+  document.querySelectorAll('.navmode3 .it').forEach(x=>x.classList.remove('active'));
+  const it=document.querySelector('.navmode3.on .it[data-v="'+v+'"]'); if(it) it.classList.add('active');
+  document.getElementById('canvas').scrollTop=0;
+}
+function toggleL(){document.getElementById('rail1').classList.toggle('hidden');}
+function toggleR(){document.getElementById('rail3').classList.toggle('hidden');}
+let focused=false;
+function focusMode(){
+  focused=!focused;
+  document.getElementById('rail1').classList.toggle('hidden',focused);
+  document.getElementById('rail3').classList.toggle('hidden',focused);
+  toast(focused?'<b>Modo focus</b> · paneles ocultos':'Paneles restaurados');
+}
+function pedal(b){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}
+function aprobar(){
+  const btn=document.getElementById('btnOk');
+  btn.innerHTML='<span class="spinner"></span>Enviando…';btn.style.pointerEvents='none';
+  setTimeout(()=>{
+    const s=document.getElementById('dstate');s.textContent='Aprobada';s.style.background='var(--sage)';
+    document.getElementById('draft').classList.add('ok-state');
+    document.getElementById('dacts').innerHTML='<span style="color:var(--sage);font-size:12.5px">&#10003; Aprobada · enviada · audit registrado</span>';
+    toast('<b>PF_2468 enviada</b> · evidence sellado');},900);
+}
+function boost(){document.getElementById('dmodel').textContent='modelo: opus (boost)';
+  document.getElementById('dstate').textContent='Re-generando…';
+  toast('Re-ejecutando con el mejor');}
+function wire(taId,boxId,sendId){
+  const ta=document.getElementById(taId),box=document.getElementById(boxId),send=document.getElementById(sendId);
+  ta.addEventListener('focus',()=>box.classList.add('focus'));
+  ta.addEventListener('blur',()=>box.classList.remove('focus'));
+  ta.addEventListener('input',()=>{ta.style.height='24px';ta.style.height=Math.min(ta.scrollHeight,140)+'px';
+    send.classList.toggle('ready',ta.value.trim().length>0);});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
+}
+function sendMsg(){
+  const ta=document.getElementById('taClean');
+  const th=document.getElementById('spaceThread');
+  const txt=ta.value.trim();if(!txt)return;
+  const m=document.createElement('div');m.className='qmsg me';
+  m.innerHTML='<div class="who">Alvaro · ahora</div><div class="bub"></div>';
+  m.querySelector('.bub').textContent=txt;th.appendChild(m);
+  ta.value='';ta.style.height='24px';
+  document.getElementById('sendClean').classList.remove('ready');
+  const t=document.createElement('div');t.className='qmsg ai';
+  t.innerHTML='<div class="who" style="color:var(--coral)">@cotizador · Sondel SA</div><div class="bub"><span class="typing"><i></i><i></i><i></i></span></div>';
+  th.appendChild(t);t.scrollIntoView({behavior:'smooth',block:'end'});
+  setTimeout(()=>{t.querySelector('.bub').textContent='Entendido. Procesando tu instrucción...';
+    t.scrollIntoView({behavior:'smooth',block:'end'});},1100);
+}
+function focusComposer(ph){const ta=document.getElementById('taClean');ta.placeholder=ph;ta.focus();}
+const cmds=[
+  {l:'&#9993; Ir a Inbox',f:()=>go('inbox')},
+  {l:'&#9707; Ir a Mesa',f:()=>go('mesa')},
+  {l:'&#10047; Ir a SpaceLoom',f:()=>go('space')},
+  {l:'&#9675; Contexto: Sondel SA',f:()=>{setContext('sondel');go('space');}},
+  {l:'&#9675; Contexto: Rana Walk',f:()=>{setContext('rana');go('space');}},
+  {l:'&#9675; Contexto: Industrias Norte',f:()=>{setContext('industrias');go('space');}},
+  {l:'&#9719; Aprendizaje',f:()=>go('aprender')},
+  {l:'&#9881; Admin',f:()=>go('admin')},
+  {l:'&#9678; Modo focus',f:focusMode}];
+function openPalette(){document.getElementById('mbg').classList.add('open');
+  document.getElementById('palette').classList.add('open');
+  const i=document.getElementById('pin');i.value='';filterP();setTimeout(()=>i.focus(),60);}
+function closePalette(){document.getElementById('mbg').classList.remove('open');
+  document.getElementById('palette').classList.remove('open');}
+function filterP(){const q=document.getElementById('pin').value.toLowerCase();
+  const res=cmds.filter(c=>c.l.toLowerCase().includes(q));
+  document.getElementById('pres').innerHTML=res.map((c,i)=>
+    '<div class="pres'+(i===0?' sel':'')+'" onclick="run('+cmds.indexOf(c)+')">'+c.l+'</div>').join('')
+    ||'<div class="pres" style="color:var(--text-muted)">sin resultados</div>';}
+function run(i){cmds[i].f();closePalette();}
+document.addEventListener('keydown',e=>{
+  const typing=/TEXTAREA|INPUT/.test(document.activeElement.tagName);
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();
+    document.getElementById('palette').classList.contains('open')?closePalette():openPalette();return;}
+  if(e.key==='Escape'){closePalette();return;}
+  if(typing)return;
+  if(e.key==='['){toggleL();}
+  if(e.key===']'){toggleR();}
+  if(e.key==='f'||e.key==='F'){focusMode();}
+});
+let toastTimer;
+function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3600);}
+wire('taClean','boxClean','sendClean');
+</script>
+</body>
+</html>

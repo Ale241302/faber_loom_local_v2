@@ -1,0 +1,744 @@
+case_id: case_20
+industry: ferreteria_industrial
+severity: low-medium
+description: RFQ mixto 20 items (clavos, tornillos, anclajes, cinta métrica) — 3 de 20 items con stock parcial, sistema detecta y propone alternativas o backorder
+
+setup:
+  catalog:
+    - sku: "FERR-SKU-003"
+      description: "Clavo común 3\" (7.6cm) acero pulido, 1kg bolsa, uso general madera"
+      stock:
+        available: 50
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 30
+            reserved: 5
+          - location: "Barranquilla Norte"
+            qty: 20
+            reserved: 3
+        freshness_seconds: 180
+      pricing:
+        list_price: 2.50
+        currency: "USD"
+        version: "2025-04-28"
+      lead_time:
+        days: 1
+        source: "3PL"
+      MOQ: 1
+      sku_status: "active"
+    - sku: "FERR-SKU-004"
+      description: "Tornillo autorroscante 1/4\"×2\" cabeza hexagonal galvanizado, 100 unidades caja"
+      stock:
+        available: 0
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 0
+            reserved: 0
+        freshness_seconds: 180
+      pricing:
+        list_price: 8.50
+        currency: "USD"
+        version: "2025-04-28"
+      lead_time:
+        days: 7
+        source: "proveedor_directo"
+      MOQ: 1
+      sku_status: "active"
+    - sku: "FERR-SKU-005"
+      description: "Anclaje químico M8×80mm, resina epoxi + varilla roscada, 10 unidades caja"
+      stock:
+        available: 12
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 8
+            reserved: 2
+          - location: "Barranquilla Norte"
+            qty: 4
+            reserved: 1
+        freshness_seconds: 180
+      pricing:
+        list_price: 24.00
+        currency: "USD"
+        version: "2025-04-28"
+      lead_time:
+        days: 2
+        source: "3PL"
+      MOQ: 1
+      sku_status: "active"
+    - sku: "FERR-SKU-006"
+      description: "Cinta métrica Stanley 8m/26ft, PowerLock, auto-lock, caja blister"
+      stock:
+        available: 3
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 2
+            reserved: 1
+          - location: "Barranquilla Norte"
+            qty: 1
+            reserved: 0
+        freshness_seconds: 180
+      pricing:
+        list_price: 12.00
+        currency: "USD"
+        version: "2025-04-28"
+      lead_time:
+        days: 5
+        source: "proveedor_directo"
+      MOQ: 1
+      sku_status: "active"
+    - sku: "FERR-SKU-007"
+      description: "Martillo carpintero 16oz, cabeza acero forjado, mango fibra de vidrio"
+      stock:
+        available: 20
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 12
+            reserved: 2
+          - location: "Barranquilla Norte"
+            qty: 8
+            reserved: 1
+        freshness_seconds: 180
+      pricing:
+        list_price: 18.00
+        currency: "USD"
+        version: "2025-04-28"
+      lead_time:
+        days: 1
+        source: "3PL"
+      MOQ: 1
+      sku_status: "active"
+  customer:
+    customer_id: "CLI-019"
+    name: "Talleres Mecánicos del Norte S.A.S."
+    country: "CO"
+    city: "Barranquilla"
+    tier: "bronze"
+    credit_status: "ok"
+    payment_terms: "Net 15 días"
+    incoterm_default: "DDP"
+    tax_id: "901.123.456-0"
+    vertical: "mantenimiento_industrial"
+    historical_data:
+      last_order_date: "2025-03-15"
+      avg_order_value_usd: 180
+      orders_ytd: 1
+      complaints_12m: 0
+      preferred_delivery: "Barranquilla Norte"
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_PRICING_CALCULATOR"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_ESCALATION_ROUTER"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: []
+      layer_3b_metadata: []
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+
+input:
+  channel: email
+  from:
+    name: "Sr. Jorge Pineda"
+    email: "j.pineda@talleresnorte.co"
+    role: "Jefe de Taller"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Lista de materiales taller — cotización mixta"
+  body_text: |
+    Buenos días,
+
+    Necesito cotizar lo siguiente para taller:
+
+    - 10 bolsas clavos comunes 3 pulgadas
+    - 5 cajas tornillos autorroscantes 1/4×2 hexagonal galv
+    - 3 cajas anclajes químicos M8×80
+    - 4 cintas métricas Stanley 8m
+    - 2 martillos carpintero 16oz
+
+    Todo para entrega en Barranquilla, DDP.
+
+    Gracias,
+
+    Jorge Pineda
+    Talleres Mecánicos del Norte
+  attachments: []
+  thread_id: null
+  timestamp: "2025-04-30T10:00:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["mixed_order", "hardware", "maintenance_supplies"]
+      urgency: "medium"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.93
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "clavos comunes 3 pulgadas"
+          qty: 10
+          unit: "bolsas"
+        - type: "product"
+          value: "tornillos autorroscantes 1/4×2 hexagonal galvanizado"
+          qty: 5
+          unit: "cajas"
+        - type: "product"
+          value: "anclajes químicos M8×80"
+          qty: 3
+          unit: "cajas"
+        - type: "product"
+          value: "cintas métricas Stanley 8m"
+          qty: 4
+          unit: "unidades"
+        - type: "product"
+          value: "martillos carpintero 16oz"
+          qty: 2
+          unit: "unidades"
+        - type: "delivery_location"
+          value: "Barranquilla"
+        - type: "incoterm"
+          value: "DDP"
+      item_count: 5
+    latency_ms_max: 1200
+    triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-019", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-TMN-2025-Q1"
+      freshness: "2025-04-30T09:55:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs: ["sku_query: lista 5 items", "qtys: [10,5,3,4,2]"]
+    expected_output:
+      items:
+        - sku: "FERR-SKU-003"
+          description: "Clavo común 3\""
+          warehouse: "Barranquilla Norte"
+          available: 20
+          reserved: 3
+          in_transit: 0
+          fulfillable_qty: 17
+          status: "full_stock"
+        - sku: "FERR-SKU-004"
+          description: "Tornillo autorroscante 1/4\"×2\""
+          warehouse: "Bogotá Principal"
+          available: 0
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 0
+          status: "out_of_stock"
+          backorder_lead_time_days: 7
+        - sku: "FERR-SKU-005"
+          description: "Anclaje químico M8×80mm"
+          warehouse: "Barranquilla Norte"
+          available: 4
+          reserved: 1
+          in_transit: 0
+          fulfillable_qty: 3
+          status: "full_stock"
+        - sku: "FERR-SKU-006"
+          description: "Cinta métrica Stanley 8m"
+          warehouse: "Barranquilla Norte"
+          available: 1
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 1
+          status: "partial_stock"
+          shortfall: 3
+        - sku: "FERR-SKU-007"
+          description: "Martillo carpintero 16oz"
+          warehouse: "Barranquilla Norte"
+          available: 8
+          reserved: 1
+          in_transit: 0
+          fulfillable_qty: 7
+          status: "full_stock"
+      total_items: 5
+      full_stock_items: 3
+      partial_stock_items: 1
+      out_of_stock_items: 1
+      overall_status: "partial_fulfillment"
+      freshness: "2025-04-30T09:58:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "construction_supply"
+      items: ["FERR-SKU-003", "FERR-SKU-004", "FERR-SKU-005", "FERR-SKU-006", "FERR-SKU-007"]
+      customer_country: "CO"
+      use_case: "taller mantenimiento industrial"
+      stock_analysis:
+        - sku: "FERR-SKU-003"
+          status: "full"
+        - sku: "FERR-SKU-004"
+          status: "out_of_stock"
+          backorder: 7
+        - sku: "FERR-SKU-005"
+          status: "full"
+        - sku: "FERR-SKU-006"
+          status: "partial"
+          shortfall: 3
+        - sku: "FERR-SKU-007"
+          status: "full"
+    expected_output:
+      pass: true
+      warnings:
+        - code: "STOCK_PARCIAL"
+          severity: "low-medium"
+          message: "4 de 5 items con stock completo. 1 item agotado (tornillos autorroscantes, 7 días backorder). 1 item stock parcial (cintas métricas: 1 de 4 disponible, faltan 3 con 5 días backorder)."
+        - code: "PEDIDO_MIXTO"
+          severity: "low"
+          message: "Pedido mixto de 5 items ferretería. Sin complejidad técnica."
+      blocking_issues: []
+      recommendations:
+        - "Ofrecer entrega parcial: 3 items inmediatos + 2 items backorder"
+        - "Alternativa tornillos: consultar si cliente acepta 1/4\"×1-3/4\" en stock (FERR-SKU-004B) como sustitución temporal"
+        - "Cintas métricas: ofrecer 1 inmediata + 3 backorder 5 días, o sustitución marca alternativa"
+      pii_detected: false
+      policies_violated: []
+    latency_ms_max: 1000
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_PRICING_CALCULATOR"
+    inputs:
+      items:
+        - sku: "FERR-SKU-003"
+          qty: 10
+          list_price: 2.50
+        - sku: "FERR-SKU-004"
+          qty: 5
+          list_price: 8.50
+          backorder: true
+        - sku: "FERR-SKU-005"
+          qty: 3
+          list_price: 24.00
+        - sku: "FERR-SKU-006"
+          qty: 4
+          list_price: 12.00
+          partial: true
+          available_now: 1
+          backorder_qty: 3
+        - sku: "FERR-SKU-007"
+          qty: 2
+          list_price: 18.00
+      customer_tier: "bronze"
+      volume_discount_eligible: false
+    expected_output:
+      items_priced:
+        - sku: "FERR-SKU-003"
+          qty: 10
+          unit_price: 2.50
+          line_total: 25.00
+        - sku: "FERR-SKU-004"
+          qty: 5
+          unit_price: 8.50
+          line_total: 42.50
+          note: "backorder 7 días"
+        - sku: "FERR-SKU-005"
+          qty: 3
+          unit_price: 24.00
+          line_total: 72.00
+        - sku: "FERR-SKU-006"
+          qty: 4
+          unit_price: 12.00
+          line_total: 48.00
+          note: "1 inmediato + 3 backorder 5 días"
+        - sku: "FERR-SKU-007"
+          qty: 2
+          unit_price: 18.00
+          line_total: 36.00
+      totals:
+        subtotal: 223.50
+        tax_iva: 42.47
+        total: 265.97
+        currency: "USD"
+      rules_applied: []
+      warnings:
+        - code: "STOCK_PARCIAL"
+          severity: "low-medium"
+          message: "Entrega parcial requerida: 3 items inmediatos, 2 items con backorder."
+    latency_ms_max: 200
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs:
+      items:
+        - sku: "FERR-SKU-003"
+          qty: 10
+          unit_price: 2.50
+          line_total: 25.00
+          availability: "inmediata"
+        - sku: "FERR-SKU-004"
+          qty: 5
+          unit_price: 8.50
+          line_total: 42.50
+          availability: "backorder 7 días"
+        - sku: "FERR-SKU-005"
+          qty: 3
+          unit_price: 24.00
+          line_total: 72.00
+          availability: "inmediata"
+        - sku: "FERR-SKU-006"
+          qty: 4
+          unit_price: 12.00
+          line_total: 48.00
+          availability: "parcial: 1 inmediata + 3 backorder 5 días"
+        - sku: "FERR-SKU-007"
+          qty: 2
+          unit_price: 18.00
+          line_total: 36.00
+          availability: "inmediata"
+      customer: "Talleres Mecánicos del Norte S.A.S."
+      incoterm: "DDP"
+      delivery: "Barranquilla"
+    expected_output:
+      status: "PROFORMA_DRAFT"
+      account_block:
+        customer: "Talleres Mecánicos del Norte S.A.S."
+        customer_id: "CLI-019"
+        tax_id: "901.123.456-0"
+        payment_terms: "Net 15 días"
+      items_table:
+        - line: 1
+          sku: "FERR-SKU-003"
+          description: "Clavo común 3\" (7.6cm) acero pulido, 1kg bolsa"
+          qty: 10
+          unit_price: 2.50
+          line_total: 25.00
+          availability: "inmediata"
+        - line: 2
+          sku: "FERR-SKU-004"
+          description: "Tornillo autorroscante 1/4\"×2\" cabeza hexagonal galvanizado, 100 unidades"
+          qty: 5
+          unit_price: 8.50
+          line_total: 42.50
+          availability: "backorder 7 días hábiles"
+        - line: 3
+          sku: "FERR-SKU-005"
+          description: "Anclaje químico M8×80mm, resina epoxi + varilla, 10 unidades"
+          qty: 3
+          unit_price: 24.00
+          line_total: 72.00
+          availability: "inmediata"
+        - line: 4
+          sku: "FERR-SKU-006"
+          description: "Cinta métrica Stanley 8m PowerLock auto-lock"
+          qty: 4
+          unit_price: 12.00
+          line_total: 48.00
+          availability: "1 inmediata + 3 backorder 5 días"
+        - line: 5
+          sku: "FERR-SKU-007"
+          description: "Martillo carpintero 16oz, cabeza acero forjado, mango fibra vidrio"
+          qty: 2
+          unit_price: 18.00
+          line_total: 36.00
+          availability: "inmediata"
+      totals:
+        subtotal: 223.50
+        tax_iva: 42.47
+        total: 265.97
+        currency: "USD"
+      terms_block:
+        incoterm: "DDP Barranquilla"
+        delivery: "Entrega parcial — ver detalle por línea"
+        validity: "15 días"
+        conditions:
+          - "3 items disponibles para entrega inmediata"
+          - "1 item backorder 7 días (tornillos autorroscantes)"
+          - "1 item parcial: 1 unidad inmediata + 3 unidades backorder 5 días (cintas métricas)"
+          - "Cliente puede optar por entrega única cuando todos los items estén disponibles"
+          - "O entrega parcial sin costo adicional de flete adicional"
+      warnings:
+        - "STOCK_PARCIAL: entrega parcial requerida"
+        - "PEDIDO_MIXTO: 5 items ferretería"
+    latency_ms_max: 6000
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "respond"
+      recipient_role: "customer"
+      context:
+        customer: "Talleres Mecánicos del Norte S.A.S."
+        rfq_items: "5 items ferretería mixtos"
+        stock_status_summary:
+          - "3 items inmediatos"
+          - "1 item backorder 7 días"
+          - "1 item parcial (1 inmediato + 3 en 5 días)"
+        proforma_value: "$265.97 USD"
+        alternatives_offered: true
+    expected_output:
+      draft_type: "customer_response_with_proforma"
+      subject: "Proforma materiales taller — nota sobre disponibilidad parcial"
+      body: |
+        Estimado Sr. Pineda,
+
+        Adjuntamos proforma para los materiales de taller
+        solicitados.
+
+        RESUMEN DE DISPONIBILIDAD:
+
+        ENTREGA INMEDIATA (2 días):
+        ✓ 10 bolsas clavos comunes 3\" — $25.00
+        ✓ 3 cajas anclajes químicos M8×80 — $72.00
+        ✓ 2 martillos carpintero 16oz — $36.00
+
+        BACKORDER:
+        ○ 5 cajas tornillos autorroscantes 1/4\"×2\" — $42.50
+          Disponible en 7 días hábiles
+        ○ 3 cintas métricas Stanley 8m — $36.00
+          (1 unidad disponible inmediatamente, 3 en 5 días)
+
+        OPCIONES DE ENTREGA:
+        1. Entrega única: esperamos 7 días y entregamos todo
+           junto — sin costo adicional
+        2. Entrega parcial: recibe lo inmediato en 2 días, lo
+           demás cuando esté disponible — sin costo adicional
+        3. Sustitución temporal: para tornillos, tenemos
+           1/4\"×1-3/4\" en stock inmediato — confirmar si aplica
+
+        TOTAL: $265.97 USD (incluye IVA 19%)
+
+        Quedo atento a su preferencia de entrega.
+
+        Atentamente,
+        Álvaro Velásquez
+        MWT — FaberLoom
+      internal_note: "Cliente bronze ferretería. Pedido mixto 5 items: 3 inmediatos, 1 backorder 7 días, 1 parcial. Ofrecer entrega parcial o única. Sustitución temporal para tornillos posible. Sin complejidad técnica. STOCK_PARCIAL + PEDIDO_MIXTO."
+      tone: "professional_practical"
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 8
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "construction_supply"
+      final_check: true
+      proforma: true
+      email_draft: true
+      pii_check: true
+    expected_output:
+      pass: true
+      warnings: []
+      blocking_issues: []
+      pii_detected: false
+      policies_violated: []
+    latency_ms_max: 1000
+    triggered: true
+
+expected_outputs:
+  primary_output:
+    type: "proforma"
+    content:
+      status: "PROFORMA_DRAFT"
+      customer_notified: true
+      customer_notification_type: "proforma_with_partial_stock_options"
+      proforma_generated: true
+    glosses_required:
+      - "5 items ferretería mixta"
+      - "3 items stock completo (clavos, anclajes, martillos)"
+      - "1 item agotado (tornillos, 7 días backorder)"
+      - "1 item stock parcial (cintas: 1 de 4 inmediatas, 3 en 5 días)"
+      - "Opciones entrega: única 7 días o parcial sin costo adicional"
+  evidence_bundle:
+    per_line:
+      - sku: "FERR-SKU-003"
+        technical_spec_rule: "nails_common_3in_polished"
+        precio: 2.50
+        stock: 17
+        lead_time: 1
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: null
+        aprobador: "AM"
+      - sku: "FERR-SKU-004"
+        technical_spec_rule: "screw_self_tapping_1-4x2_hex_galv"
+        precio: 8.50
+        stock: 0
+        lead_time: 7
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "STOCK_PARCIAL"
+        aprobador: "AM"
+      - sku: "FERR-SKU-005"
+        technical_spec_rule: "chemical_anchor_M8x80"
+        precio: 24.00
+        stock: 3
+        lead_time: 2
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: null
+        aprobador: "AM"
+      - sku: "FERR-SKU-006"
+        technical_spec_rule: "tape_measure_8m_stanley"
+        precio: 12.00
+        stock: 1
+        lead_time: 5
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: "STOCK_PARCIAL"
+        aprobador: "AM"
+      - sku: "FERR-SKU-007"
+        technical_spec_rule: "hammer_carpenter_16oz_fiberglass"
+        precio: 18.00
+        stock: 7
+        lead_time: 1
+        MOQ: 1
+        flete_asignado: null
+        margen: null
+        excepcion: null
+        aprobador: "AM"
+    per_quote:
+      vigencia_general: "15 días"
+      moneda: "USD"
+      incoterm_pais: "DDP Colombia"
+      total: 265.97
+      margen_global: null
+      credito: "ok"
+      flete_total: null
+      aprobador_final: "AM"
+      hash: "DRAFT-TRACE-case20-20250430"
+    audit_view:
+      source_precio: "lista_comercial"
+      version_lista: "2025-04-28"
+      timestamp_stock: "2025-04-30T09:58:00-05:00"
+      technical_spec_rule: "mixed_hardware_order"
+      margen_calculado: null
+      aprobador: "AM"
+      vigencia: "15 días"
+      fallback_used: false
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      country_rule_applied: "CO_mixed_order_partial_delivery_allowed"
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=1 all items"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-TMN-2025-Q1"
+      exception_codes: ["STOCK_PARCIAL", "PEDIDO_MIXTO"]
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email"
+        sla_minutes: 240
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_PROFORMA_MIXED_PARTIAL_STOCK"
+        severity: "low-medium"
+        trace_id: "TRACE-case20-20250430"
+        mixed_order_context: "5_items_3_full_1_out_1_partial"
+  exceptions_raised:
+    - "STOCK_PARCIAL"
+    - "PEDIDO_MIXTO"
+  hitl_gate_triggered: true
+  output_destination: "draft_pending_review"
+
+edge_cases:
+  - description: "Cliente acepta entrega parcial pero cancela backorder tornillos — sistema debe re-generar proforma sin FERR-SKU-004"
+    expected_behavior: "Proforma actualizada: $223.50 - $42.50 = $181.00 subtotal. Draft confirmando cancelación backorder."
+    variant_data:
+      cancel_backorder: "FERR-SKU-004"
+      recalculated_total: 181.00
+  - description: "Cliente quiere 20 cajas tornillos en vez de 5 — backorder masivo, lead time puede extenderse a 14 días"
+    expected_behavior: "Proforma con 20 cajas. Lead time actualizado a 14 días. Draft explicando volumen backorder."
+    variant_data:
+      qty_tornillos: 20
+      lead_time_extended: 14
+  - description: "Cliente no acepta marca Stanley para cinta métrica — sistema debe buscar alternativa en stock"
+    expected_behavior: "Inventory busca FERR-SKU-006B (cinta métrica Milwaukee 8m). Si stock disponible, proforma actualizada. Si no, nuevo backorder."
+    variant_data:
+      brand_rejected: "Stanley"
+      alternative_brand: "Milwaukee"
+      alternative_sku: "FERR-SKU-006B"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'STOCK_PARCIAL'"
+    - "output.exceptions_raised contains 'PEDIDO_MIXTO'"
+    - "output.primary_output.status == 'PROFORMA_DRAFT'"
+    - "output.primary_output.proforma_generated == true"
+    - "output.hitl_gate_triggered == true"
+    - "inventory_fetcher output.total_items == 5"
+    - "inventory_fetcher output.full_stock_items == 3"
+    - "inventory_fetcher output.partial_stock_items == 1"
+    - "inventory_fetcher output.out_of_stock_items == 1"
+    - "compliance_checker output.recommendations contains 'Ofrecer entrega parcial'"
+    - "proforma_builder output.items_table contains availability column"
+    - "proforma_builder output.terms_block.conditions contains 'Entrega parcial'"
+    - "draft_writer output.body contains 'ENTREGA INMEDIATA'"
+    - "draft_writer output.body contains 'BACKORDER'"
+    - "draft_writer output.body contains 'Opciones de entrega'"
+    - "evidence_bundle.per_line[1].excepcion == 'STOCK_PARCIAL'"
+    - "evidence_bundle.per_line[3].excepcion == 'STOCK_PARCIAL'"
+  must_not_do:
+    - "output contains proforma sin indicar disponibilidad por línea"
+    - "output promises delivery date that ignores backorder items"
+    - "system ignores out_of_stock item and generates proforma without it silently"
+    - "system charges extra freight for partial delivery without mentioning it's free"
+    - "system recommends substitution without verifying compatibility"
+    - "system groups all items into single delivery date ignoring stock reality"
+
+severity_weight_validation:
+  expected_severity: "low-medium"
+  if_misclassified_as_lower: |
+    Si clasificado como Low: podría omitirse opción entrega
+    parcial y sistema promete fecha única. Si cliente necesita
+    materiales para proyecto con deadline, esperar 7 días por
+    tornillos cuando clavos y anclajes están disponibles retrasa
+    obra innecesariamente. Sin opción entrega parcial, cliente
+    no puede iniciar trabajo parcial. Valor total bajo ($265.97)
+    pero impacto operativo para taller es alto si no recibe lo
+    disponible rápidamente.
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico ferretería mantenimiento. NO promovible.
+    Patrón abstracto (pedido mixto con stock parcial y múltiples
+    opciones de entrega) valioso para training. Puede promoverse
+    a GLOBAL_PROMOTABLE como ejemplo de mixed_order_partial_stock
+    tras anonimización.
+
+gaps_detected: []

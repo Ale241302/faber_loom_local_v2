@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faber*loom · shell universal v3</title>
+<style>
+:root{
+  --coral-primary:#C96442;--coral-hover:#A84F33;--coral-tint:rgba(201,100,66,.10);
+  --bg-primary:#F4F1ED;--bg-surface:#FFFFFF;--bg-subtle:#EDE8DF;
+  --text-primary:#1F1E1C;--text-secondary:#5A544C;--text-muted:#8A8278;
+  --border-subtle:#D8D0C0;--border-soft:#E5DFD3;
+  --evidence-highlight:#6E1F2B;--evidence-tint:rgba(110,31,43,.08);
+  --salvia:#7A8E6D;--amber:#B88A4A;--pizarra:#5A6B7C;--vino:#8B2F2F;
+  --shadow-soft:0 18px 48px rgba(31,30,28,.07);
+  --shadow-tight:0 8px 22px rgba(31,30,28,.09);
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --nav-w:260px;--nav-w-collapsed:64px;
+  --tools-w:240px;--tools-w-collapsed:56px;
+  --drawer-w:min(720px,calc(100vw - 42px));--topbar-h:58px;
+}
+[data-theme=dark]{
+  --bg-primary:#1F1E1C;--bg-surface:#2A2824;--bg-subtle:#34312C;
+  --text-primary:#F4F1ED;--text-secondary:#B8B0A4;--text-muted:#8A8278;
+  --border-subtle:#3D3A34;--border-soft:#34312C;
+  --coral-hover:#D97757;--coral-tint:rgba(217,119,87,.14);
+  --shadow-soft:0 18px 48px rgba(0,0,0,.30);
+  --shadow-tight:0 8px 22px rgba(0,0,0,.22);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg-primary);color:var(--text-primary);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{border:0;background:transparent;cursor:pointer}
+.display{font-family:Georgia,"Times New Roman",serif;font-style:italic;letter-spacing:-.045em;font-weight:400}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+.app{height:100%;display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr) var(--tools-w);background:var(--bg-primary)}
+.app.nav-collapsed{grid-template-columns:var(--nav-w-collapsed) minmax(0,1fr) var(--tools-w)}
+.app.tools-collapsed{grid-template-columns:var(--nav-w) minmax(0,1fr) var(--tools-w-collapsed)}
+.app.nav-collapsed.tools-collapsed{grid-template-columns:var(--nav-w-collapsed) minmax(0,1fr) var(--tools-w-collapsed)}
+
+/* ===== LEFT NAV: WORKSPACES ===== */
+.nav{height:100%;background:var(--bg-surface);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;overflow:auto;padding:14px 10px;gap:4px}
+.nav-brand{padding:6px 8px 14px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:10px}
+.brand-mark{width:36px;height:36px;border-radius:14px;background:var(--coral-tint);display:grid;place-items:center;color:var(--coral-primary);font-family:Georgia,serif;font-style:italic;font-weight:900;font-size:18px}
+.brand-copy .b1{font-family:Georgia,serif;font-style:italic;font-size:20px;letter-spacing:-.045em;line-height:1}
+.brand-copy .b1 em{color:var(--coral-primary);font-style:italic}
+.brand-copy .b2{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-muted);margin-top:5px}
+
+.nav-section{font-family:"JetBrains Mono",monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-muted);padding:14px 9px 6px;font-weight:800;display:flex;align-items:center;justify-content:space-between}
+.nav-section .ct{background:var(--bg-subtle);padding:1px 6px;border-radius:999px;color:var(--text-secondary);font-size:9px}
+
+.nav-item{width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:11px;color:var(--text-secondary);font-size:13px;font-weight:600;position:relative;text-align:left;cursor:pointer}
+.nav-item:hover{background:var(--bg-subtle);color:var(--text-primary)}
+.nav-item.active{background:var(--coral-tint);color:var(--coral-primary)}
+.nav-item.active .ico{color:var(--coral-primary)}
+.nav-item .ico{width:20px;text-align:center;color:var(--text-muted);font-size:14px}
+.nav-item .badge{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:9px;border-radius:999px;padding:2px 7px;background:var(--bg-subtle);color:var(--text-muted)}
+.nav-item .badge.coral{background:var(--coral-primary);color:#fff}
+.nav-item .badge.amber{background:rgba(184,138,74,.15);color:var(--amber)}
+
+/* Workspace row con avatar mini */
+.ws-row{width:100%;display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:11px;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;text-align:left}
+.ws-row:hover{background:var(--bg-subtle);color:var(--text-primary)}
+.ws-row.active{background:var(--coral-tint);color:var(--coral-primary)}
+.ws-avatar{width:24px;height:24px;border-radius:7px;background:var(--bg-subtle);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.02em}
+.ws-row.active .ws-avatar{background:var(--coral-primary);color:#fff}
+.ws-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-row .badge{font-family:"JetBrains Mono",monospace;font-size:9px;border-radius:999px;padding:2px 7px;background:var(--bg-subtle);color:var(--text-muted)}
+.ws-row .badge.coral{background:var(--coral-primary);color:#fff}
+
+.nav-divider{height:1px;background:var(--border-soft);margin:8px 0}
+
+.gov-section{margin-top:auto}
+.gov-item{width:100%;display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;color:var(--text-muted);font-size:12px;cursor:pointer;text-align:left}
+.gov-item:hover{background:var(--bg-subtle);color:var(--text-secondary)}
+.gov-item .ico{width:16px;text-align:center;font-size:12px}
+
+.nav-foot{border-top:1px solid var(--border-soft);padding:10px 8px;color:var(--text-muted);font-size:11px;display:flex;align-items:center;gap:10px;margin-top:8px}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:var(--coral-tint);color:var(--coral-primary);display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-size:11px;font-weight:600;border:1px solid rgba(201,100,66,.25)}
+.role{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:900;text-transform:uppercase;background:var(--bg-subtle);color:var(--text-muted)}
+.role-owner{background:var(--coral-tint);color:var(--coral-primary)}
+.role-admin{background:color-mix(in srgb,var(--pizarra) 15%,transparent);color:var(--pizarra)}
+.role-supervisor{background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)}
+.role-operator{background:color-mix(in srgb,var(--salvia) 16%,transparent);color:var(--salvia)}
+
+/* ===== MAIN ===== */
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{height:var(--topbar-h);border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:9px;padding:9px 16px;background:color-mix(in srgb,var(--bg-primary) 88%,transparent);backdrop-filter:blur(8px)}
+.breadcrumb{min-width:160px;display:flex;flex-direction:column;gap:2px}
+.breadcrumb .screen{font-size:14px;font-weight:700;font-family:Georgia,serif;font-style:italic}
+.breadcrumb .entity{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.context-actions{display:flex;gap:6px;align-items:center;overflow:hidden;margin-left:18px}
+.quick{height:30px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:999px;padding:0 11px;font-size:11px;font-weight:600;color:var(--text-secondary);white-space:nowrap;cursor:pointer}
+.quick.primary{background:var(--coral-primary);border-color:var(--coral-primary);color:#fff}
+.quick:hover{border-color:var(--coral-primary);color:var(--text-primary)}
+.quick.primary:hover{background:var(--coral-hover);border-color:var(--coral-hover);color:#fff}
+
+.top-spacer{flex:1}
+.cmdk-trigger{height:36px;width:min(360px,30vw);border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 14px;color:var(--text-muted);font-size:13px;text-align:left;cursor:pointer}
+.cmdk-trigger:hover{border-color:var(--coral-primary);color:var(--text-secondary)}
+.cmdk-trigger .label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kbd{font-family:"JetBrains Mono",monospace;font-size:9px;border:1px solid var(--border-subtle);background:var(--bg-subtle);border-radius:999px;padding:2px 6px;color:var(--text-muted)}
+
+/* RELOJ DE APRENDIZAJE UNIVERSAL */
+.learning-clock{height:36px;border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:11px;font-weight:600;font-family:"JetBrains Mono",monospace;white-space:nowrap;cursor:pointer;color:var(--text-primary)}
+.learning-clock:hover{border-color:var(--text-secondary)}
+.learning-clock .dot{width:7px;height:7px;border-radius:50%;background:var(--salvia)}
+.learning-clock.atento{color:var(--amber);border-color:rgba(184,138,74,.4);background:rgba(184,138,74,.06)}
+.learning-clock.atento .dot{background:var(--amber)}
+.learning-clock.bloqueado{color:var(--coral-primary);border-color:rgba(201,100,66,.4);background:rgba(201,100,66,.06)}
+.learning-clock.bloqueado .dot{background:var(--coral-primary);animation:pulse 1.4s infinite}
+
+.role-switcher{height:36px;border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:999px;padding:0 9px;font-size:12px;font-weight:600;cursor:pointer}
+.icon-btn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-secondary);cursor:pointer}
+.icon-btn:hover{border-color:var(--coral-primary);color:var(--coral-primary)}
+
+/* ===== CANVAS / WORKSPACE ===== */
+.canvas{flex:1;overflow:auto;padding:24px 32px 40px;background:var(--bg-primary)}
+.ws-header{margin:0 0 20px}
+.ws-title{margin:0 0 6px;font-family:Georgia,serif;font-style:italic;letter-spacing:-.025em;font-size:34px;font-weight:400;color:var(--text-primary)}
+.ws-subtitle{font-size:13px;color:var(--text-muted);margin:0 0 0;max-width:600px;line-height:1.55}
+
+.ws-tabs{display:flex;gap:28px;border-bottom:1px solid var(--border-soft);margin:24px 0 28px;padding:0 0 12px}
+.ws-tab{font-size:13px;color:var(--text-muted);cursor:pointer;padding:0 0 6px;border-bottom:1px solid transparent;margin-bottom:-13px;font-weight:500}
+.ws-tab.active{color:var(--text-primary);border-bottom-color:var(--text-primary)}
+.ws-tab:hover{color:var(--text-secondary)}
+
+.section-label{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin:0 0 14px}
+
+.cola{display:flex;flex-direction:column;border-top:1px solid var(--border-soft)}
+.row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:24px;padding:16px 0;border-bottom:1px solid var(--border-soft);cursor:pointer}
+.row:hover{background:var(--bg-subtle);margin:0 -14px;padding-left:14px;padding-right:14px;border-radius:8px;border-bottom-color:transparent}
+.row .who{font-size:14px;font-weight:500;color:var(--text-primary)}
+.row .who small{display:block;font-weight:400;font-size:11px;color:var(--text-muted);margin-top:3px;font-family:"JetBrains Mono",monospace;letter-spacing:.04em}
+.row .meta{font-size:11px;color:var(--text-muted);font-family:"JetBrains Mono",monospace}
+.row .meta.urgent{color:var(--coral-primary)}
+
+.pill{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:999px;white-space:nowrap;font-weight:700}
+.pill.review{color:var(--amber);border:1px solid rgba(184,138,74,.4);background:rgba(184,138,74,.06)}
+.pill.conflict{color:var(--evidence-highlight);border:1px solid rgba(110,31,43,.35);background:rgba(110,31,43,.05)}
+.pill.critical{color:#fff;background:var(--coral-primary)}
+.pill.routed{color:var(--salvia);border:1px solid rgba(122,142,109,.4);background:rgba(122,142,109,.06)}
+.pill.unrouted{color:var(--text-muted);border:1px solid var(--border-subtle);background:var(--bg-subtle)}
+
+.more{font-size:12px;color:var(--text-muted);margin:18px 0 0}
+.more a{color:var(--text-secondary);text-decoration:none;border-bottom:1px dotted var(--border-subtle);cursor:pointer}
+.more a:hover{color:var(--text-primary);border-bottom-color:var(--text-primary)}
+
+.reason{font-size:11px;color:var(--text-muted);font-family:"JetBrains Mono",monospace;letter-spacing:.04em}
+
+/* Filters mesa */
+.filters{display:flex;gap:8px;margin:0 0 18px;flex-wrap:wrap}
+.filter{display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--bg-surface);font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:600;color:var(--text-secondary)}
+.filter:hover{border-color:var(--text-secondary)}
+.filter.active{background:var(--text-primary);color:var(--bg-primary);border-color:var(--text-primary)}
+
+/* Critical card */
+.critical-card{background:var(--bg-surface);border:1px solid rgba(201,100,66,.35);border-left:3px solid var(--coral-primary);border-radius:10px;padding:24px 28px;margin:0 0 24px}
+.critical-card .topline{display:flex;align-items:center;gap:14px;margin:0 0 12px;flex-wrap:wrap}
+.critical-card .topline .id{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--text-primary);letter-spacing:.04em}
+.critical-card .topline .sla{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--coral-primary)}
+.critical-card h2{font-family:Georgia,serif;font-style:italic;font-weight:400;font-size:23px;margin:0 0 6px;line-height:1.2}
+.critical-card .who2{font-size:13px;color:var(--text-muted);margin:0 0 20px;line-height:1.5}
+.critical-card .actions2{display:flex;gap:10px;align-items:center;margin:0 0 18px;flex-wrap:wrap}
+.btn{height:36px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-surface);display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 14px;color:var(--text-secondary);font-size:13px;font-weight:500;cursor:pointer}
+.btn:hover{border-color:var(--coral-primary);color:var(--text-primary)}
+.btn-primary{background:var(--coral-primary);border-color:var(--coral-primary);color:#fff}
+.btn-primary:hover{background:var(--coral-hover);border-color:var(--coral-hover);color:#fff}
+.evidence-toggle{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--evidence-highlight);cursor:pointer;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.evidence-toggle::before{content:"+ "}
+.evidence-toggle:hover{text-decoration:underline}
+
+.quiet-row{display:grid;grid-template-columns:1fr auto;gap:18px;padding:13px 0;border-bottom:1px solid var(--border-soft);font-size:13px;color:rgba(31,30,28,.55)}
+.quiet-row .meta-q{font-family:"JetBrains Mono",monospace;font-size:11px}
+
+/* ===== RIGHT TOOLS ===== */
+.tools{height:100%;background:var(--bg-surface);border-left:1px solid var(--border-subtle);display:flex;flex-direction:column;overflow:auto;padding:14px 10px;gap:4px}
+.tools-head{padding:6px 10px 14px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between}
+.tools-head .h{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);font-weight:800}
+.tools-section{font-family:"JetBrains Mono",monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--text-muted);padding:14px 9px 6px;font-weight:800}
+
+.tool-item{width:100%;display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:flex-start;padding:10px 10px;border-radius:10px;color:var(--text-secondary);font-size:13px;cursor:pointer;text-align:left;border:1px solid transparent}
+.tool-item:hover{background:var(--bg-subtle);border-color:var(--border-soft);color:var(--text-primary)}
+.tool-icon{width:28px;height:28px;border-radius:8px;background:var(--bg-subtle);display:grid;place-items:center;color:var(--coral-primary);font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:600;flex-shrink:0;margin-top:1px}
+.tool-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tool-name{font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool-desc{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--text-muted);line-height:1.35;letter-spacing:.02em}
+
+.tools-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--border-soft)}
+
+/* ===== DRAWER / MODAL / CMDK ===== */
+.drawer-back,.modal-back,.cmdk-back{position:fixed;inset:0;background:rgba(31,30,28,.38);z-index:35;display:none}
+.drawer-back.show,.modal-back.show,.cmdk-back.show{display:block}
+.modal-back{z-index:60;align-items:center;justify-content:center}
+.modal-back.show{display:flex}
+
+.drawer{position:fixed;top:0;right:0;height:100vh;width:var(--drawer-w);background:var(--bg-surface);border-left:1px solid var(--border-subtle);box-shadow:-20px 0 55px rgba(31,30,28,.16);z-index:40;transform:translateX(104%);transition:transform .22s var(--ease);display:flex;flex-direction:column}
+.drawer.show{transform:translateX(0)}
+.drawer-head{height:64px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:10px;padding:12px 18px}
+.drawer-title{flex:1}
+.drawer-title h2{margin:0;font-family:Georgia,serif;font-style:italic;font-size:22px;letter-spacing:-.025em}
+.drawer-title .kicker{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-muted)}
+.drawer-body{flex:1;overflow:auto;padding:18px 22px}
+.drawer-foot{border-top:1px solid var(--border-soft);padding:12px 18px;display:flex;justify-content:flex-end;gap:8px}
+
+.modal{width:min(580px,calc(100vw - 28px));background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:18px;box-shadow:var(--shadow-soft);overflow:hidden}
+.modal-head{padding:18px}
+.modal-head h2{margin:0;font-family:Georgia,serif;font-style:italic}
+.modal-body{padding:0 18px 18px}
+.modal-foot{padding:12px 18px;border-top:1px solid var(--border-soft);display:flex;justify-content:flex-end;gap:8px}
+
+.cmdk-back{z-index:55;align-items:flex-start;justify-content:center;padding-top:12vh}
+.cmdk-back.show{display:flex}
+.cmdk{width:min(640px,calc(100vw - 28px));background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:0 30px 80px rgba(31,30,28,.3);overflow:hidden}
+.cmdk input{width:100%;border:0;outline:0;background:transparent;padding:18px 22px;border-bottom:1px solid var(--border-soft);font-size:15px;color:var(--text-primary)}
+.cmdk-section{padding:6px 18px 4px;font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);font-weight:700}
+.cmdk-row{display:grid;grid-template-columns:28px 1fr auto;gap:14px;align-items:center;padding:10px 18px;cursor:pointer}
+.cmdk-row:hover{background:var(--bg-subtle)}
+.cmdk-row .ki{width:28px;height:28px;border-radius:7px;background:var(--bg-subtle);display:grid;place-items:center;color:var(--text-secondary);font-size:13px}
+.cmdk-row .kt{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cmdk-row .ktn{font-weight:600;font-size:13px;color:var(--text-primary)}
+.cmdk-row .ktm{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--text-muted)}
+.cmdk-row .kty{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em}
+
+/* ===== PANEL DEL RELOJ ===== */
+.clock-panel{position:fixed;top:62px;right:calc(var(--tools-w) + 16px);width:340px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:var(--shadow-soft);padding:22px 24px;z-index:50;display:none}
+.clock-panel.show{display:block}
+.clock-panel h3{font-family:Georgia,serif;font-style:italic;font-size:20px;margin:0 0 4px;font-weight:400}
+.clock-panel .state{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--amber);letter-spacing:.08em;text-transform:uppercase;margin:0 0 18px}
+.clock-panel.normal .state{color:var(--salvia)}
+.clock-panel.bloqueado .state{color:var(--coral-primary)}
+.clock-panel dl{margin:0;font-size:13px}
+.clock-panel dt{color:var(--text-muted);font-size:12px;margin:12px 0 2px}
+.clock-panel dt:first-child{margin-top:0}
+.clock-panel dd{margin:0 0 6px;color:var(--text-primary);font-family:"JetBrains Mono",monospace;font-size:12px}
+.clock-panel dd.warn{color:var(--amber)}
+.clock-panel .next{margin:18px 0 14px;padding:12px 14px;background:rgba(184,138,74,.08);border-left:2px solid var(--amber);border-radius:0 6px 6px 0}
+.clock-panel .next .nlabel{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin:0 0 4px}
+.clock-panel .next .ntext{font-size:13px;color:var(--text-primary)}
+.clock-panel .actions{display:flex;flex-direction:column;gap:0;margin-top:8px}
+.clock-panel .actions a{font-size:13px;color:var(--text-primary);text-decoration:none;padding:8px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;cursor:pointer}
+.clock-panel .actions a:last-child{border-bottom:none}
+.clock-panel .actions a:hover{color:var(--coral-primary)}
+.clock-panel .actions a::after{content:"\2192";color:var(--text-muted)}
+
+.toast-stack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:var(--text-primary);color:var(--bg-primary);padding:11px 20px;border-radius:999px;font-size:13px;box-shadow:var(--shadow-tight);animation:toastIn .2s var(--ease)}
+
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,100,66,.35)}50%{box-shadow:0 0 0 8px rgba(201,100,66,0)}}
+
+.app.nav-collapsed .brand-copy,.app.nav-collapsed .nav-section,.app.nav-collapsed .ws-name,.app.nav-collapsed .gov-item span:not(.ico),.app.nav-collapsed .ws-row .badge,.app.nav-collapsed .nav-foot .user-info{display:none}
+.app.nav-collapsed .nav{padding-inline:8px}
+.app.nav-collapsed .nav-item,.app.nav-collapsed .ws-row,.app.nav-collapsed .gov-item{justify-content:center;grid-template-columns:24px}
+.app.nav-collapsed .nav-item .badge{display:none}
+.app.nav-collapsed .nav-item span:not(.ico){display:none}
+
+.app.tools-collapsed .tools-head .h,.app.tools-collapsed .tool-meta,.app.tools-collapsed .tools-section{display:none}
+.app.tools-collapsed .tools{padding-inline:6px}
+.app.tools-collapsed .tool-item{grid-template-columns:28px;justify-content:center;padding:10px 4px}
+
+@media(max-width:980px){.app{grid-template-columns:1fr}.nav,.tools{display:none}.cmdk-trigger{width:38px;padding:0;justify-content:center}.cmdk-trigger .label,.cmdk-trigger .kbd{display:none}.context-actions{display:none}.canvas{padding:14px}}
+</style>
+</head>
+<body data-role="operator">
+
+<div class="app" id="app">
+
+  <!-- ============ LEFT NAV: WORKSPACES ============ -->
+  <aside class="nav" id="nav">
+    <div class="nav-brand">
+      <div class="brand-mark">F*</div>
+      <div class="brand-copy">
+        <div class="b1">Faber<em>*</em>loom</div>
+        <div class="b2">tenant &middot; MWT</div>
+      </div>
+    </div>
+
+    <button class="nav-item" onclick="toggleNav()" style="margin-top:6px">
+      <span class="ico">&#8676;</span><span>Colapsar</span>
+    </button>
+
+    <!-- Workspaces especiales (sistema) -->
+    <div class="nav-section">Sistema</div>
+    <div id="system-ws"></div>
+
+    <!-- Workspaces operativos (cuentas) -->
+    <div class="nav-section">
+      <span>Cuentas</span>
+      <span class="ct" id="account-ct">5</span>
+    </div>
+    <div id="account-ws"></div>
+
+    <!-- Lab interno -->
+    <div class="nav-section">Interno</div>
+    <div id="internal-ws"></div>
+
+    <!-- Gobernanza -->
+    <div class="nav-section gov-section">Gobernanza</div>
+    <div id="gov-ws"></div>
+
+    <!-- User foot -->
+    <div class="nav-foot">
+      <div class="user-avatar">AF</div>
+      <div class="user-info">
+        <div class="mono" style="font-size:11px;color:var(--text-primary);font-weight:600">Alejandro Faro</div>
+        <div style="margin-top:2px"><span class="role role-operator" id="role-pill">Operator</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">
+        <span class="screen" id="crumb-screen">Workspace</span>
+        <span class="entity" id="crumb-entity">cuenta cliente</span>
+      </div>
+      <div class="context-actions" id="context-actions"></div>
+
+      <div class="top-spacer"></div>
+
+      <button class="cmdk-trigger" onclick="openCmdk('button')">
+        <span>&#8980;</span>
+        <span class="label">Buscar o ejecutar&hellip;</span>
+        <span class="kbd">&#8984;K</span>
+      </button>
+
+      <button class="learning-clock" id="learning-clock" onclick="toggleClockPanel()">
+        <span class="dot"></span>
+        <span id="clock-label">Aprendizaje &middot; al d&iacute;a &middot; 12d</span>
+      </button>
+
+      <select class="role-switcher" id="role-switcher" onchange="setRole(this.value)">
+        <option value="owner">Owner</option>
+        <option value="admin">Admin</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="operator" selected>Operator</option>
+        <option value="viewer">Viewer</option>
+      </select>
+
+      <button class="icon-btn" onclick="setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')" title="Tema">&#9680;</button>
+    </header>
+
+    <div class="canvas" id="canvas"></div>
+  </main>
+
+  <!-- ============ RIGHT TOOLS ============ -->
+  <aside class="tools" id="tools">
+    <div class="tools-head">
+      <span class="h">Herramientas</span>
+      <button class="icon-btn" style="width:24px;height:24px" onclick="toggleTools()" title="Colapsar herramientas">&#8677;</button>
+    </div>
+    <div id="tools-body"></div>
+    <div class="tools-foot">
+      <button class="tool-item" onclick="openDrawer('atlas')" style="border:1px dashed var(--border-subtle)">
+        <span class="tool-icon" style="background:var(--bg-subtle);color:var(--text-muted)">&#x25EB;</span>
+        <span class="tool-meta">
+          <span class="tool-name">Knowledge Atlas</span>
+          <span class="tool-desc">Capas L0&ndash;L4 del tenant</span>
+        </span>
+      </button>
+    </div>
+  </aside>
+</div>
+
+<!-- Reloj panel -->
+<aside class="clock-panel" id="clock-panel">
+  <h3>Reloj de aprendizaje</h3>
+  <p class="state" id="clock-state">Estado &middot; al d&iacute;a</p>
+  <dl id="clock-dl">
+    <dt>&Uacute;ltimo freeze</dt>
+    <dd>hace 12 d&iacute;as</dd>
+    <dt>Templates sin congelar</dt>
+    <dd>3</dd>
+    <dt>Promociones pendientes</dt>
+    <dd>2</dd>
+    <dt>Samples bloqueados</dt>
+    <dd>0</dd>
+    <dt>Conflictos de fuente</dt>
+    <dd>0</dd>
+    <dt>Replay suite</dt>
+    <dd>&uacute;ltima OK &middot; 3d</dd>
+  </dl>
+  <div class="next">
+    <p class="nlabel">Pr&oacute;xima acci&oacute;n</p>
+    <p class="ntext">Freeze mensual en 18 d&iacute;as</p>
+  </div>
+  <div class="actions">
+    <a onclick="goWS('curaduria')">Abrir Curadur&iacute;a</a>
+    <a onclick="openDrawer('atlas')">Ver candidatos</a>
+    <a onclick="toast('info','clock','Conflictos: 0')">Ver conflictos</a>
+    <a onclick="toast('info','clock','Replay: OK')">Ver replay</a>
+  </div>
+</aside>
+
+<!-- Drawer -->
+<div class="drawer-back" id="drawer-back" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="drawer-title">
+      <div class="kicker" id="drawer-kicker">Mano derecha</div>
+      <h2 id="drawer-title">Detalle</h2>
+    </div>
+    <button class="icon-btn" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+  <div class="drawer-foot" id="drawer-foot"></div>
+</aside>
+
+<!-- Modal -->
+<div class="modal-back" id="modal-back">
+  <div class="modal" id="modal">
+    <div class="modal-head"><h2 id="modal-title">Modal</h2></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Cerrar</button></div>
+  </div>
+</div>
+
+<!-- CmdK -->
+<div class="cmdk-back" id="cmdk-back">
+  <div class="cmdk">
+    <input id="cmdk-input" placeholder="Buscar workspace, cuenta, RFQ, herramienta&hellip;" autocomplete="off">
+    <div id="cmdk-results"></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast"></div>
+
+<script>
+// ====================== DATA ======================
+const roles = {owner:"Owner",admin:"Admin",supervisor:"Supervisor",operator:"Operator",viewer:"Viewer"};
+const roleRank = {viewer:0,operator:1,supervisor:2,admin:3,owner:4};
+
+// Workspaces: 4 tipos -- system, account, internal, governance
+const workspaces = [
+  // SYSTEM
+  {id:"inbox", type:"system", label:"Inbox global", avatar:"In", icon:"✉", badge:"12", min:"operator", subtitle:"Llegadas recientes y c&oacute;mo fueron enrutadas. Override manual disponible cuando el sistema duda."},
+  {id:"mesa", type:"system", label:"Mesa de control", avatar:"Mc", icon:"◎", badge:"27", min:"operator", subtitle:"Decisiones humanas pendientes en todos los workspaces. Ordenadas por prioridad: SLA &times; valor &times; edad."},
+
+  // ACCOUNT (operativos -- cuentas cliente)
+  {id:"ws_industrias_norte", type:"account", label:"Industrias del Norte", avatar:"In", min:"operator", badge:"Cr&iacute;tico", badgeKind:"coral", controlled_by:"AF", tier:"gold", subtitle:"Compras corporativas Saltillo &middot; tier gold &middot; controlled by Alejandro Faro"},
+  {id:"ws_sondel", type:"account", label:"Sondel SA", avatar:"Sn", min:"operator", badge:"3", controlled_by:"AF", tier:"gold", subtitle:"Cliente premium MX &middot; tier gold &middot; controlled by Alejandro Faro &middot; 23 RFQs cerradas en 2026"},
+  {id:"ws_ramirez", type:"account", label:"Distribuidora Ram&iacute;rez", avatar:"Rm", min:"operator", badge:"2", controlled_by:"AF", tier:"silver", subtitle:"Distribuidor mayorista CDMX &middot; tier silver"},
+  {id:"ws_alfa", type:"account", label:"Constructoras Alfa", avatar:"Al", min:"operator", badge:"1", controlled_by:"AF", tier:"silver", subtitle:"Constructora corporativa &middot; tier silver &middot; multi-pa&iacute;s"},
+  {id:"ws_minera", type:"account", label:"Minera Central", avatar:"Mn", min:"operator", controlled_by:"AF", tier:"bronze", subtitle:"Cliente minera &middot; tier bronze"},
+
+  // INTERNAL
+  {id:"ws_lab_mwt", type:"internal", label:"Lab MWT", avatar:"Lb", min:"admin", badge:"3", subtitle:"Workspace especial scope amplio &middot; Owner+Admin &middot; iterar skills, crear conocimiento, deep research"},
+  {id:"ws_inbox_sin_asignar", type:"internal", label:"Sin asignar", avatar:"—", min:"operator", badge:"4", subtitle:"Llegadas que el routing autom&aacute;tico no pudo clasificar. Operator decide destino."},
+
+  // GOVERNANCE
+  {id:"atlas", type:"governance", label:"Knowledge Atlas", avatar:"◫", min:"operator", subtitle:"5 capas del knowledge: L0 Mundo &middot; L1 Vertical &middot; L2 Tenant &middot; L3 Workspace &middot; L4 Usuario"},
+  {id:"factory", type:"governance", label:"Factories", avatar:"✱", min:"admin", subtitle:"Workspace Factory &middot; Skill Factory &middot; Agent Factory &middot; templates y wizards"},
+  {id:"control_plane", type:"governance", label:"AI Control Plane", avatar:"⌘", min:"admin", subtitle:"Providers, profiles, bindings, routing inheritance, prompting, arena, ledger &amp; governance"},
+  {id:"audit", type:"governance", label:"Audit", avatar:"▦", min:"supervisor", subtitle:"Trace IDs, evidence bundles, audit log append-only con SHA-256 chain"},
+  {id:"curaduria", type:"governance", label:"Curadur&iacute;a", avatar:"❖", min:"admin", badge:"3", badgeKind:"amber", subtitle:"Congelar aprendizaje, revisar samples y resolver conflictos"},
+  {id:"settings", type:"governance", label:"Configuraci&oacute;n tenant", avatar:"⚙", min:"admin", subtitle:"Tenant config, billing, integraciones email/WhatsApp, security"}
+];
+
+// Tabs por tipo de workspace
+const wsTabs = {
+  account: ["Bandeja","Hist&oacute;rico","KB cliente","Iteraci&oacute;n","Configurar","Sanidad"],
+  internal: ["Sesiones","Hist&oacute;rico","KB tenant","Iteraci&oacute;n","Configurar"],
+  system_inbox: ["Llegadas","Reglas routing","Hist&oacute;rico"],
+  system_mesa: ["Pendientes","Cerrados","M&eacute;tricas"],
+  governance: ["Vista","Configurar"]
+};
+
+// Tools per workspace type (capabilities invocables)
+const toolsByType = {
+  account: [
+    {id:"@cotizador",name:"@cotizador",desc:"genera draft cotizaci&oacute;n",icon:"◇"},
+    {id:"@validar",name:"@validar_compliance",desc:"banned phrases &middot; pol&iacute;ticas",icon:"✓"},
+    {id:"@comparar",name:"@comparar_skus",desc:"matching cat&aacute;logo cliente",icon:"⚬"},
+    {id:"@proforma",name:"@generar_proforma",desc:"PDF firmable con evidencia",icon:"▤"},
+    {id:"@evidencia",name:"@abrir_evidencia",desc:"4 fuentes &middot; SHA-256",icon:"▦"},
+    {id:"@kb",name:"@ver_kb_cliente",desc:"L3 de este workspace",icon:"◫"},
+    {id:"@iterar",name:"@iterar_voz",desc:"ajustar instrucciones workspace",icon:"♬"},
+    {id:"@dunning",name:"@dunning_gentle",desc:"recordatorio cobro suave",icon:"⚠"}
+  ],
+  internal: [
+    {id:"@deep_research",name:"@deep_research",desc:"investigaci&oacute;n KB + web",icon:"⚱"},
+    {id:"@crear_skill",name:"@crear_skill",desc:"Skill Factory wizard 5 pasos",icon:"✱"},
+    {id:"@clonar_agente",name:"@clonar_agente",desc:"Agent Factory wizard 4 pasos",icon:"⁂"},
+    {id:"@promover",name:"@promover_knowledge",desc:"L4&rarr;L3&rarr;L2&rarr;L1",icon:"⇧"},
+    {id:"@tune_voice",name:"@tune_voice_tenant",desc:"voice tenant MWT",icon:"♬"},
+    {id:"@chat",name:"@chat_libre",desc:"sesi&oacute;n con KB tenant completa",icon:"⌖"}
+  ],
+  system_inbox: [
+    {id:"@reasignar",name:"@reasignar_workspace",desc:"override manual de routing",icon:"⁂"},
+    {id:"@crear_ws",name:"@crear_workspace",desc:"para remitente nuevo",icon:"+"},
+    {id:"@reglas",name:"@editar_reglas_routing",desc:"Tier 0 patterns",icon:"⌁"},
+    {id:"@descartar",name:"@descartar_no_operativo",desc:"spam &middot; no relevante",icon:"✖"}
+  ],
+  system_mesa: [
+    {id:"@aprobar",name:"@aprobar_lote",desc:"batch HITL aprobado",icon:"✓"},
+    {id:"@filtrar",name:"@filtrar_urgentes",desc:"SLA &lt; 1h",icon:"⚡"},
+    {id:"@reasignar_op",name:"@reasignar_operator",desc:"delegar a otro user",icon:"⁂"},
+    {id:"@override_costo",name:"@override_cost_cap",desc:"requiere Owner/Admin",icon:"$"}
+  ],
+  governance: [
+    {id:"@buscar",name:"@buscar_atlas",desc:"FTS + pgvector cross-capa",icon:"⌖"},
+    {id:"@curar",name:"@curar_pendientes",desc:"3 candidatos esperando",icon:"✱"},
+    {id:"@congelar",name:"@congelar_freeze",desc:"snapshot mensual",icon:"❆"},
+    {id:"@conflictos",name:"@resolver_conflictos",desc:"fuentes en disputa",icon:"❖"}
+  ]
+};
+
+// Quick actions (topbar context-actions)
+const quickActionsByType = {
+  account: ["Aprobar y enviar","Editar draft","Ver historico"],
+  internal: ["Nueva sesion","Promover learning","Ver candidatos"],
+  system_inbox: ["Asignar 4 pendientes","Crear regla","Filtrar"],
+  system_mesa: ["Aprobar urgentes","Filtrar workspace","Reasignar"],
+  governance: ["Abrir","Configurar"]
+};
+
+// ====================== STATE ======================
+let state = {
+  activeWS: "ws_sondel",
+  activeTab: 0,
+  role: "operator",
+  theme: localStorage.getItem("fb.theme") || "light",
+  clockState: "normal",  // normal | atento | bloqueado
+  clockData: {
+    normal: {label:"Aprendizaje &middot; al d&iacute;a &middot; 12d", state:"al d&iacute;a", lastFreeze:"hace 12 d&iacute;as", uncongealed:"3", pendingPromotions:"2", blockedSamples:"0", conflicts:"0", replay:"&uacute;ltima OK &middot; 3d", nextAction:"Freeze mensual en 18 d&iacute;as"},
+    atento: {label:"Aprendizaje &middot; atento &middot; 35d", state:"atento", lastFreeze:"hace 35 d&iacute;as", uncongealed:"35 d&iacute;as", pendingPromotions:"14", blockedSamples:"3", conflicts:"2", replay:"&uacute;ltima OK &middot; 3d", nextAction:"Freeze mensual"},
+    bloqueado: {label:"Aprendizaje &middot; bloqueado &middot; revisar", state:"bloqueado", lastFreeze:"hace 78 d&iacute;as", uncongealed:"78 d&iacute;as", pendingPromotions:"42", blockedSamples:"11", conflicts:"7", replay:"FAIL &middot; 5d", nextAction:"Resolver conflictos cr&iacute;ticos"}
+  }
+};
+
+// ====================== HELPERS ======================
+function canAccess(ws){ return roleRank[state.role] >= roleRank[ws.min || "viewer"]; }
+function getWS(id){ return workspaces.find(w => w.id === id); }
+function emit(ev,p={}){ console.log("[telemetry]", ev, p); }
+function toast(kind,code,message){
+  const stack = document.getElementById("toast");
+  const node = document.createElement("div");
+  node.className = "toast";
+  node.textContent = message;
+  stack.appendChild(node);
+  emit("shell.toast.shown",{kind,code});
+  setTimeout(()=>node.remove(),2400);
+}
+
+// ====================== RENDER NAV ======================
+function renderNav(){
+  document.getElementById("system-ws").innerHTML = workspaces.filter(w=>w.type==="system").map(wsRow).join("");
+  document.getElementById("account-ws").innerHTML = workspaces.filter(w=>w.type==="account").map(wsRow).join("");
+  document.getElementById("internal-ws").innerHTML = workspaces.filter(w=>w.type==="internal").map(wsRow).join("");
+  document.getElementById("gov-ws").innerHTML = workspaces.filter(w=>w.type==="governance").map(wsRow).join("");
+  document.getElementById("account-ct").textContent = workspaces.filter(w=>w.type==="account").length;
+}
+function wsRow(ws){
+  const ok = canAccess(ws);
+  const active = state.activeWS === ws.id;
+  const badgeKind = ws.badgeKind || "";
+  return `<button class="ws-row ${active?"active":""}" ${ok?`onclick="goWS('${ws.id}')"`:`onclick="toast('warn','role_blocked','Requiere ${roles[ws.min]}')"`} ${ok?"":'style="opacity:.45"'}>
+    <span class="ws-avatar">${ws.avatar}</span>
+    <span class="ws-name">${ws.label}</span>
+    ${ws.badge?`<span class="badge ${badgeKind}">${ws.badge}</span>`:""}
+  </button>`;
+}
+
+// ====================== RENDER TOOLS ======================
+function renderTools(){
+  const ws = getWS(state.activeWS);
+  if(!ws) return;
+  const toolsKey = ws.type === "system" ? (ws.id === "inbox" ? "system_inbox" : "system_mesa") : ws.type;
+  const tools = toolsByType[toolsKey] || [];
+  document.getElementById("tools-body").innerHTML = tools.map(t => `
+    <button class="tool-item" onclick="invokeTool('${t.id}','${t.name}')">
+      <span class="tool-icon">${t.icon}</span>
+      <span class="tool-meta">
+        <span class="tool-name">${t.name}</span>
+        <span class="tool-desc">${t.desc}</span>
+      </span>
+    </button>
+  `).join("");
+}
+function invokeTool(id,name){
+  toast("info","tool_invoke",name + " invocada");
+  emit("shell.tool.invoke",{tool_id:id,workspace:state.activeWS});
+  openDrawer("tool",{toolId:id,toolName:name});
+}
+
+// ====================== RENDER WORKSPACE ======================
+function renderWorkspace(){
+  const ws = getWS(state.activeWS);
+  if(!ws) return;
+  document.documentElement.setAttribute("data-theme", state.theme);
+  document.body.setAttribute("data-role", state.role);
+  document.getElementById("role-pill").className = "role role-"+state.role;
+  document.getElementById("role-pill").textContent = roles[state.role];
+  document.getElementById("role-switcher").value = state.role;
+
+  document.getElementById("crumb-screen").textContent = ws.label;
+  document.getElementById("crumb-entity").innerHTML = (ws.type==="account"?"cuenta cliente &middot; ":ws.type==="system"?"sistema &middot; ":ws.type==="internal"?"interno &middot; ":"gobernanza &middot; ") + (ws.controlled_by||"");
+
+  // Quick actions
+  const toolsKey = ws.type === "system" ? (ws.id === "inbox" ? "system_inbox" : "system_mesa") : ws.type;
+  const qa = quickActionsByType[toolsKey] || [];
+  document.getElementById("context-actions").innerHTML = qa.map((a,i)=>`<button class="quick ${i===0?"primary":""}" onclick="quickAction('${a}')">${a}</button>`).join("");
+
+  // Body content
+  document.getElementById("canvas").innerHTML = workspaceBody(ws);
+
+  renderNav();
+  renderTools();
+  renderClock();
+}
+
+function workspaceBody(ws){
+  if(ws.id === "inbox") return inboxBody();
+  if(ws.id === "mesa") return mesaBody();
+  if(ws.id === "ws_industrias_norte") return industriasUrgentBody(ws);
+  if(ws.type === "account") return accountBody(ws);
+  if(ws.id === "ws_lab_mwt") return labBody(ws);
+  if(ws.type === "internal") return internalBody(ws);
+  if(ws.type === "governance") return governanceBody(ws);
+  return `<div class="ws-header"><h1 class="ws-title">${ws.label}</h1><p class="ws-subtitle">${ws.subtitle||""}</p></div>`;
+}
+
+function tabsHtml(tabs){
+  return `<nav class="ws-tabs">${tabs.map((t,i)=>`<span class="ws-tab ${i===state.activeTab?"active":""}" onclick="state.activeTab=${i};renderWorkspace()">${t}</span>`).join("")}</nav>`;
+}
+
+function inboxBody(){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">Inbox</h1>
+      <p class="ws-subtitle">Llegadas recientes y c&oacute;mo fueron enrutadas. Override manual disponible cuando el sistema duda.</p>
+    </div>
+    ${tabsHtml(wsTabs.system_inbox)}
+    <p class="section-label">12 hoy &middot; 8 auto-enrutadas &middot; 4 esperando decisi&oacute;n</p>
+    <div class="cola">
+      <div class="row">
+        <div class="who">compras@sondel.mx<small>RFQ 200 pares BC-7240 &middot; recibido 09:14</small></div>
+        <div class="reason">match dominio &rarr; ws_sondel</div>
+        <div class="meta">conf 0.98</div>
+        <div class="pill routed">Enrutado</div>
+      </div>
+      <div class="row">
+        <div class="who">licitaciones@minera-cn.cl<small>cotizaci&oacute;n urgente botas dielectricas &middot; recibido 10:02</small></div>
+        <div class="reason">classifier sugiere ws_alfa</div>
+        <div class="meta">conf 0.71</div>
+        <div class="pill review">Confirmar</div>
+      </div>
+      <div class="row">
+        <div class="who">jorge@constructora-alfa.com.mx<small>follow-up RFQ-2026-038 &middot; recibido 10:34</small></div>
+        <div class="reason">match contacto &rarr; ws_alfa</div>
+        <div class="meta">conf 0.95</div>
+        <div class="pill routed">Enrutado</div>
+      </div>
+      <div class="row">
+        <div class="who">marketing@unknown-sender.co<small>presentaci&oacute;n nueva l&iacute;nea &middot; recibido 11:18</small></div>
+        <div class="reason">sin match &middot; remitente nuevo</div>
+        <div class="meta">conf 0.34</div>
+        <div class="pill unrouted">Sin asignar</div>
+      </div>
+    </div>
+    <p class="more">Ver historial 30d &middot; <a onclick="toast('info','filter','filtrar por workspace')">filtrar por workspace</a> &middot; <a onclick="toast('info','filter','filtrar por confidence')">filtrar por confidence</a></p>
+  `;
+}
+
+function mesaBody(){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">Mesa de control</h1>
+      <p class="ws-subtitle">Decisiones humanas pendientes en todos los workspaces. Ordenadas por prioridad: SLA &times; valor &times; edad.</p>
+    </div>
+    ${tabsHtml(wsTabs.system_mesa)}
+    <div class="filters">
+      <span class="filter active">Todo &middot; 27</span>
+      <span class="filter">Drafts &middot; 18</span>
+      <span class="filter">Excepciones &middot; 5</span>
+      <span class="filter">Routing &middot; 4</span>
+      <span class="filter">workspace &#9662;</span>
+      <span class="filter">SLA &#9662;</span>
+    </div>
+    <div class="cola">
+      <div class="row" onclick="goWS('ws_industrias_norte')">
+        <div class="who">Industrias del Norte SA &middot; RFQ-2026-041<small>ws_industrias_norte &middot; cotizaci&oacute;n 200 pares BC-7240</small></div>
+        <div class="meta urgent">14m SLA</div>
+        <div class="meta">USD 12,400</div>
+        <div class="pill critical">Cr&iacute;tico</div>
+      </div>
+      <div class="row" onclick="goWS('ws_ramirez')">
+        <div class="who">Distribuidora Ram&iacute;rez &middot; recordatorio pago<small>ws_ramirez &middot; @dunning_gentle &middot; mora 15d</small></div>
+        <div class="meta">2h SLA</div>
+        <div class="meta">USD 1,180</div>
+        <div class="pill review">Revisar</div>
+      </div>
+      <div class="row" onclick="goWS('inbox')">
+        <div class="who">licitaciones@minera-cn.cl<small>routing dudoso &middot; classifier sugiere ws_alfa &middot; conf 0.71</small></div>
+        <div class="reason">asignar workspace</div>
+        <div class="meta">3h</div>
+        <div class="pill review">Decidir</div>
+      </div>
+      <div class="row" onclick="goWS('ws_sondel')">
+        <div class="who">Sondel &middot; RFQ-2026-035<small>ws_sondel &middot; cotizaci&oacute;n 50 pares M-2880</small></div>
+        <div class="meta">6h SLA</div>
+        <div class="meta">USD 4,210</div>
+        <div class="pill review">Revisar</div>
+      </div>
+      <div class="row" onclick="goWS('ws_alfa')">
+        <div class="who">Constructoras Alfa &middot; conflicto pol&iacute;tica<small>ws_alfa &middot; descuento 18% &middot; cap pol&iacute;tica 12%</small></div>
+        <div class="reason">excepci&oacute;n &middot; aprobar override</div>
+        <div class="meta">1d</div>
+        <div class="pill conflict">Excepci&oacute;n</div>
+      </div>
+    </div>
+    <p class="more">22 m&aacute;s ordenadas por prioridad &middot; <a onclick="toast('info','filter','mis workspaces')">filtrar mis workspaces</a></p>
+  `;
+}
+
+function accountBody(ws){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">${ws.label}</h1>
+      <p class="ws-subtitle">${ws.subtitle||""}</p>
+    </div>
+    ${tabsHtml(wsTabs.account)}
+    <p class="section-label">Pendientes en este workspace &middot; 3 abiertas</p>
+    <div class="cola">
+      <div class="row">
+        <div class="who">RFQ-2026-035 &middot; 50 pares M-2880<small>recibido hace 6h &middot; draft listo &middot; @cotizador</small></div>
+        <div class="meta">USD 4,210</div>
+        <div class="meta">6h SLA</div>
+        <div class="pill review">Revisar</div>
+      </div>
+      <div class="row">
+        <div class="who">Follow-up RFQ-2026-031<small>cliente pidi&oacute; aclaraci&oacute;n entrega &middot; respuesta sugerida lista</small></div>
+        <div class="meta">USD 8,900</div>
+        <div class="meta">1d</div>
+        <div class="pill review">Revisar</div>
+      </div>
+      <div class="row">
+        <div class="who">Renovaci&oacute;n contrato anual 2026<small>borrador propuesta &middot; condiciones especiales gold</small></div>
+        <div class="meta">USD 145k</div>
+        <div class="meta">5d</div>
+        <div class="pill review">Revisar</div>
+      </div>
+    </div>
+    <p class="more">7 cerradas este mes &middot; <a onclick="toast('info','tab','historico')">ver hist&oacute;rico completo</a></p>
+  `;
+}
+
+function industriasUrgentBody(ws){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">${ws.label}</h1>
+      <p class="ws-subtitle">${ws.subtitle||""}</p>
+    </div>
+    ${tabsHtml(wsTabs.account)}
+
+    <div class="critical-card">
+      <div class="topline">
+        <span class="pill critical">Cr&iacute;tico</span>
+        <span class="id">RFQ-2026-041</span>
+        <span class="sla">14m para SLA</span>
+      </div>
+      <h2>200 pares BC-7240 &middot; entrega Saltillo</h2>
+      <p class="who2">Compras corporativas &middot; condiciones gold &middot; firmar como Alejandro &middot; voice modulada por instrucciones del workspace</p>
+      <div class="actions2">
+        <button class="btn btn-primary" onclick="toast('success','approved','Aprobado y enviado')">Aprobar y enviar</button>
+        <button class="btn" onclick="toast('info','edit','Abriendo editor')">Editar antes de enviar</button>
+      </div>
+      <span class="evidence-toggle" onclick="openDrawer('evidence')">Evidencia colapsada &middot; 4 fuentes &middot; SHA-256</span>
+    </div>
+
+    <p class="section-label">Otras pendientes &middot; atenuadas</p>
+    <div class="quiet-row"><div>RFQ-2026-039 &middot; 80 pares AR-3300 &middot; draft listo</div><div class="meta-q">3h SLA</div></div>
+    <div class="quiet-row"><div>Follow-up entrega RFQ-2026-037</div><div class="meta-q">8h SLA</div></div>
+    <div class="quiet-row"><div>Solicitud datasheets t&eacute;cnicos</div><div class="meta-q">2d</div></div>
+  `;
+}
+
+function labBody(ws){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">${ws.label}</h1>
+      <p class="ws-subtitle">${ws.subtitle||""}</p>
+    </div>
+    ${tabsHtml(wsTabs.internal)}
+    <p class="section-label">Sesiones recientes</p>
+    <div class="cola">
+      <div class="row">
+        <div class="who">Deep research mercado calzado dielectrico LATAM 2026<small>iniciado ayer &middot; 4 fuentes &middot; pending review CEO</small></div>
+        <div class="reason">candidato L4&rarr;L2</div>
+        <div class="meta">2d</div>
+        <div class="pill review">Promover?</div>
+      </div>
+      <div class="row">
+        <div class="who">Iteraci&oacute;n skill quote_drafter v1.4 &rarr; v1.5<small>3 cambios prompt &middot; sandbox tests OK</small></div>
+        <div class="reason">candidato Skill Factory</div>
+        <div class="meta">5d</div>
+        <div class="pill review">Promover?</div>
+      </div>
+      <div class="row">
+        <div class="who">Voice tenant MWT &middot; ajuste glosario sectorial<small>4 t&eacute;rminos nuevos &middot; safety_footwear</small></div>
+        <div class="reason">candidato L1 vertical</div>
+        <div class="meta">7d</div>
+        <div class="pill review">Curar</div>
+      </div>
+    </div>
+  `;
+}
+
+function internalBody(ws){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">${ws.label}</h1>
+      <p class="ws-subtitle">${ws.subtitle||""}</p>
+    </div>
+    ${tabsHtml(wsTabs.internal||wsTabs.system_inbox)}
+    <p class="section-label">Llegadas no clasificadas</p>
+    <div class="cola">
+      <div class="row">
+        <div class="who">marketing@unknown-sender.co<small>presentaci&oacute;n nueva l&iacute;nea &middot; remitente nuevo</small></div>
+        <div class="reason">sin match dominio</div>
+        <div class="meta">3h</div>
+        <div class="pill unrouted">Decidir</div>
+      </div>
+      <div class="row">
+        <div class="who">consultas@feria-epp-2026.org<small>invitaci&oacute;n stand &middot; remitente desconocido</small></div>
+        <div class="reason">classifier baja conf</div>
+        <div class="meta">5h</div>
+        <div class="pill unrouted">Decidir</div>
+      </div>
+    </div>
+  `;
+}
+
+function governanceBody(ws){
+  return `
+    <div class="ws-header">
+      <h1 class="ws-title">${ws.label}</h1>
+      <p class="ws-subtitle">${ws.subtitle||""}</p>
+    </div>
+    ${tabsHtml(wsTabs.governance)}
+    <p class="section-label">Vista general</p>
+    <p style="color:var(--text-muted);font-size:13px;line-height:1.6">Workspace de gobernanza &middot; contenido contextual seg&uacute;n configuraci&oacute;n del tenant &middot; v&eacute;ase SPEC asociado.</p>
+  `;
+}
+
+// ====================== CLOCK ======================
+function renderClock(){
+  const c = document.getElementById("learning-clock");
+  c.className = "learning-clock " + (state.clockState === "normal" ? "" : state.clockState);
+  document.getElementById("clock-label").innerHTML = state.clockData[state.clockState].label;
+
+  const panel = document.getElementById("clock-panel");
+  panel.className = "clock-panel " + state.clockState + (panel.classList.contains("show") ? " show" : "");
+  document.getElementById("clock-state").innerHTML = "Estado &middot; " + state.clockData[state.clockState].state;
+  const d = state.clockData[state.clockState];
+  document.getElementById("clock-dl").innerHTML = `
+    <dt>&Uacute;ltimo freeze</dt><dd ${state.clockState!=="normal"?'class="warn"':""}>${d.lastFreeze}</dd>
+    <dt>Templates sin congelar</dt><dd>${d.uncongealed}</dd>
+    <dt>Promociones pendientes</dt><dd>${d.pendingPromotions}</dd>
+    <dt>Samples bloqueados</dt><dd>${d.blockedSamples}</dd>
+    <dt>Conflictos de fuente</dt><dd>${d.conflicts}</dd>
+    <dt>Replay suite</dt><dd>${d.replay}</dd>
+  `;
+  panel.querySelector(".next .ntext").innerHTML = d.nextAction;
+}
+function toggleClockPanel(){
+  document.getElementById("clock-panel").classList.toggle("show");
+  emit("shell.clock.toggle",{state:state.clockState});
+}
+function cycleClockState(){
+  const order = ["normal","atento","bloqueado"];
+  state.clockState = order[(order.indexOf(state.clockState)+1)%3];
+  renderClock();
+  toast("info","clock","Reloj &rarr; "+state.clockState);
+}
+
+// ====================== NAVIGATION ======================
+function goWS(id){
+  const ws = getWS(id);
+  if(!ws){ toast("warn","ws","Workspace no encontrado"); return; }
+  if(!canAccess(ws)){ toast("warn","role_blocked","Requiere "+roles[ws.min]); return; }
+  const from = state.activeWS;
+  state.activeWS = id;
+  state.activeTab = 0;
+  closeCmdk();
+  closeDrawer();
+  renderWorkspace();
+  emit("shell.navigate",{from,to:id,workspace_type:ws.type});
+}
+function setRole(r){
+  state.role = r;
+  renderWorkspace();
+  toast("info","role_switch","Viendo como "+roles[r]);
+}
+function setTheme(t){
+  state.theme = t;
+  localStorage.setItem("fb.theme",t);
+  renderWorkspace();
+}
+function toggleNav(){ document.getElementById("app").classList.toggle("nav-collapsed"); }
+function toggleTools(){ document.getElementById("app").classList.toggle("tools-collapsed"); }
+function quickAction(a){
+  toast("info","quick_action",a);
+  if(a.includes("Aprobar y enviar")) toast("success","sent","Cotizaci&oacute;n enviada a Industrias del Norte");
+}
+
+// ====================== DRAWER ======================
+const drawerCopy = {
+  evidence:["Evidencia &middot; 4 fuentes","Evidencia"],
+  atlas:["Knowledge Atlas &middot; 5 capas","Knowledge Atlas"],
+  tool:["Herramienta invocada","Herramienta"]
+};
+function openDrawer(kind,payload={}){
+  const [k,t] = drawerCopy[kind] || ["Mano derecha","Detalle"];
+  document.getElementById("drawer-kicker").textContent = k;
+  document.getElementById("drawer-title").innerHTML = payload.toolName || t;
+  document.getElementById("drawer-body").innerHTML = drawerBody(kind,payload);
+  document.getElementById("drawer-foot").innerHTML = `<button class="btn" onclick="closeDrawer()">Cerrar</button><button class="btn btn-primary" onclick="toast('success','drawer_action','Acci&oacute;n registrada');closeDrawer()">Confirmar</button>`;
+  document.getElementById("drawer").classList.add("show");
+  document.getElementById("drawer-back").classList.add("show");
+}
+function closeDrawer(){
+  document.getElementById("drawer").classList.remove("show");
+  document.getElementById("drawer-back").classList.remove("show");
+}
+function drawerBody(kind,payload){
+  if(kind==="evidence"){
+    return `
+      <p class="section-label">Fuentes consultadas &middot; SHA-256 chain</p>
+      <div class="cola">
+        <div class="row"><div class="who">SAP Marluvas catalogo precios<small>sap.marluvas/api/pricing &middot; freshness 2h</small></div><div class="meta">primary</div><div></div><div class="pill routed">OK</div></div>
+        <div class="row"><div class="who">Stock Saltillo warehouse<small>wms.mwt/inventory &middot; freshness 15m</small></div><div class="meta">primary</div><div></div><div class="pill routed">OK</div></div>
+        <div class="row"><div class="who">Hist&oacute;rico cuenta Industrias Norte<small>L3 ws_industrias_norte &middot; 47 RFQs previas</small></div><div class="meta">enrich</div><div></div><div class="pill routed">OK</div></div>
+        <div class="row"><div class="who">Voice tenant MWT &middot; banned phrases<small>L2 tenant_mwt &middot; sin violaciones</small></div><div class="meta">filter</div><div></div><div class="pill routed">OK</div></div>
+      </div>
+      <p style="margin-top:18px;color:var(--text-muted);font-size:12px;font-family:'JetBrains Mono',monospace">SHA-256: a4f3e2c1b8d9...7e2f &middot; chain previo: prev_hash</p>
+    `;
+  }
+  if(kind==="atlas"){
+    return `
+      <p class="section-label">Knowledge Atlas &middot; 5 capas</p>
+      ${["L0 Mundo","L1 Vertical","L2 Tenant MWT","L3 Workspace activo","L4 Usuario Alejandro"].map((l,i)=>`
+        <div class="row" style="cursor:pointer">
+          <div class="who">${l}<small>${["leyes &middot; normas externas","safety_footwear LATAM","voice tenant &middot; pol&iacute;ticas &middot; cat&aacute;logos","ws_sondel &middot; hist&oacute;rico cliente","sabor user &middot; learning HITL"][i]}</small></div>
+          <div class="meta">${[12,87,143,52,38][i]}</div>
+          <div></div>
+          <div class="pill routed">${["read","read","write","write","private"][i]}</div>
+        </div>
+      `).join("")}
+    `;
+  }
+  if(kind==="tool"){
+    return `
+      <p class="section-label">Herramienta &middot; ${payload.toolName}</p>
+      <p style="color:var(--text-muted);font-size:13px;line-height:1.6">Esta herramienta es un verbo invocable del workspace activo. Sus par&aacute;metros se completan inline aqu&iacute;. Confirmar con el bot&oacute;n primario.</p>
+      <p style="margin-top:18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text-muted)">tool_id: ${payload.toolId}<br>workspace: ${state.activeWS}<br>signing_user: AF</p>
+    `;
+  }
+  return "";
+}
+
+// ====================== CMDK ======================
+function openCmdk(trigger){
+  document.getElementById("cmdk-back").classList.add("show");
+  document.getElementById("cmdk-input").value = "";
+  renderCmdk("");
+  setTimeout(()=>document.getElementById("cmdk-input").focus(),0);
+}
+function closeCmdk(){ document.getElementById("cmdk-back").classList.remove("show"); }
+
+function renderCmdk(q){
+  const query = q.toLowerCase();
+  const wsItems = workspaces.filter(w=>!query||w.label.toLowerCase().includes(query)||w.id.toLowerCase().includes(query)).map(w=>({type:"workspace",id:w.id,label:w.label,meta:w.type,icon:w.avatar}));
+
+  const allTools = [];
+  Object.entries(toolsByType).forEach(([k,arr])=>arr.forEach(t=>allTools.push({type:"tool",id:t.id,label:t.name,meta:k,icon:t.icon})));
+  const toolItems = allTools.filter(t=>!query||t.label.toLowerCase().includes(query)).slice(0,6);
+
+  const cmds = [
+    {type:"command",id:"clock_normal",label:"Reloj &rarr; al d&iacute;a",meta:"demo",icon:"&#9788;"},
+    {type:"command",id:"clock_atento",label:"Reloj &rarr; atento",meta:"demo",icon:"&#9888;"},
+    {type:"command",id:"clock_bloqueado",label:"Reloj &rarr; bloqueado",meta:"demo",icon:"&#9940;"},
+    {type:"command",id:"create_ws",label:"Crear workspace nuevo",meta:"factory",icon:"+"},
+    {type:"command",id:"open_atlas",label:"Abrir Knowledge Atlas",meta:"governance",icon:"&#x25EB;"}
+  ].filter(c=>!query||c.label.toLowerCase().includes(query));
+
+  const out = [];
+  if(wsItems.length){ out.push(`<div class="cmdk-section">Workspaces</div>`); wsItems.slice(0,8).forEach((i,idx)=>out.push(cmdkRowHtml(i,idx))); }
+  if(toolItems.length){ out.push(`<div class="cmdk-section">Herramientas</div>`); toolItems.forEach((i,idx)=>out.push(cmdkRowHtml(i,idx))); }
+  if(cmds.length){ out.push(`<div class="cmdk-section">Comandos</div>`); cmds.forEach((i,idx)=>out.push(cmdkRowHtml(i,idx))); }
+
+  if(!out.length){ out.push(`<div style="padding:18px;color:var(--text-muted);font-size:13px">Sin resultados para &laquo;${q}&raquo;. Prob&aacute;: ws_sondel, mesa, @cotizador, reloj</div>`); }
+  document.getElementById("cmdk-results").innerHTML = out.join("");
+}
+
+function cmdkRowHtml(i,idx){
+  return `<div class="cmdk-row" onclick="cmdkSelect('${i.type}','${i.id}','${i.label.replace(/'/g,"\\'")}')">
+    <span class="ki">${i.icon}</span>
+    <span class="kt"><span class="ktn">${i.label}</span><span class="ktm">${i.meta}</span></span>
+    <span class="kty">${i.type}</span>
+  </div>`;
+}
+
+function cmdkSelect(type,id,label){
+  closeCmdk();
+  if(type==="workspace") goWS(id);
+  else if(type==="tool") invokeTool(id,label);
+  else if(type==="command"){
+    if(id==="clock_normal"){ state.clockState="normal"; renderClock(); toast("info","clock","Reloj normal"); }
+    else if(id==="clock_atento"){ state.clockState="atento"; renderClock(); toast("info","clock","Reloj atento"); }
+    else if(id==="clock_bloqueado"){ state.clockState="bloqueado"; renderClock(); toast("info","clock","Reloj bloqueado"); }
+    else if(id==="create_ws"){ openModal("create_ws"); }
+    else if(id==="open_atlas"){ openDrawer("atlas"); }
+  }
+}
+
+document.getElementById("cmdk-input").addEventListener("input",e=>renderCmdk(e.target.value));
+document.getElementById("cmdk-back").addEventListener("click",e=>{ if(e.target.id==="cmdk-back") closeCmdk(); });
+
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); openCmdk("shortcut"); }
+  if(e.key==="Escape"){ closeCmdk(); closeDrawer(); closeModal(); document.getElementById("clock-panel").classList.remove("show"); }
+});
+
+// ====================== MODAL ======================
+function openModal(kind){
+  document.getElementById("modal-title").textContent = kind==="create_ws" ? "Crear workspace" : "Modal";
+  document.getElementById("modal-body").innerHTML = kind==="create_ws"
+    ? `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 14px">Workspace Factory wizard 6 pasos. En este mock simulamos paso 1: origen.</p>
+       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+         <button class="btn">Template system</button>
+         <button class="btn">Template tenant</button>
+         <button class="btn">Clonar workspace</button>
+         <button class="btn">Desde cero</button>
+       </div>`
+    : "<p>Modal slot.</p>";
+  document.getElementById("modal-back").classList.add("show");
+}
+function closeModal(){ document.getElementById("modal-back").classList.remove("show"); }
+
+// ====================== INIT ======================
+renderWorkspace();
+</script>
+</body>
+</html>

@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FaberLoom — Shell mock v4 · modos + cejas + focus</title>
+<style>
+  :root{
+    --bg-canvas:#1C1A17; --bg-surface:#26231F; --bg-raised:#322E29; --bg-hover:#2B2823;
+    --text-primary:#F4F1ED; --text-secondary:#D2CCC1; --text-muted:#9E988C;
+    --border-subtle:#3A3631; --border-default:#4A4540;
+    --coral:#E8896A; --coral-deep:#87432c; --coral-soft:rgba(232,137,106,.12);
+    --amber:#e1af5f; --sage:#78b991; --brick:#dc7869; --slate:#a0afbe; --vino:#E89B8A;
+    --ease:cubic-bezier(.25,.8,.25,1);
+    --shadow:0 4px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg-canvas);color:var(--text-primary);
+    font:13.5px/1.55 "Segoe UI",system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+  ::selection{background:var(--coral-deep);color:var(--text-primary)}
+  ::-webkit-scrollbar{width:10px}
+  ::-webkit-scrollbar-thumb{background:var(--border-subtle);border-radius:6px;border:3px solid var(--bg-canvas)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-default)}
+  button{font-family:inherit}
+  :focus-visible{outline:2px solid var(--coral);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+  /* ============ TOPBAR ============ */
+  .topbar{height:52px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;
+    padding:0 10px;gap:12px;flex-shrink:0;z-index:30}
+  /* ceja: icono de panel fijo en el chrome (patron Claude Desktop) */
+  .ceja{width:32px;height:32px;border:none;background:none;border-radius:8px;cursor:pointer;
+    display:grid;place-items:center;color:var(--text-muted);transition:background .18s,color .18s;flex-shrink:0}
+  .ceja:hover{background:var(--bg-surface);color:var(--text-primary)}
+  .ceja svg{width:17px;height:17px}
+  .crumb{min-width:190px}
+  .crumb .l1{font-size:13.5px;font-weight:600;transition:opacity .25s var(--ease)}
+  .crumb .l2{font-size:10.5px;color:var(--text-muted);transition:opacity .25s var(--ease)}
+  .crumb.swap .l1,.crumb.swap .l2{opacity:0}
+  .cmdk{flex:1;max-width:430px;margin:0 auto;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    border-radius:10px;padding:7px 12px;color:var(--text-muted);font-size:12.5px;display:flex;gap:8px;
+    cursor:pointer;transition:border-color .2s,background .2s}
+  .cmdk:hover{border-color:var(--border-default);background:var(--bg-hover)}
+  .cmdk kbd{margin-left:auto;border:1px solid var(--border-default);border-radius:4px;padding:0 6px;
+    font-size:10px;font-family:inherit}
+  .reloj{font-size:11.5px;color:var(--amber);border:1px solid var(--border-subtle);border-radius:16px;
+    padding:5px 12px;cursor:pointer;position:relative;transition:background .2s;white-space:nowrap}
+  .reloj:hover{background:var(--bg-surface)}
+  .reloj .panel{position:absolute;top:calc(100% + 8px);right:0;width:280px;background:var(--bg-raised);
+    border:1px solid var(--border-default);border-radius:13px;padding:14px;box-shadow:var(--shadow);
+    font-size:12px;color:var(--text-secondary);text-align:left;z-index:60;
+    opacity:0;transform:translateY(-6px) scale(.98);pointer-events:none;transition:all .2s var(--ease)}
+  .reloj.open .panel{opacity:1;transform:none;pointer-events:auto}
+  .reloj .panel h6{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+  .reloj .panel div{padding:2.5px 0}
+  .reloj .panel .lnk{color:var(--coral);cursor:pointer;margin-top:8px}
+  .pillTop{font-size:11.5px;color:var(--text-secondary);border:1px solid var(--border-subtle);border-radius:8px;
+    padding:5px 11px;cursor:pointer;background:none;transition:background .2s;white-space:nowrap}
+  .pillTop:hover{background:var(--bg-surface)}
+
+  .frame{flex:1;display:flex;min-height:0}
+
+  /* ============ RAIL 1 con switcher de modos ============ */
+  .rail1{width:246px;min-width:246px;border-right:1px solid var(--border-subtle);display:flex;
+    flex-direction:column;padding:12px 8px 8px;overflow:hidden;
+    transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s var(--ease),opacity .25s}
+  .rail1.hidden{width:0;min-width:0;padding:12px 0;opacity:0;pointer-events:none;border-right-color:transparent}
+  .logo{display:flex;align-items:center;gap:9px;padding:2px 8px 12px}
+  .logo .mark{width:26px;height:26px;min-width:26px;border-radius:7px;background:var(--coral);display:grid;
+    place-items:center;color:#1C1A17;font-family:Georgia,serif;font-weight:700;font-size:15px}
+  .logo .name{font-family:Georgia,serif;font-size:16.5px;white-space:nowrap}
+  .logo small{font-size:9.5px;color:var(--text-muted);display:block;font-family:"Segoe UI",sans-serif}
+
+  /* segmented mode switcher (patron Chat/Cowork/Code) */
+  .modes{display:flex;gap:2px;background:var(--bg-surface);border-radius:11px;padding:3px;margin:0 4px 14px}
+  .modes button{flex:1;background:none;border:none;color:var(--text-muted);font-size:11.5px;font-weight:600;
+    padding:7px 2px;border-radius:9px;cursor:pointer;transition:all .2s var(--ease);white-space:nowrap}
+  .modes button:hover{color:var(--text-secondary)}
+  .modes button.on{background:var(--bg-raised);color:var(--text-primary);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+
+  .navwrap{flex:1;overflow-y:auto;overflow-x:hidden;position:relative}
+  .navmode{display:none;animation:viewIn .25s var(--ease)}
+  .navmode.on{display:block}
+  .sec{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.9px;
+    padding:12px 10px 5px;display:flex;white-space:nowrap}
+  .sec .plus{margin-left:auto;cursor:pointer;color:var(--text-secondary);border-radius:5px;padding:0 5px;transition:all .15s}
+  .sec .plus:hover{background:var(--bg-raised);color:var(--coral)}
+  .it{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--text-secondary);
+    font-size:13px;cursor:pointer;margin-bottom:1px;position:relative;white-space:nowrap;
+    transition:background .16s,color .16s}
+  .it .ico{min-width:16px;text-align:center;opacity:.85}
+  .it:hover{background:var(--bg-hover);color:var(--text-primary)}
+  .it:active{transform:scale(.985)}
+  .it.active{background:var(--bg-raised);color:var(--text-primary)}
+  .it.active::before{content:"";position:absolute;left:-8px;top:20%;bottom:20%;width:3px;
+    border-radius:2px;background:var(--coral);animation:slideIn .25s var(--ease)}
+  @keyframes slideIn{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  .b{margin-left:auto;font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px;
+    background:var(--bg-raised);color:var(--text-secondary)}
+  .b.op{background:var(--amber);color:#1C1A17}
+  .b.crit{background:var(--coral);color:#1C1A17;font-size:9.5px;text-transform:uppercase;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(232,137,106,.4)}50%{box-shadow:0 0 0 5px rgba(232,137,106,0)}}
+  .b.sage{background:var(--sage);color:#1C1A17}
+  .userfoot{border-top:1px solid var(--border-subtle);margin-top:8px;padding:10px 8px 4px;display:flex;
+    gap:9px;align-items:center;cursor:pointer;border-radius:8px;transition:background .16s}
+  .userfoot:hover{background:var(--bg-hover)}
+  .avatar{width:27px;height:27px;min-width:27px;border-radius:50%;background:var(--bg-raised);display:grid;
+    place-items:center;font-size:10px;font-weight:700;color:var(--coral)}
+
+  /* ============ CANVAS ============ */
+  .canvas{flex:1;min-width:0;overflow-y:auto;position:relative}
+  .view{display:none;padding:24px 30px 10px;max-width:960px;margin:0 auto;min-height:100%}
+  .view.on{display:flex;flex-direction:column;animation:viewIn .3s var(--ease)}
+  @keyframes viewIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .vhead{margin-bottom:20px}
+  .vtitle{font-family:Georgia,serif;font-size:22px;margin-bottom:3px}
+  .vsub{font-size:12px;color:var(--text-muted)}
+  .grow{flex:1}
+  @keyframes itemIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+  /* INBOX */
+  .cat{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted);margin:16px 0 9px;
+    display:flex;gap:8px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .mail{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;
+    padding:12px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:center;
+    transition:all .18s var(--ease);animation:itemIn .35s var(--ease) backwards}
+  .mail:hover{border-color:var(--border-default);transform:translateY(-1px);box-shadow:0 3px 14px rgba(0,0,0,.22)}
+  .mail .acct{font-size:9.5px;font-weight:700;letter-spacing:.5px;border:1px solid var(--border-default);
+    border-radius:5px;padding:2px 6px;color:var(--text-muted);min-width:56px;text-align:center}
+  .mail .mbody{flex:1;min-width:0}
+  .mail .from{font-size:12.5px;font-weight:600}
+  .mail .subj{font-size:12.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mail .meta{font-size:10.5px;color:var(--text-muted)}
+  .mail.unmatched{border-left:3px solid var(--amber)}
+  .routed{font-size:11px;color:var(--sage);white-space:nowrap}
+  .pill{font-size:11.5px;border-radius:8px;padding:5px 12px;cursor:pointer;border:1px solid var(--border-default);
+    background:none;color:var(--text-secondary);transition:all .16s var(--ease)}
+  .pill:hover{border-color:var(--text-muted);color:var(--text-primary);background:var(--bg-hover)}
+  .pill:active{transform:scale(.96)}
+  .pill.go{background:var(--coral);border-color:var(--coral);color:#1C1A17;font-weight:600}
+  .pill.go:hover{background:#eda184}
+  .pill.danger{color:var(--brick);border-color:rgba(220,120,105,.5)}
+  .triage{overflow:hidden;max-height:0;opacity:0;transition:max-height .32s var(--ease),opacity .28s,margin .3s}
+  .triage.open{max-height:140px;opacity:1;margin-bottom:10px}
+  .triage .inner{background:var(--bg-canvas);border:1px dashed var(--border-default);border-radius:10px;
+    padding:11px 13px;font-size:12px;color:var(--text-secondary)}
+  .triage .opts{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+
+  /* MESA */
+  .kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+  .col h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;padding:4px 4px 10px;display:flex;gap:7px;align-items:center}
+  .col .cnt{font-size:10px;background:var(--bg-raised);border-radius:8px;padding:0 7px}
+  .card-k{background:var(--bg-surface);border:1px solid var(--border-subtle);border-left:3px solid var(--border-default);
+    border-radius:11px;padding:12px 13px;margin-bottom:9px;font-size:12px;cursor:pointer;
+    transition:all .18s var(--ease);animation:itemIn .35s var(--ease) backwards}
+  .card-k:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .card-k .score{float:right;font-size:11px;color:var(--text-muted)}
+  .card-k .cli{font-weight:600;font-size:13px;margin-bottom:2px}
+  .card-k .trace,.card-k .meta{font-size:10.5px;color:var(--text-muted);margin-bottom:5px}
+  .card-k .desc{color:var(--text-secondary);margin-bottom:9px}
+  .card-k .gok{font-size:11px;color:var(--coral)}
+  .c-crit{border-left-color:var(--coral)}.c-wait{border-left-color:var(--amber)}
+  .c-del{border-left-color:var(--slate)}.c-err{border-left-color:var(--vino)}
+
+  /* WS + chat */
+  .wtabs{display:flex;gap:2px;border-bottom:1px solid var(--border-subtle);margin-bottom:20px}
+  .wtabs button{background:none;border:none;color:var(--text-muted);font-size:12.5px;padding:8px 14px;
+    cursor:pointer;border-bottom:2px solid transparent;transition:all .18s;border-radius:6px 6px 0 0}
+  .wtabs button:hover{color:var(--text-secondary);background:var(--bg-hover)}
+  .wtabs button.on{color:var(--text-primary);border-bottom-color:var(--coral)}
+  .qmsg{margin-bottom:18px;animation:itemIn .3s var(--ease) backwards}
+  .qmsg .who{font-size:11px;color:var(--text-muted);margin-bottom:5px}
+  .qmsg .bub{background:var(--bg-raised);border-radius:14px;padding:11px 15px;max-width:78%;font-size:13.5px;display:inline-block}
+  .qmsg.me{text-align:right}
+  .qmsg.ai .bub{background:none;padding:4px 2px;color:var(--text-secondary);max-width:92%;text-align:left}
+  .typing{display:inline-flex;gap:4px;padding:8px 4px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:tp 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+  @keyframes tp{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+  .draft{background:var(--bg-surface);border:1px solid var(--border-default);border-radius:14px;overflow:hidden;
+    margin-bottom:16px;transition:border-color .25s;animation:itemIn .35s var(--ease) backwards}
+  .draft.ok-state{border-color:rgba(120,185,145,.55)}
+  .draft .head{padding:12px 16px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:10px}
+  .state{font-size:10.5px;font-weight:700;color:#1C1A17;background:var(--amber);padding:2px 10px;border-radius:9px;
+    text-transform:uppercase;transition:background .3s}
+  .dclass{margin-left:auto;font-size:10px;border:1px solid var(--slate);color:var(--slate);padding:1px 8px;border-radius:8px}
+  .draft .dbody{padding:15px 16px;font-size:13px;color:var(--text-secondary)}
+  .grounding{padding:10px 16px;border-top:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-muted)}
+  .grounding a{color:var(--vino);text-decoration:none;margin-right:12px}
+  .grounding a:hover{text-decoration:underline}
+  .tchips{padding:9px 16px;border-top:1px solid var(--border-subtle);display:flex;gap:7px;font-size:11px;
+    color:var(--text-muted);flex-wrap:wrap}
+  .tchips .t{background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:6px;padding:2px 8px}
+  .hitl{padding:12px 16px;border-top:1px solid var(--border-subtle);display:flex;gap:10px;align-items:center}
+  .btn{border:none;border-radius:9px;padding:8px 17px;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .16s var(--ease)}
+  .btn:active{transform:scale(.96)}
+  .btn.ok{background:var(--sage);color:#1C1A17}.btn.ok:hover{background:#8cc7a2}
+  .btn.iter{background:var(--bg-raised);color:var(--text-primary);border:1px solid var(--border-default)}
+  .btn.iter:hover{background:var(--bg-hover)}
+  .btn.no{background:none;color:var(--brick);border:1px solid rgba(220,120,105,.5)}
+  .boost{margin-left:auto;font-size:11.5px;color:var(--coral);background:none;border:1px dashed var(--coral-deep);
+    border-radius:8px;padding:6px 12px;cursor:pointer;transition:all .18s}
+  .boost:hover{background:var(--coral-soft)}
+  .spinner{width:13px;height:13px;border:2px solid rgba(28,26,23,.3);border-top-color:#1C1A17;border-radius:50%;
+    display:inline-block;vertical-align:-2px;margin-right:7px;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* SPACELOOM */
+  .sug{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:13px 16px;
+    margin-bottom:18px;font-size:12.5px;animation:itemIn .35s backwards}
+  .sug b{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px}
+  .sug div{padding:4px 0 4px 4px;color:var(--text-secondary);cursor:pointer;transition:color .15s,padding-left .2s}
+  .sug div:hover{color:var(--coral);padding-left:10px}
+  .cta-idx{background:var(--bg-surface);border:1px solid var(--amber);border-radius:12px;padding:12px 15px;
+    font-size:12px;color:var(--text-secondary);max-width:480px;margin:12px 0}
+  .cta-idx .opts{display:flex;gap:7px;margin-top:9px}
+
+  /* ADMIN */
+  .agrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .acard{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:13px;padding:16px;
+    cursor:pointer;transition:all .18s var(--ease);animation:itemIn .35s backwards}
+  .acard:hover{transform:translateY(-2px);border-color:var(--border-default);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .acard h4{font-family:Georgia,serif;font-size:15px;margin-bottom:4px}
+  .acard p{font-size:11.5px;color:var(--text-muted)}
+  .acard .num{float:right;font-size:18px;font-family:Georgia,serif;color:var(--coral)}
+
+  /* lente de scope del workspace */
+  .scopebar{margin-top:9px;font-size:11.5px;color:var(--text-muted);background:var(--bg-surface);
+    border:1px solid var(--border-subtle);border-radius:9px;padding:7px 12px;display:flex;gap:6px;align-items:center}
+  .scopebar b{color:var(--text-secondary)}
+  .scopebar .exit{margin-left:auto;color:var(--coral);cursor:pointer;transition:opacity .15s}
+  .scopebar .exit:hover{opacity:.8}
+  .wtabs .tb{font-size:9.5px;background:var(--bg-raised);border-radius:7px;padding:0 5px;margin-left:4px;color:var(--amber)}
+  .wstab{display:none}
+  .wstab.on{display:flex;flex-direction:column;flex:1;animation:viewIn .25s var(--ease)}
+
+  /* conversaciones scoped del workspace (anatomia SpaceLoom heredada) */
+  .convstrip{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+  .conv{font-size:11.5px;border-radius:16px;padding:5px 13px;cursor:pointer;border:1px solid var(--border-subtle);
+    background:var(--bg-surface);color:var(--text-secondary);transition:all .16s var(--ease)}
+  .conv:hover{border-color:var(--border-default);color:var(--text-primary)}
+  .conv.on{background:var(--bg-raised);border-color:var(--coral-deep);color:var(--text-primary)}
+  .conv.plus{background:none;border-style:dashed;color:var(--text-muted)}
+  .conv.plus:hover{color:var(--coral);border-color:var(--coral-deep)}
+
+  /* COMPOSER */
+  .composer{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg-canvas) 22%);padding:18px 0 14px;margin-top:auto}
+  .box{background:var(--bg-surface);border:1px solid var(--border-default);border-radius:16px;padding:12px 14px;
+    transition:border-color .2s,box-shadow .2s}
+  .box.focus{border-color:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-soft)}
+  .box textarea{width:100%;background:none;border:none;color:var(--text-primary);font:13.5px/1.5 inherit;
+    outline:none;resize:none;height:24px;max-height:140px}
+  .box .row{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:10.5px;color:var(--text-muted)}
+  .pedal{display:flex;background:var(--bg-canvas);border:1px solid var(--border-subtle);border-radius:9px;overflow:hidden}
+  .pedal button{background:none;border:none;color:var(--text-muted);font-size:11px;padding:5px 11px;cursor:pointer;transition:all .18s}
+  .pedal button.on{background:var(--coral-deep);color:var(--text-primary)}
+  .send{margin-left:auto;width:32px;height:32px;border-radius:9px;background:var(--bg-raised);border:none;
+    color:var(--text-muted);font-size:15px;cursor:pointer;transition:all .2s var(--ease)}
+  .send.ready{background:var(--coral);color:#1C1A17}
+  .send.ready:hover{transform:scale(1.07)}
+  .hintc{text-align:center;font-size:10.5px;color:var(--text-muted);margin-top:8px}
+
+  /* ============ RAIL 3: acordeones con resumen + mini rail ============ */
+  .rail3{width:288px;min-width:288px;border-left:1px solid var(--border-subtle);overflow-y:auto;overflow-x:hidden;
+    padding:12px 10px;transition:width .3s var(--ease),min-width .3s var(--ease),padding .3s}
+  .rail3.mini{width:46px;min-width:46px;padding:12px 5px}
+  .rail3.mini .acc{display:none}
+  .minirail{display:none;flex-direction:column;gap:10px;align-items:center}
+  .rail3.mini .minirail{display:flex}
+  .mini-ic{width:34px;height:34px;border-radius:9px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+    display:grid;place-items:center;cursor:pointer;position:relative;color:var(--text-muted);font-size:14px;
+    transition:all .18s}
+  .mini-ic:hover{color:var(--text-primary);border-color:var(--border-default)}
+  .mini-ic .mb{position:absolute;top:-5px;right:-5px;font-size:8.5px;font-weight:700;background:var(--amber);
+    color:#1C1A17;border-radius:7px;padding:0 4px}
+  /* acordeon: header trabaja cerrado (resumen de una linea) */
+  .acc{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .acc .ahead{display:flex;align-items:center;gap:8px;padding:11px 13px;cursor:pointer;user-select:none;
+    transition:background .15s}
+  .acc .ahead:hover{background:var(--bg-hover)}
+  .acc .ahead .t{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600}
+  .acc .ahead .sum{margin-left:auto;font-size:11px;color:var(--text-secondary);white-space:nowrap;
+    transition:opacity .2s}
+  .acc .ahead .chev{color:var(--text-muted);font-size:11px;transition:transform .25s var(--ease);margin-left:6px}
+  .acc.open .ahead .chev{transform:rotate(90deg)}
+  .acc.open .ahead .sum{opacity:0;width:0;overflow:hidden}
+  .acc .abody{max-height:0;opacity:0;overflow:hidden;transition:max-height .3s var(--ease),opacity .25s}
+  .acc.open .abody{max-height:400px;opacity:1}
+  .acc .inner{padding:2px 13px 13px}
+  .kv{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--text-secondary)}
+  .kv b{color:var(--text-primary);font-weight:600;font-variant-numeric:tabular-nums}
+  .kitem{display:flex;gap:8px;align-items:center;padding:5px 2px;font-size:12.5px;color:var(--text-secondary);
+    border-radius:7px;cursor:pointer;transition:padding-left .2s}
+  .kitem:hover{padding-left:8px;color:var(--text-primary)}
+  .kitem .lvl{margin-left:auto;font-size:10px;color:var(--text-muted)}
+  .kitem .pend{color:var(--amber)}
+  .qitem{display:flex;gap:8px;align-items:center;padding:5px 0;font-size:12px;color:var(--text-secondary)}
+  .dial{display:flex;gap:4px;margin:6px 0 8px}
+  .dial span{flex:1;height:5px;border-radius:3px;background:var(--bg-raised)}
+  .dial span.lit{background:var(--coral)}
+  .bar{height:6px;background:var(--bg-raised);border-radius:4px;overflow:hidden;margin:6px 0 4px}
+  .bar i{display:block;height:100%;width:34%;background:var(--sage)}
+
+  /* CMD-K + toast */
+  .modal-bg{position:fixed;inset:0;background:rgba(15,13,11,.6);backdrop-filter:blur(3px);z-index:90;
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  .modal-bg.open{opacity:1;pointer-events:auto}
+  .palette{position:fixed;top:16%;left:50%;width:480px;transform:translateX(-50%) translateY(-8px) scale(.98);
+    background:var(--bg-raised);border:1px solid var(--border-default);border-radius:16px;box-shadow:var(--shadow);
+    z-index:95;opacity:0;pointer-events:none;transition:all .22s var(--ease);overflow:hidden}
+  .palette.open{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
+  .palette input{width:100%;background:none;border:none;border-bottom:1px solid var(--border-subtle);
+    color:var(--text-primary);font:14px inherit;padding:14px 18px;outline:none}
+  .palette .res{max-height:300px;overflow-y:auto;padding:8px}
+  .pres{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;
+    color:var(--text-secondary);transition:background .12s}
+  .pres:hover,.pres.sel{background:var(--bg-hover);color:var(--text-primary)}
+  .pres .k{margin-left:auto;font-size:10px;color:var(--text-muted)}
+  .toast{position:fixed;bottom:26px;right:26px;background:var(--bg-raised);border:1px solid var(--border-default);
+    border-left:3px solid var(--sage);border-radius:12px;padding:13px 18px;font-size:12.5px;color:var(--text-secondary);
+    box-shadow:var(--shadow);z-index:99;transform:translateY(20px);opacity:0;transition:all .3s var(--ease);max-width:340px}
+  .toast.show{transform:none;opacity:1}
+  .toast b{color:var(--text-primary)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <!-- ceja izquierda: fija en el chrome, doble click = focus -->
+  <button class="ceja" id="cejaL" title="Panel izquierdo  [  ·  doble click: modo focus"
+    onclick="toggleL()" ondblclick="focusMode()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+  </button>
+  <div class="crumb" id="crumb"><div class="l1" id="crumb1">Inbox</div><div class="l2" id="crumb2">visibilidad · agregador 4 cuentas</div></div>
+  <div class="cmdk" onclick="openPalette()" tabindex="0"><span>&#8981;</span> Buscar o ejecutar... <kbd>&#8984;K</kbd></div>
+  <div class="reloj" id="reloj" onclick="this.classList.toggle('open')">&#9679; <b>atento</b> · 5&#9719;
+    <div class="panel"><h6>Knowledge a indexar</h6>
+      <div>— 3 candidatos en StackLoom</div><div>— 1 conflicto de fuente</div>
+      <div>— 1 promoción L4&#8594;L2 esperando Owner</div>
+      <div style="margin-top:6px;color:var(--text-muted)">Próximo freeze: 18d</div>
+      <div class="lnk" onclick="setMode('aprender')">Abrir Aprendizaje &#8594;</div></div>
+  </div>
+  <button class="pillTop">Owner &#9662;</button>
+  <!-- ceja derecha: espejo -->
+  <button class="ceja" id="cejaR" title="Panel derecho  ]  ·  doble click: modo focus"
+    onclick="toggleR()" ondblclick="focusMode()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2.5"/><line x1="10" y1="2.5" x2="10" y2="13.5"/></svg>
+  </button>
+</div>
+
+<div class="frame">
+
+<!-- ============ RAIL 1 ============ -->
+<aside class="rail1" id="rail1">
+  <div class="logo"><div class="mark">F</div>
+    <div><span class="name">Faber<span style="color:var(--coral)">*</span>loom</span>
+    <small>tenant · MWT</small></div></div>
+
+  <!-- switcher de modos (patron Chat/Cowork/Code) -->
+  <div class="modes">
+    <button class="on" data-m="operar" onclick="setMode('operar')">&#9707; Operar</button>
+    <button data-m="aprender" onclick="setMode('aprender')">&#9719; Aprendizaje</button>
+    <button data-m="admin" onclick="setMode('admin')">&#9881; Admin</button>
+  </div>
+
+  <div class="navwrap">
+    <!-- MODO OPERAR: SpaceLoom es el banco de trabajo general, no un modo aparte -->
+    <div class="navmode on" id="m-operar">
+      <div class="it active" data-v="space" onclick="go('space')"><span class="ico">&#10047;</span>SpaceLoom<span class="b sage">3</span></div>
+      <div class="it" data-v="inbox" onclick="go('inbox')"><span class="ico">&#9993;</span>Inbox<span class="b op">12</span></div>
+      <div class="it" data-v="mesa" onclick="go('mesa')"><span class="ico">&#9707;</span>Mesa de Control<span class="b op">3</span></div>
+      <div class="sec">Workspaces <span class="plus">+</span></div>
+      <div class="it"><span class="ico">&#9675;</span>Mwt.one</div>
+      <div class="it"><span class="ico">&#9675;</span>Rana Walk<span class="b op">1</span></div>
+      <div class="it"><span class="ico">&#9675;</span>Industrias del Norte<span class="b crit">Crit</span></div>
+      <div class="it" data-v="ws" onclick="go('ws','Sondel SA')"><span class="ico">&#9675;</span>Sondel SA<span class="b op">3</span></div>
+      <div class="it"><span class="ico">&#9675;</span>Distribuidora Comtek<span class="b op">2</span></div>
+      <div class="it"><span class="ico">&#9675;</span>Lab MWT</div>
+      <div class="it" style="color:var(--text-muted)"><span class="ico">&#9675;</span>Sin asignar<span class="b">24</span></div>
+    </div>
+
+    <!-- MODO APRENDIZAJE: la cola epistemica -->
+    <div class="navmode" id="m-aprender">
+      <div class="it active" data-v="aprender" onclick="go('aprender')"><span class="ico">&#9636;</span>StackLoom<span class="b op">&#9719;5</span></div>
+      <div class="it"><span class="ico">&#128218;</span>Conocimiento L0-L4<span class="b">19</span></div>
+      <div class="it"><span class="ico">&#9998;</span>Señales HITL<span class="b">3</span></div>
+      <div class="it"><span class="ico">&#9673;</span>Gold samples<span class="b">42</span></div>
+      <div class="sec">Ritual</div>
+      <div class="it" style="color:var(--text-muted)"><span class="ico">&#9719;</span>Próximo freeze · 18d</div>
+    </div>
+
+    <!-- MODO ADMIN -->
+    <div class="navmode" id="m-admin">
+      <div class="sec">Capacidades</div>
+      <div class="it" data-v="admin" onclick="go('admin')"><span class="ico">&#9881;</span>Skills<span class="b">16</span></div>
+      <div class="it"><span class="ico">&#9670;</span>Agentes<span class="b">7</span></div>
+      <div class="sec">Tenant</div>
+      <div class="it"><span class="ico">&#127899;</span>IA: modelos y ruteo</div>
+      <div class="it"><span class="ico">&#9998;</span>Audit</div>
+      <div class="it"><span class="ico">&#9787;</span>Usuarios<span class="b">12</span></div>
+      <div class="it"><span class="ico">&#9965;</span>Configuración</div>
+    </div>
+  </div>
+
+  <div class="userfoot"><div class="avatar">AA</div>
+    <div style="font-size:12px">Alvaro<span style="color:var(--text-muted);display:block;font-size:10px">OWNER · Mi voz</span></div></div>
+</aside>
+
+<!-- ============ CANVAS ============ -->
+<main class="canvas" id="canvas">
+
+  <section class="view on" id="v-inbox">
+    <div class="vhead"><div class="vtitle">Inbox</div>
+    <div class="vsub">Aprende qué ignorar, qué resumir, qué convertir en tarea y qué abrir en workspace. Nunca es lugar de resolución.</div></div>
+    <div class="cat"><span class="dot" style="background:var(--sage)"></span> Ruteados automático</div>
+    <div class="mail"><span class="acct">VENTAS</span>
+      <div class="mbody"><div class="from">compras@sondel.cr</div>
+        <div class="subj">RFQ 500 pares 50S5BR — entrega Alajuela DDP</div>
+        <div class="meta">10:41 · tier-0 + classifier · conf 0.94</div></div>
+      <span class="routed">&#10003; &#8594; ws Sondel SA</span>
+      <button class="pill" onclick="go('ws','Sondel SA')">abrir</button></div>
+    <div class="mail"><span class="acct">VENTAS</span>
+      <div class="mbody"><div class="from">stephanie.guerrero@sondel.cr</div>
+        <div class="subj">Re: tracking pedido — ¿fecha estimada?</div>
+        <div class="meta">09:58 · conf 0.91</div></div>
+      <span class="routed">&#10003; &#8594; ws Sondel SA</span><button class="pill">abrir</button></div>
+    <div class="cat"><span class="dot" style="background:var(--amber)"></span> Sin match — decidir destino (3)</div>
+    <div class="mail unmatched"><span class="acct">LIC</span>
+      <div class="mbody"><div class="from">proveeduria@grupoconstrux.gt</div>
+        <div class="subj">Solicitud catálogo EPP + condiciones licitación Q3</div>
+        <div class="meta">08:30 · sin match · cliente nuevo · Guatemala</div></div>
+      <button class="pill go" onclick="toggleTriage()">decidir</button></div>
+    <div class="triage" id="triage"><div class="inner">
+      El classifier no encontró workspace destino. ¿Qué hago con esto?
+      <div class="opts">
+        <button class="pill go" onclick="toast('Workspace <b>Grupo Construx</b> creado · correo movido · @cotizador asignado')">+ Crear workspace</button>
+        <button class="pill">&#8594; Mwt.one</button><button class="pill">&#8594; @cotizador</button>
+        <button class="pill">resumen diario</button><button class="pill danger">descartar</button></div></div></div>
+    <div class="mail unmatched"><span class="acct">CEO</span>
+      <div class="mbody"><div class="from">eventos@camara-comercio.cr</div>
+        <div class="subj">Invitación: feria industrial San José</div>
+        <div class="meta">07:12 · sin match</div></div>
+      <button class="pill go">decidir</button></div>
+    <div class="cat"><span class="dot" style="background:var(--slate)"></span> Resumen diario (4) · digest 17:00</div>
+    <div class="cat"><span class="dot" style="background:var(--text-muted)"></span> Agente autónomo (2) · leído oculto (3) &#8594; audit</div>
+    <div class="grow"></div>
+  </section>
+
+  <section class="view" id="v-mesa">
+    <div class="vhead"><div class="vtitle">Mesa de Control</div>
+    <div class="vsub">Qué necesita tu criterio hoy. Entry point — la resolución vive en el workspace.</div></div>
+    <div class="kanban">
+      <div class="col"><h4><span class="dot" style="background:var(--coral)"></span> Tu criterio <span class="cnt">1</span></h4>
+        <div class="card-k c-crit" onclick="go('ws','Industrias del Norte')"><span class="score">0.96</span>
+          <div class="cli">Industrias del Norte SA</div>
+          <div class="trace">@mailbox:ventas &#8594; @router &#8594; @cotizador</div>
+          <div class="meta">&#9684; 14m SLA · [A] Alvaro · USD 12,400</div>
+          <div class="desc">240 pares BC-7240 dieléctrica · descuento platinum requiere override</div>
+          <span class="gok">Resolver &#8594;</span></div></div>
+      <div class="col"><h4><span class="dot" style="background:var(--amber)"></span> Esperando <span class="cnt">2</span></h4>
+        <div class="card-k c-wait" onclick="go('ws','Sondel SA')"><span class="score">0.78</span>
+          <div class="cli">Sondel SA</div><div class="trace">@mailbox:ventas &#8594; @cotizador</div>
+          <div class="meta">&#9684; 22m · PF_2468 v1</div>
+          <div class="desc">500 pares 50S5BR DDP · curva tallas asumida</div><span class="gok">Revisar &#8594;</span></div>
+        <div class="card-k c-wait"><span class="score">0.55</span><div class="cli">Cobranza F-1102</div>
+          <div class="trace">@cobranza</div><div class="meta">&#9684; 2h · 31d vencida</div>
+          <div class="desc">Mensaje listo · tono firme (2do aviso)</div><span class="gok">Revisar &#8594;</span></div></div>
+      <div class="col"><h4><span class="dot" style="background:var(--slate)"></span> Delegado <span class="cnt">1</span></h4>
+        <div class="card-k c-del"><span class="score">0.41</span><div class="cli">Distribuidora Comtek</div>
+          <div class="trace">&#8594; [AF] Alejandro</div><div class="meta">&#9684; 1d · ficha técnica</div>
+          <div class="desc">Esperando specs del fabricante</div></div></div>
+      <div class="col"><h4><span class="dot" style="background:var(--vino)"></span> Error <span class="cnt">1</span></h4>
+        <div class="card-k c-err"><span class="score">—</span><div class="cli">Parser Excel — precios T2</div>
+          <div class="trace">@kb_ingest · E-07</div><div class="meta">&#9684; 3h · bloquea pricing</div>
+          <div class="desc">12 filas no parseadas</div><span class="gok">Detalle &#8594;</span></div></div>
+    </div><div class="grow"></div>
+  </section>
+
+  <section class="view" id="v-ws">
+    <div class="vhead"><div class="vtitle" id="wsname">Sondel SA</div>
+    <div class="vsub">workspace operativo · cuenta B2B · controlled_by: @cotizador + Alvaro</div>
+    <div class="scopebar">&#9678; Lente: <b>solo esta cuenta</b> · Mesa 2 · Bandeja 2 · Aprendizaje 1
+      <span class="exit" onclick="setMode('operar');go('space')">salir al global &#8599;</span></div></div>
+    <div class="wtabs">
+      <button onclick="wtab(this,'bandeja')">Bandeja <span class="tb">2</span></button>
+      <button class="on" onclick="wtab(this,'iteracion')">Iteración</button>
+      <button onclick="wtab(this,'historico')">Histórico</button>
+      <button onclick="wtab(this,'kb')">KB <span class="tb">&#9719;1</span></button>
+      <button onclick="wtab(this,'config')">Configurar</button>
+      <button onclick="wtab(this,'sanidad')">Sanidad</button></div>
+
+    <!-- TAB BANDEJA: el Inbox con WHERE workspace = sondel -->
+    <div class="wstab" id="t-bandeja">
+      <div class="cat"><span class="dot" style="background:var(--amber)"></span> Pendientes de esta cuenta</div>
+      <div class="mail"><span class="acct">VENTAS</span>
+        <div class="mbody"><div class="from">compras@sondel.cr</div>
+          <div class="subj">RFQ 500 pares 50S5BR — en proceso (PF_2468 draft)</div>
+          <div class="meta">10:41 · vinculado al hilo activo de Iteración</div></div>
+        <span class="routed">draft v1 esperando</span><button class="pill" onclick="wtabGo('iteracion')">ir al draft</button></div>
+      <div class="mail"><span class="acct">VENTAS</span>
+        <div class="mbody"><div class="from">stephanie.guerrero@sondel.cr</div>
+          <div class="subj">Re: tracking pedido — ¿fecha estimada?</div>
+          <div class="meta">09:58 · @cotizador puede responder con tracking de la KB</div></div>
+        <button class="pill go">generar respuesta</button></div>
+      <div class="cat"><span class="dot" style="background:var(--slate)"></span> Resueltos hoy (3) &#8594; Histórico</div>
+    </div>
+
+    <!-- TAB KB: Conocimiento con WHERE workspace = sondel -->
+    <div class="wstab" id="t-kb">
+      <div class="cat"><span class="dot" style="background:var(--sage)"></span> Conocimiento de la cuenta (L3)</div>
+      <div class="mail"><div class="mbody"><div class="from">Histórico Sondel</div>
+        <div class="meta">L3 · 14 piezas · última: hoy (entregas parciales &#8805;60%, pendiente curación)</div></div>
+        <span class="routed">vigente</span></div>
+      <div class="mail"><div class="mbody"><div class="from">Condiciones comerciales Sondel</div>
+        <div class="meta">L3 · CXC 90 días · código Marluvas SI0063 · curva tallas histórica</div></div>
+        <span class="routed">vigente</span></div>
+      <div class="cat"><span class="dot" style="background:var(--amber)"></span> Heredado que esta cuenta consume</div>
+      <div class="mail"><div class="mbody"><div class="from">Lista precios Marluvas T2</div>
+        <div class="meta">L2 tenant · &#9888; vence en 18 días · &#9888; conflicto abierto con correo 05-28</div></div>
+        <button class="pill" onclick="setMode('aprender')">resolver &#8594;</button></div>
+      <div class="mail"><div class="mbody"><div class="from">Voice MWT + banned phrases</div>
+        <div class="meta">L2 tenant · aplica a todo output de esta cuenta</div></div>
+        <span class="routed">vigente</span></div>
+    </div>
+
+    <!-- TAB ITERACION (existente) -->
+    <div class="wstab on" id="t-iteracion">
+
+    <!-- anatomia SpaceLoom heredada, scope = workspace (canon: misma anatomia, distinto scope) -->
+    <div class="convstrip">
+      <button class="conv on">RFQ 500 pares · activa</button>
+      <button class="conv">Renovación contrato 2026</button>
+      <button class="conv">Reclamo lote 2391</button>
+      <button class="conv plus">+ nueva</button>
+    </div>
+    <div class="sug" style="margin-bottom:14px"><b>Sugerencias · Sondel SA</b>
+      <div>&#8594; Confirmar curva de tallas del RFQ activo (bloquea PF_2468)</div>
+      <div>&#8594; La lista de precios T2 vence en 18 días — pedir actualización a Marluvas</div>
+      <div>&#8594; 2 follow-ups de cobranza sin respuesta &gt;7d en esta cuenta</div></div>
+
+    <div id="wsThread">
+      <div class="qmsg me"><div class="who">Alvaro · 10:42</div>
+        <div class="bub">Entró el RFQ de 500 pares. Armala con camino 2 DDP.</div></div>
+      <div class="qmsg ai"><div class="who" style="color:var(--coral)">@cotizador · draft-first</div>
+        <div class="bub">Tier 0 extrajo 7/9 campos. Excepción: curva de tallas no especificada — usé el histórico y quedó marcada.</div></div>
+      <div class="draft" id="draft">
+        <div class="head"><span class="state" id="dstate">Esperando aprobación</span>
+          <span style="font-family:Georgia,serif;font-size:14.5px">Proforma PF_2468 — Sondel SA (v1)</span>
+          <span class="dclass">N1 · PARTNER_B2B</span></div>
+        <div class="dbody">500 × 50S5BR · mix histórico 38-44 · DDP Alajuela camino 2 · montos $ ——,——<br>
+          <span style="color:var(--amber);font-size:12px">&#9888; Curva de tallas asumida — confirmar antes de enviar.</span></div>
+        <div class="grounding">Evidencia: <a href="#">SCH_PROFORMA_MWT</a><a href="#">ENT_COMERCIAL_PRICING §C</a>
+          <a href="#">golden PF_2453</a><a href="#">Lista Marluvas T2</a> · SHA-256 &#10003;</div>
+        <div class="tchips"><span class="t">margen &#8805; floor &#10003;</span><span class="t">cliente al día &#10003;</span>
+          <span class="t" id="dmodel">modelo: sonnet</span><span class="t">$0.018</span><span class="t">conf 0.78</span></div>
+        <div class="hitl" id="dacts">
+          <button class="btn ok" id="btnOk" onclick="aprobar()">Aprobar y enviar</button>
+          <button class="btn iter" onclick="focusComposer('Decile qué cambiar… (ej: usá solo curva 40-44)')">Editar</button>
+          <button class="btn no">Rechazar</button>
+          <button class="boost" onclick="boost()">&#9889; Rehacer con el mejor</button></div>
+      </div>
+
+      <!-- CTA indexar scoped: default L3 directo al workspace (canon §12) -->
+      <div class="cta-idx">&#9719; <b>Esto puede valer la pena indexar</b><br>
+        "SonDel acepta entregas parciales si la 1ra cubre &#8805;60%" — detectado en este hilo · default: <b>L3 · ws_sondel</b>
+        <div class="opts"><button class="pill go" onclick="toast('Indexado a <b>L3 ws_sondel</b> · histórico de la cuenta actualizado')">Indexar a L3</button>
+        <button class="pill">Otra capa…</button><button class="pill">Más tarde</button><button class="pill">No</button></div></div>
+    </div>
+    <div class="grow"></div>
+    <div class="composer"><div class="box" id="boxWs">
+      <textarea id="taWs" rows="1" placeholder="Iterá el draft o preguntale a la cuenta… (@ws_sondel fijado)"></textarea>
+      <div class="row"><div class="pedal"><button onclick="pedal(this)">Eco</button>
+        <button class="on" onclick="pedal(this)">Balanceado</button><button onclick="pedal(this)">Sport+</button></div>
+        <span><b style="color:var(--coral)">@ws_sondel</b> fijado · KB scoped: histórico + voice + pricing · indexar &#8594; L3 default</span>
+        <button class="send" id="sendWs" onclick="sendMsg('ws')">&#8593;</button></div></div>
+      <div class="hintc">Draft-first: nada sale a un tercero sin tu aprobación explícita</div></div>
+    </div><!-- /t-iteracion -->
+
+    <!-- tabs restantes: placeholder -->
+    <div class="wstab" id="t-historico"><div class="cat">Histórico de la cuenta · 47 outputs aprobados · timeline (mock)</div></div>
+    <div class="wstab" id="t-config"><div class="cat">Configurar · agente asignado, preset override, instrucciones (mock)</div></div>
+    <div class="wstab" id="t-sanidad"><div class="cat">Sanidad · edit-rate 12% · costo $4.10/mes · 0 incidentes (mock)</div></div>
+  </section>
+
+  <section class="view" id="v-space">
+    <div class="vhead"><div class="vtitle">SpaceLoom</div>
+    <div class="vsub">banco de trabajo general · cross-workspace · KB tenant · contexto auto-detect · lo que resolvés acá se promueve al workspace que corresponda</div></div>
+    <div class="convstrip">
+      <button class="conv on">Industrias Norte · activa</button>
+      <button class="conv">&#9673; Voice MWT banned phrases</button>
+      <button class="conv">&#9673; Política descuentos</button>
+      <button class="conv">Glossary safety MX</button>
+      <button class="conv">Deep research dieléctrica</button>
+      <button class="conv plus">+ nueva</button>
+    </div>
+    <div class="sug"><b>Sugerencias del día</b>
+      <div>&#8594; Curar 3 candidatos pending en StackLoom</div>
+      <div>&#8594; Iterar voice MWT con 4 términos nuevos</div>
+      <div>&#8594; Continuar research dieléctrico LATAM (día 2)</div></div>
+    <div id="slThread">
+      <div class="qmsg me"><div class="who">Alvaro · 09:14 · @ws_industrias_norte</div>
+        <div class="bub">¿Cómo cerramos el follow-up de Industrias del Norte?</div></div>
+      <div class="qmsg ai"><div class="who" style="color:var(--coral)">FaberLoom · cuenta gold · KB: histórico + voice + políticas</div>
+        <div class="bub">Según el histórico, el contacto respondió mejor a seguimientos cortos con fecha límite explícita.
+        Propongo follow-up de 3 líneas anclado al vencimiento (15d, override Owner)…</div></div>
+      <div class="cta-idx">&#9719; <b>Esto puede valer la pena indexar</b><br>
+        "4 términos sectoriales nuevos" · sugerido: L1 vertical
+        <div class="opts"><button class="pill go" onclick="toast('Indexado a <b>L1</b> · en StackLoom para curación')">Indexar a L1</button>
+        <button class="pill">Más tarde</button><button class="pill">No</button></div></div>
+    </div>
+    <div class="grow"></div>
+    <div class="composer"><div class="box" id="boxSl">
+      <textarea id="taSl" rows="1" placeholder="Pregunta o pedí algo. @workspace para fijar scope."></textarea>
+      <div class="row"><div class="pedal"><button onclick="pedal(this)">Eco</button>
+        <button class="on" onclick="pedal(this)">Balanceado</button><button onclick="pedal(this)">Sport+</button></div>
+        <span>&#8593; 12,450 &#8595; 8,320 · &#8776; USD 0.087</span>
+        <button class="send" id="sendSl" onclick="sendMsg('sl')">&#8593;</button></div></div></div>
+  </section>
+
+  <section class="view" id="v-aprender">
+    <div class="vhead"><div class="vtitle">Aprendizaje</div>
+    <div class="vsub">todo lo que el sistema propone y espera tu curación · el sistema sugiere con evidencia, vos decidís · acá se cultiva el moat</div></div>
+
+    <div class="cat"><span class="dot" style="background:var(--amber)"></span> Candidatos a indexar (3)</div>
+    <div class="draft">
+      <div class="head"><span class="state">Candidato</span>
+        <span style="font-family:Georgia,serif;font-size:14px">"SonDel acepta entregas parciales si la 1ra cubre &#8805;60%"</span>
+        <span class="dclass">&#8594; L3 · ws_sondel</span></div>
+      <div class="dbody">Detectado en conversación del workspace Sondel (hoy 10:55). Afirmación operativa de la cuenta — entraría al histórico del cliente con vigencia 12 meses.</div>
+      <div class="hitl">
+        <button class="btn ok" onclick="toast('<b>Indexado a L3</b> · histórico Sondel actualizado · reloj: 5&#9719; &#8594; 4&#9719;')">Aprobar a L3</button>
+        <button class="btn iter">Iterar</button><button class="btn no">Descartar</button></div>
+    </div>
+    <div class="draft">
+      <div class="head"><span class="state">Candidato</span>
+        <span style="font-family:Georgia,serif;font-size:14px">4 términos sectoriales nuevos (dieléctrica MX)</span>
+        <span class="dclass">&#8594; L1 · vertical</span></div>
+      <div class="dbody">Detectados en SpaceLoom (research dieléctrico, día 2). Subirían al glosario del vertical safety_footwear — visibles cross-tenant del vertical.</div>
+      <div class="hitl">
+        <button class="btn ok">Aprobar a L1</button><button class="btn iter">Iterar</button><button class="btn no">Descartar</button></div>
+    </div>
+
+    <div class="cat"><span class="dot" style="background:var(--vino)"></span> Conflicto de fuente (1)</div>
+    <div class="draft" style="border-left:3px solid var(--vino)">
+      <div class="head"><span class="state" style="background:var(--vino)">Conflicto</span>
+        <span style="font-family:Georgia,serif;font-size:14px">Lista precios T2 vs correo Marluvas 05-28</span></div>
+      <div class="dbody">El correo declara ajuste +4% en línea 50S; la lista T2 indexada no lo refleja. Regla canon: ningún chunk contradictorio activo sin marcar. La KB está sirviendo el precio viejo.</div>
+      <div class="hitl">
+        <button class="btn ok">Correo gana · actualizar chunk</button>
+        <button class="btn iter">Pedir confirmación a Marluvas</button></div>
+    </div>
+
+    <div class="cat"><span class="dot" style="background:var(--coral)"></span> Sugerencias del sistema con evidencia (2)</div>
+    <div class="draft" style="border-left:3px solid var(--coral)">
+      <div class="head"><span class="state" style="background:var(--coral)">Router</span>
+        <span style="font-family:Georgia,serif;font-size:14px">En cobranza, haiku alcanza: cambiar default</span></div>
+      <div class="dbody">Evidencia HITL: haiku 94% aprobación-sin-edición vs sonnet 96%, sobre 42 tareas de la clase. Backtest 30d: habrías gastado $11 en vez de $42 en cobranza. Ahorro proyectado ~$31/mes a calidad equivalente.</div>
+      <div class="tchips"><span class="t">N=42 &#8805; gate 30</span><span class="t">delta calidad -2pts</span><span class="t">backtest &#10003;</span></div>
+      <div class="hitl">
+        <button class="btn ok" onclick="toast('<b>Preset v4</b> · default cobranza &#8594; haiku · auditado y reversible')">Aplicar al preset</button>
+        <button class="btn iter">Shadow 2 semanas</button><button class="btn no">Ignorar</button></div>
+    </div>
+    <div class="draft" style="border-left:3px solid var(--coral)">
+      <div class="head"><span class="state" style="background:var(--coral)">Voz</span>
+        <span style="font-family:Georgia,serif;font-size:14px">3 señales de tono esta semana &#8594; ajustar few-shot</span></div>
+      <div class="dbody">Editaste "tono/formalidad" 2 veces y "terminología" 1 vez en drafts de cobranza. Propongo reemplazar 2 ejemplos del few-shot por los drafts corregidos más recientes.</div>
+      <div class="hitl">
+        <button class="btn ok">Actualizar few-shot</button><button class="btn iter">Ver diffs</button><button class="btn no">Ignorar</button></div>
+    </div>
+
+    <div class="cat"><span class="dot" style="background:var(--slate)"></span> Promoción esperando Owner (1)</div>
+    <div class="draft" style="border-left:3px solid var(--slate)">
+      <div class="head"><span class="state" style="background:var(--slate)">L4&#8594;L2</span>
+        <span style="font-family:Georgia,serif;font-size:14px">Glosario minería (personal de Alvaro) &#8594; tenant</span></div>
+      <div class="dbody">Tu glosario personal se usó en 8 outputs de 3 workspaces distintos. Promoverlo a L2 lo hace disponible a todo el tenant. Requiere firma Owner.</div>
+      <div class="hitl">
+        <button class="btn ok">Promover a L2</button><button class="btn no">Mantener personal</button></div>
+    </div>
+    <div class="grow"></div>
+  </section>
+
+  <section class="view" id="v-admin">
+    <div class="vhead"><div class="vtitle">Administrar</div>
+    <div class="vsub">capacidades del tenant · lo que se construye y lo que se gobierna</div></div>
+    <div class="agrid">
+      <div class="acard"><span class="num">16</span><h4>Skills</h4><p>2 en SHADOW · 1 con uso anómalo</p></div>
+      <div class="acard"><span class="num">7</span><h4>Agentes</h4><p>@cotizador · @cobranza · @mail_x4 · 1 métrica baja</p></div>
+      <div class="acard"><span class="num">&#9719;5</span><h4>StackLoom</h4><p>3 candidatos · 1 conflicto · 1 promoción</p></div>
+      <div class="acard" onclick="toast('Routing presets: Conservador / Balanceado / Ahorro / Sport+ (mock)')"><span class="num">4</span><h4>IA: modelos y ruteo</h4><p>Preset Balanceado activo · budget $42/$150</p></div>
+      <div class="acard"><span class="num">12</span><h4>Usuarios</h4><p>5 roles · 2 invitaciones pendientes</p></div>
+      <div class="acard"><span class="num">&#10003;</span><h4>Audit</h4><p>append-only · 1,204 eventos este mes</p></div>
+    </div><div class="grow"></div>
+  </section>
+
+</main>
+
+<!-- ============ RAIL 3: acordeones con resumen ============ -->
+<aside class="rail3" id="rail3">
+  <!-- mini rail (46px): iconos con badge, click = expandir -->
+  <div class="minirail">
+    <div class="mini-ic" onclick="expandR3()" title="Preset · Balanceado">&#127899;</div>
+    <div class="mini-ic" onclick="expandR3()" title="Conocimiento · 5 a indexar">&#128218;<span class="mb">5</span></div>
+    <div class="mini-ic" onclick="expandR3()" title="Mesa · 3 esperando">&#9707;<span class="mb">3</span></div>
+    <div class="mini-ic" onclick="expandR3()" title="Ledger · ahorro 34%">&#128202;</div>
+  </div>
+
+  <!-- acordeon: el header resume cuando esta cerrado (patron "10 de 10") -->
+  <div class="acc open">
+    <div class="ahead" onclick="acc(this)"><span class="t">Preset</span>
+      <span class="sum">Balanceado · $42/150</span><span class="chev">&#9654;</span></div>
+    <div class="abody"><div class="inner">
+      <div style="font-family:Georgia,serif;font-size:15px">Balanceado</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">US/EU only · ZDR · borderline&#8594;premium</div>
+      <div class="dial"><span class="lit"></span><span class="lit"></span><span></span><span></span></div>
+      <div class="kv"><span>Budget mensual</span><b>$42 / $150</b></div>
+      <div class="kv"><span>Boost hoy</span><b>9 / 10</b></div></div></div>
+  </div>
+
+  <div class="acc">
+    <div class="ahead" onclick="acc(this)"><span class="t">Conocimiento</span>
+      <span class="sum">19 ctx · <span style="color:var(--amber)">5&#9719;</span></span><span class="chev">&#9654;</span></div>
+    <div class="abody"><div class="inner">
+      <div class="kitem">&#9673; Voice MWT<span class="lvl">L4</span></div>
+      <div class="kitem">&#9673; Histórico Sondel<span class="lvl">L3</span></div>
+      <div class="kitem">&#9673; Política descuentos<span class="lvl pend">L2 &#9719;</span></div>
+      <div class="kitem">&#9675; Catálogo BC-7240<span class="lvl">L1</span></div>
+      <div class="kitem">&#9675; Normas EPP LATAM<span class="lvl">L0</span></div>
+      <div class="kitem" style="color:var(--text-muted)">&#8618; ver todos (14 más)</div>
+      <div style="display:flex;gap:7px;margin-top:8px">
+        <button class="pill">+ Crear</button><button class="pill">&#8990; Adoptar</button></div></div></div>
+  </div>
+
+  <div class="acc">
+    <div class="ahead" onclick="acc(this)"><span class="t">Mesa</span>
+      <span class="sum">3 esperando · 1 crítico</span><span class="chev">&#9654;</span></div>
+    <div class="abody"><div class="inner">
+      <div class="qitem"><span class="dot" style="background:var(--coral)"></span> Industrias Norte — crítico</div>
+      <div class="qitem"><span class="dot" style="background:var(--amber)"></span> PF_2468 Sondel — esperando</div>
+      <div class="qitem"><span class="dot" style="background:var(--amber)"></span> Cobranza F-1102 — esperando</div></div></div>
+  </div>
+
+  <div class="acc">
+    <div class="ahead" onclick="acc(this)"><span class="t">Ledger</span>
+      <span class="sum" style="color:var(--sage)">ahorro 34%</span><span class="chev">&#9654;</span></div>
+    <div class="abody"><div class="inner">
+      <div class="kv"><span>Gastado</span><b>$42.18</b></div>
+      <div class="kv"><span>Baseline premium</span><b>$63.70</b></div>
+      <div class="bar"><i></i></div>
+      <div class="kv"><span style="color:var(--sage)">Ahorro</span><b style="color:var(--sage)">$21.52 (34%)</b></div>
+      <div class="kv"><span>Aprobado sin edición</span><b>87%</b></div></div></div>
+  </div>
+</aside>
+
+</div>
+
+<div class="modal-bg" id="mbg" onclick="closePalette()"></div>
+<div class="palette" id="palette">
+  <input id="pin" placeholder="Buscar o ejecutar… ('sondel', 'mesa', 'focus')" oninput="filterP()">
+  <div class="res" id="pres"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== modos (segmented switcher) ===== */
+const modeDefault={operar:'space',aprender:'aprender',admin:'admin'};
+function setMode(m){
+  document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  document.querySelectorAll('.navmode').forEach(n=>n.classList.remove('on'));
+  document.getElementById('m-'+m).classList.add('on');
+  go(modeDefault[m]);
+}
+/* ===== vistas ===== */
+const crumbs={inbox:['Inbox','visibilidad · agregador 4 cuentas'],
+  mesa:['Mesa de Control','visibilidad · HITL kanban cross-workspace'],
+  space:['SpaceLoom','operar · banco de trabajo general cross-workspace'],
+  ws:['Sondel SA','operativo · cuenta B2B · @cotizador'],
+  aprender:['Aprendizaje','curación · el sistema propone, vos decidís'],
+  admin:['Administrar','capacidades + gobernanza del tenant']};
+function go(v,wsname){
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  const el=document.getElementById('v-'+v); void el.offsetWidth; el.classList.add('on');
+  document.querySelectorAll('.navmode .it').forEach(x=>x.classList.remove('active'));
+  const it=document.querySelector('.navmode.on .it[data-v="'+v+'"]'); if(it) it.classList.add('active');
+  if(wsname){document.getElementById('wsname').textContent=wsname;crumbs.ws[0]=wsname;}
+  const c=document.getElementById('crumb'); c.classList.add('swap');
+  setTimeout(()=>{document.getElementById('crumb1').textContent=crumbs[v][0];
+    document.getElementById('crumb2').textContent=crumbs[v][1];c.classList.remove('swap');},140);
+  document.getElementById('canvas').scrollTop=0;
+}
+/* ===== cejas: estado por superficie + focus mode ===== */
+function toggleL(){document.getElementById('rail1').classList.toggle('hidden');}
+function toggleR(){document.getElementById('rail3').classList.toggle('mini');}
+function expandR3(){document.getElementById('rail3').classList.remove('mini');}
+let focused=false;
+function focusMode(){
+  focused=!focused;
+  document.getElementById('rail1').classList.toggle('hidden',focused);
+  document.getElementById('rail3').classList.toggle('mini',focused);
+  toast(focused?'<b>Modo focus</b> · doble click en una ceja (o F) para restaurar':'Paneles restaurados');
+}
+/* ===== acordeones con resumen ===== */
+function acc(h){h.parentNode.classList.toggle('open');}
+/* ===== resto (igual v3) ===== */
+function toggleTriage(){document.getElementById('triage').classList.toggle('open');}
+function wtab(b,t){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  if(t){document.querySelectorAll('.wstab').forEach(x=>x.classList.remove('on'));
+    const el=document.getElementById('t-'+t); if(el){void el.offsetWidth; el.classList.add('on');}}}
+function wtabGo(t){const btns=document.querySelectorAll('.wtabs button');
+  btns.forEach(b=>{if(b.textContent.toLowerCase().includes(t.slice(0,6)))wtab(b,t);});}
+function pedal(b){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}
+function aprobar(){
+  const btn=document.getElementById('btnOk');
+  btn.innerHTML='<span class="spinner"></span>Enviando…';btn.style.pointerEvents='none';
+  setTimeout(()=>{
+    const s=document.getElementById('dstate');s.textContent='Aprobada';s.style.background='var(--sage)';
+    document.getElementById('draft').classList.add('ok-state');
+    document.getElementById('dacts').innerHTML='<span style="color:var(--sage);font-size:12.5px">&#10003; Aprobada por Alvaro · enviada desde buzón del tenant · audit registrado · signal positivo</span>';
+    toast('<b>PF_2468 enviada</b> · evidence sellado · gold sample candidato');},900);
+}
+function boost(){document.getElementById('dmodel').textContent='modelo: opus (boost)';
+  document.getElementById('dstate').textContent='Re-generando…';
+  toast('Re-ejecutando con el mejor · el click queda como señal de promoción');}
+function wire(taId,boxId,sendId){
+  const ta=document.getElementById(taId),box=document.getElementById(boxId),send=document.getElementById(sendId);
+  ta.addEventListener('focus',()=>box.classList.add('focus'));
+  ta.addEventListener('blur',()=>box.classList.remove('focus'));
+  ta.addEventListener('input',()=>{ta.style.height='24px';ta.style.height=Math.min(ta.scrollHeight,140)+'px';
+    send.classList.toggle('ready',ta.value.trim().length>0);});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg(taId==='taWs'?'ws':'sl');}});
+}
+function sendMsg(w){
+  const ta=document.getElementById(w==='ws'?'taWs':'taSl');
+  const th=document.getElementById(w==='ws'?'wsThread':'slThread');
+  const txt=ta.value.trim();if(!txt)return;
+  const m=document.createElement('div');m.className='qmsg me';
+  m.innerHTML='<div class="who">Alvaro · ahora</div><div class="bub"></div>';
+  m.querySelector('.bub').textContent=txt;th.appendChild(m);
+  ta.value='';ta.style.height='24px';
+  document.getElementById(w==='ws'?'sendWs':'sendSl').classList.remove('ready');
+  const t=document.createElement('div');t.className='qmsg ai';
+  t.innerHTML='<div class="who" style="color:var(--coral)">'+(w==='ws'?'@cotizador':'FaberLoom')+'</div><div class="bub"><span class="typing"><i></i><i></i><i></i></span></div>';
+  th.appendChild(t);t.scrollIntoView({behavior:'smooth',block:'end'});
+  const r=w==='ws'?'Draft v2 actualizado con tu instrucción. El cambio queda en el evidence bundle y el porqué como signal. ¿Lo reviso contigo o va a la Mesa?'
+    :'Consulté la KB del tenant (3 fuentes vigentes). ¿Lo convierto en borrador dentro del workspace o lo fijamos como contexto?';
+  setTimeout(()=>typeOut(t.querySelector('.bub'),r),1100);
+}
+function typeOut(el,txt){el.innerHTML='';let i=0;
+  const iv=setInterval(()=>{el.textContent=txt.slice(0,i+=3);
+    if(i>=txt.length){clearInterval(iv);el.textContent=txt;}
+    el.scrollIntoView({behavior:'smooth',block:'end'});},18);}
+function focusComposer(ph){const ta=document.getElementById('taWs');ta.placeholder=ph;ta.focus();}
+/* cmd-K */
+const cmds=[
+  {l:'&#9993; Ir a Inbox',k:'',f:()=>{setMode('operar');go('inbox')}},
+  {l:'&#9707; Ir a Mesa de Control',k:'',f:()=>{setMode('operar');go('mesa')}},
+  {l:'&#10047; Ir a SpaceLoom',k:'',f:()=>{setMode('operar');go('space')}},
+  {l:'&#9675; Abrir workspace Sondel SA',k:'',f:()=>{setMode('operar');go('ws','Sondel SA')}},
+  {l:'&#9675; Abrir Industrias del Norte',k:'',f:()=>{setMode('operar');go('ws','Industrias del Norte')}},
+  {l:'&#9719; Ir a Aprendizaje · 5 pendientes',k:'',f:()=>{setMode('aprender')}},
+  {l:'&#9881; Administrar tenant',k:'',f:()=>{setMode('admin')}},
+  {l:'&#9678; Modo focus (colapsar paneles)',k:'F',f:focusMode},
+  {l:'+ Crear workspace…',k:'',f:()=>toast('Creator (mock)')}];
+function openPalette(){document.getElementById('mbg').classList.add('open');
+  document.getElementById('palette').classList.add('open');
+  const i=document.getElementById('pin');i.value='';filterP();setTimeout(()=>i.focus(),60);}
+function closePalette(){document.getElementById('mbg').classList.remove('open');
+  document.getElementById('palette').classList.remove('open');}
+function filterP(){const q=document.getElementById('pin').value.toLowerCase();
+  const res=cmds.filter(c=>c.l.toLowerCase().includes(q));
+  document.getElementById('pres').innerHTML=res.map((c,i)=>
+    '<div class="pres'+(i===0?' sel':'')+'" onclick="run('+cmds.indexOf(c)+')">'+c.l+'<span class="k">'+c.k+'</span></div>').join('')
+    ||'<div class="pres" style="color:var(--text-muted)">sin resultados</div>';}
+function run(i){cmds[i].f();closePalette();}
+document.addEventListener('keydown',e=>{
+  const typing=/TEXTAREA|INPUT/.test(document.activeElement.tagName);
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();
+    document.getElementById('palette').classList.contains('open')?closePalette():openPalette();return;}
+  if(e.key==='Escape'){closePalette();document.getElementById('reloj').classList.remove('open');return;}
+  if(typing)return;
+  if(e.key==='['){toggleL();}
+  if(e.key===']'){toggleR();}
+  if(e.key==='f'||e.key==='F'){focusMode();}
+  if(document.getElementById('palette').classList.contains('open')&&e.key==='Enter'){
+    const f=document.querySelector('.pres.sel');if(f)f.click();}
+});
+let toastTimer;
+function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3600);}
+wire('taWs','boxWs','sendWs');wire('taSl','boxSl','sendSl');
+document.addEventListener('click',e=>{const r=document.getElementById('reloj');
+  if(!r.contains(e.target))r.classList.remove('open');});
+</script>
+</body>
+</html>

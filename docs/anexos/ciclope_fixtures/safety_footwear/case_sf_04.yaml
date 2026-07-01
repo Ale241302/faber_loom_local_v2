@@ -1,0 +1,564 @@
+case_id: case_sf_04
+industry: safety_footwear
+severity: high
+description: |
+  Cliente pide BC-7240 con puntera composite · stock solo con puntera
+  acero · sustitución cambia certificación. Sistema debe escalar
+  AM+supervisor (lista NEVER agente solo: sustitución no idéntica).
+
+setup:
+  vertical_spec_object: safety_footwear
+  catalog:
+    - sku: "BC-7240"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera composite · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "composite"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240-2025-004"
+            expiry_date: "2026-04-15"
+            lab_acreditado: "Intertek Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-BC7240-2025-004"
+      stock:
+        available: 0
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 0
+            reserved: 0
+          - location: "CDMX Hub"
+            qty: 0
+            reserved: 0
+        freshness_seconds: 120
+      pricing:
+        list_price: 68.50
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 45
+        source: "factory"
+        freshness_hours: 24
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.4
+      sku_status: "active"
+      margin_calculated: 0.28
+    - sku: "BC-7240-STEEL"
+      brand: "Marluvas"
+      description: "Bota dieléctrica clase EH · puntera acero · plantilla acero · tallas 22-30 MX"
+      vertical_spec:
+        type: "safety_footwear"
+        norm: "ASTM F2413-18"
+        subclass: "EH"
+        protection:
+          toe: "steel"
+          midsole: "steel"
+          outsole: "PU bidensidad SRC"
+        variants:
+          sizing_system: "talla_mexicana"
+          range: "22-30"
+          width_options: ["normal", "ancho", "extra_ancho"]
+        applications: ["petrolero", "eléctrico", "industrial pesado"]
+        standards:
+          - standard: "ASTM F2413-18"
+            status: "vigente"
+            cert_doc_ref: "CERT-ASTM-BC7240ST-2025-001"
+            expiry_date: "2026-05-20"
+            lab_acreditado: "Intertek Brasil"
+          - standard: "NOM-113-STPS-2009"
+            status: "vigente"
+            cert_doc_ref: "CERT-NOM-BC7240ST-2025-001"
+      stock:
+        available: 350
+        warehouses:
+          - location: "Bogotá Principal"
+            qty: 150
+            reserved: 20
+          - location: "CDMX Hub"
+            qty: 200
+            reserved: 30
+        freshness_seconds: 120
+      pricing:
+        list_price: 62.00
+        currency: "USD"
+        version: "2025-04-15"
+        freshness_hours: 8
+      lead_time:
+        days: 5
+        source: "3PL"
+        freshness_hours: 2
+      MOQ: 24
+      packaging:
+        units_per_box: 12
+        boxes_per_pallet: 40
+        weight_kg_per_unit: 1.5
+      sku_status: "active"
+      margin_calculated: 0.30
+  customer:
+    customer_id: "CLI-CO-004"
+    name: "Petrolera Andina S.A."
+    country: "CO"
+    city: "Barrancabermeja"
+    tier: "gold"
+    credit_status: "ok"
+    payment_terms: "Net 30 días"
+    incoterm_default: "DDP"
+    tax_id: "901.456.789-0"
+    vertical: "petrolero_colombiano"
+    historical_data:
+      last_order_date: "2025-04-05"
+      avg_order_value_usd: 12000
+      orders_ytd: 5
+      complaints_12m: 0
+      preferred_delivery: "Bogotá Principal"
+    regulatory_context:
+      requires_astm_f2413: true
+      requires_NOM_or_ISO_equivalent: true
+      max_cert_age_days: 365
+  agent_state:
+    archetype: "AG_AM_MWT"
+    sub_agents_active:
+      - "AG_SUB_EMAIL_CLASSIFIER"
+      - "AG_SUB_SAP_QUERY"
+      - "AG_SUB_INVENTORY_FETCHER"
+      - "AG_SUB_COMPLIANCE_CHECKER"
+      - "AG_SUB_ESCALATION_ROUTER"
+      - "AG_SUB_DRAFT_WRITER"
+      - "AG_SUB_PROFORMA_BUILDER"
+      - "AG_SUB_PRICING_CALCULATOR"
+    sub_agents_shadow: []
+    template_voice:
+      tone: "professional_b2b_latam"
+      language: "es_CO"
+      formality: "formal_usted"
+    routing:
+      layer_1: "inactivo"
+      layer_2: "activo"
+      layer_3a_pins: ["AG_SUB_COMPLIANCE_CHECKER:safety_footwear"]
+      layer_3b_metadata: ["compliance_profile:safety_footwear", "tenant:MWT"]
+    curator:
+      last_freeze: "2025-04-25"
+      pending_items: 0
+    authority_matrix_level: "AM"
+    glossary_overrides:
+      - term: "punto"
+        meaning: "talla_numérica_regional"
+        applies_to: ["MX"]
+      - term: "bota dieléctrica"
+        meaning: "clase_electrical_hazard_EH"
+        applies_to: ["MX", "CO"]
+
+input:
+  channel: email
+  from:
+    name: "Dr. Andrés Peña"
+    email: "a.pena@petroleraandina.co"
+    role: "Director de HSE"
+  to: "cotizaciones@mwt-faberloom.co"
+  subject: "Urgente: 80 pares bota dieléctrica BC-7240 puntera composite — Campo Casabe"
+  body_text: |
+    Buenos días,
+
+    Solicitamos con urgencia 80 pares de bota dieléctrica Marluvas
+    modelo BC-7240 con puntera composite para nuestro personal de campo
+    en Casabe, Barrancabermeja.
+
+    Detalle:
+    - BC-7240 talla 26 (8 punto): 30 pares
+    - BC-7240 talla 28 (10 punto): 30 pares
+    - BC-7240 talla 30 (12 punto): 20 pares
+    - Ancho normal
+    - Puntera composite (NO acero — peso ligero para caminatas largas)
+    - Plantilla acero
+
+    Requerimos entrega DDP Barrancabermeja en máximo 8 días.
+    Certificación vigente obligatoria.
+
+    Quedo atento.
+
+    Dr. Andrés Peña
+    Director de HSE
+    Petrolera Andina S.A.
+  attachments: []
+  thread_id: null
+  timestamp: "2025-05-02T08:00:00-05:00"
+  language_detected: "es"
+
+expected_pipeline:
+  - step: 1
+    sub_agent: "AG_SUB_EMAIL_CLASSIFIER"
+    inputs: ["input.email.body_text", "input.email.subject"]
+    expected_output:
+      primary_intent: "quote_request"
+      secondary_intents: ["urgent_delivery", "variant_specific"]
+      urgency: "high"
+      sentiment: "neutral"
+      requires_human: false
+      confidence: 0.93
+      language_detected: "es"
+      entities_extracted:
+        - type: "product"
+          value: "bota dieléctrica BC-7240"
+          qty: 80
+        - type: "variant_toe"
+          value: "composite"
+        - type: "variant_midsole"
+          value: "acero"
+        - type: "variant_sizing"
+          value: "talla 26, 28, 30 (MX)"
+        - type: "delivery_location"
+          value: "Barrancabermeja, CO"
+        - type: "incoterm"
+          value: "DDP"
+      latency_ms_max: 1200
+      triggered: true
+
+  - step: 2
+    sub_agent: "AG_SUB_SAP_QUERY"
+    inputs: ["customer_id: CLI-CO-004", "parsed_items"]
+    expected_output:
+      account_credit_status: "ok"
+      payment_history: "clean"
+      pricing_master_access: true
+      customer_terms_ref: "TERMS-PAND-2025-Q1"
+      freshness: "2025-05-02T07:58:00-05:00"
+    latency_ms_max: 2000
+    triggered: true
+    parallel_group: "A"
+
+  - step: 3
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: BC-7240"
+      - "qty_breakdown: {26:30, 28:30, 30:20}"
+      - "variant_constraints: {ancho: normal, puntera: composite, plantilla: acero}"
+    expected_output:
+      items:
+        - sku: "BC-7240"
+          warehouse: "Bogotá Principal"
+          available: 0
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 0
+        - sku: "BC-7240"
+          warehouse: "CDMX Hub"
+          available: 0
+          reserved: 0
+          in_transit: 0
+          fulfillable_qty: 0
+      total_fulfillable: 0
+      stock_status: "OUT_OF_STOCK"
+      alternative_skus_found: ["BC-7240-STEEL"]
+      freshness: "2025-05-02T07:55:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+    parallel_group: "A"
+
+  - step: 4
+    sub_agent: "AG_SUB_INVENTORY_FETCHER"
+    inputs:
+      - "sku: BC-7240-STEEL"
+      - "qty_breakdown: {26:30, 28:30, 30:20}"
+      - "variant_constraints: {ancho: normal, puntera: acero, plantilla: acero}"
+    expected_output:
+      items:
+        - sku: "BC-7240-STEEL"
+          warehouse: "Bogotá Principal"
+          available: 150
+          reserved: 20
+          in_transit: 0
+          fulfillable_qty: 130
+        - sku: "BC-7240-STEEL"
+          warehouse: "CDMX Hub"
+          available: 200
+          reserved: 30
+          in_transit: 0
+          fulfillable_qty: 170
+      total_fulfillable: 300
+      freshness: "2025-05-02T07:55:00-05:00"
+    latency_ms_max: 1500
+    triggered: true
+
+  - step: 5
+    sub_agent: "AG_SUB_COMPLIANCE_CHECKER"
+    inputs:
+      profile: "safety_footwear"
+      tenant: "MWT"
+      items: ["BC-7240-STEEL"]
+      original_request: "BC-7240 composite"
+      substitution_detected: true
+      substitution_type: "toe_variant_change"
+      certifications_required: ["ASTM F2413-18", "NOM-113-STPS-2009"]
+      customer_country: "CO"
+      use_case: "petrolero campo Casabe"
+    expected_output:
+      pass: true
+      warnings:
+        - code: "SUSTITUCIÓN_ACEPTABLE"
+          severity: "high"
+          message: "Sustitución BC-7240 (composite) → BC-7240-STEEL (acero) detectada. Diferencia: puntera composite vs acero. Impacto: peso +180g por par, misma resistencia impacto (75), misma cert ASTM F2413-18."
+      evidence:
+        - dimension: "toe_resistance_impact"
+          original: "composite 75"
+          substitute: "steel 75"
+          equivalent: true
+        - dimension: "toe_resistance_compression"
+          original: "composite 2500"
+          substitute: "steel 2500"
+          equivalent: true
+        - dimension: "weight_per_pair"
+          original: "1.4 kg"
+          substitute: "1.5 kg"
+          equivalent: false
+          delta: "+180g"
+        - dimension: "electrical_hazard_rating"
+          original: "EH"
+          substitute: "EH"
+          equivalent: true
+      blocking_issues: []
+      pii_detected: false
+      policies_violated: []
+      requires_approval: true
+      approval_level: "AM+supervisor"
+      reason: "sustitución técnica no idéntica — cambio de material puntera"
+    latency_ms_max: 1500
+    triggered: true
+
+  - step: 6
+    sub_agent: "AG_SUB_ESCALATION_ROUTER"
+    inputs:
+      trigger_source: "AG_SUB_COMPLIANCE_CHECKER"
+      exception_codes: ["SUSTITUCIÓN_ACEPTABLE"]
+      severity: "high"
+      tenant: "MWT"
+      requires_approval: true
+    expected_output:
+      route_to: "AM_MWT_SUPERVISOR"
+      recipients: ["a.velasquez@mwt-faberloom.co"]
+      channel: "email_standard"
+      urgency_override: "high"
+      fallback_route: null
+      sla_target_minutes: 60
+      vertical_context: "safety_footwear"
+      approval_required: "AM+supervisor"
+    latency_ms_max: 100
+    triggered: true
+
+  - step: 7
+    sub_agent: "AG_SUB_DRAFT_WRITER"
+    inputs:
+      category: "draft_proforma_with_notes"
+      recipient_role: "cliente"
+      context:
+        customer: "Petrolera Andina S.A."
+        rfq_items: "80 pares BC-7240 (composite) — sustitución a BC-7240-STEEL (acero)"
+        exception: "SUSTITUCIÓN_ACEPTABLE — puntera cambiada composite→acero"
+        severity: "high"
+        vertical: "safety_footwear"
+    expected_output:
+      draft_type: "proforma_draft_with_substitution_note"
+      subject: "Proforma BC-7240 con nota sustitución técnica — Petrolera Andina"
+      body: |
+        Estimado Dr. Peña,
+
+        Agradecemos su solicitud de 80 pares BC-7240 con puntera composite.
+
+        **IMPORTANTE — Sustitución técnica detectada:**
+        El modelo BC-7240 con puntera composite NO tiene stock disponible
+        (lead time 45 días desde fábrica Brasil).
+
+        Alternativa inmediata disponible:
+        - BC-7240-STEEL: misma bota, misma certificación ASTM F2413-18,
+          misma clase EH, misma resistencia impacto/compresión.
+        - Única diferencia: puntera de **acero** en lugar de composite.
+          Peso adicional: +180g por par (1.5 kg vs 1.4 kg).
+
+        Evidence técnica verificada:
+        - Resistencia impacto: 75 (ambos)
+        - Resistencia compresión: 2,500 lbf (ambos)
+        - Clase eléctrica: EH (ambos)
+        - Certificación: ASTM F2413-18 vigente + NOM-113 vigente
+
+        Precio BC-7240-STEEL: $62.00 USD/par (vs $68.50 composite).
+        Ahorro total: $520 USD.
+
+        **Esta sustitución requiere su aprobación explícita por escrito**
+        antes de confirmar pedido, dado el cambio de material puntera.
+
+        Quedo atento a su confirmación.
+      tone: "professional_with_technical_detail"
+      internal_note: "Sustitución puntera composite→acero = NEVER agente solo. Requiere aprobación cliente + AM+supervisor."
+    latency_ms_max: 4000
+    triggered: true
+
+  - step: 8
+    sub_agent: "AG_SUB_PROFORMA_BUILDER"
+    inputs:
+      - "blocked_by_approval: true"
+      - "draft_status: pending_client_approval"
+    expected_output:
+      status: "DRAFT_PENDING_APPROVAL"
+      reason: "SUSTITUCIÓN_ACEPTABLE requires AM+supervisor + client approval"
+      draft_generated: true
+      draft_type: "proforma_with_substitution_note"
+    latency_ms_max: 6000
+    triggered: true
+
+expected_outputs:
+  primary_output:
+    type: "draft_proforma_with_notes"
+    content:
+      status: "DRAFT_PENDING_APPROVAL"
+      reason: "SUSTITUCIÓN_ACEPTABLE — puntera cambiada composite→acero"
+      customer_notified: true
+      proforma_generated: true
+      draft_type: "proforma_with_substitution_note"
+      approval_pending: true
+    glosses_required:
+      - "Stock BC-7240 composite: 0 unidades (lead 45 días)"
+      - "Alternativa BC-7240-STEEL: 300 unidades disponibles"
+      - "Diferencia técnica: puntera acero vs composite (+180g)"
+      - "Misma certificación, misma resistencia, mismo EH"
+      - "Requiere aprobación AM+supervisor + cliente explícita"
+      - "Precio alternativa: $62.00 vs $68.50 (ahorro $520)"
+  evidence_bundle:
+    per_line:
+      - sku: "BC-7240"
+        qty_requested: 80
+        variant_constraints: "talla 26/28/30, ancho normal, composite+steel"
+        stock_fulfillable: 0
+        status: "OUT_OF_STOCK"
+      - sku: "BC-7240-STEEL"
+        qty_offered: 80
+        variant_constraints: "talla 26/28/30, ancho normal, steel+steel"
+        stock_fulfillable: 300
+        pricing_list: 62.00
+        margin_estimated: 0.30
+        status: "DRAFT_PENDING_APPROVAL"
+    per_quote:
+      status: "DRAFT_PENDING_APPROVAL"
+      exception_codes: ["SUSTITUCIÓN_ACEPTABLE"]
+      aprobador: "AM+supervisor + cliente"
+      hash: null
+    audit_view:
+      source_precio: "2025-04-15"
+      version_lista: "2025-04-15"
+      timestamp_stock: "2025-05-02T07:55:00-05:00"
+      technical_spec_rule: "safety_footwear_substitution_toe_variant"
+      margen_calculado: 0.30
+      aprobador: "AM+supervisor + cliente (substitution approval)"
+      vigencia: null
+      fallback_used: true
+      fallback_sku: "BC-7240-STEEL"
+      source_stock: "3PL"
+      source_lead_time: "3PL"
+      sku_status: "active"
+      cert_doc_version: "vigente"
+      country_rule_applied: null
+      freight_quote_ref: null
+      MOQ_packaging_rule: "MOQ=24, packaging=12/box"
+      currency_fx_rate: null
+      customer_terms_ref: "TERMS-PAND-2025-Q1"
+      exception_codes: ["SUSTITUCIÓN_ACEPTABLE"]
+      vertical_spec_object: "safety_footwear"
+      tenant: "MWT"
+  side_effects:
+    - type: "notify_AM"
+      details:
+        recipients: ["a.velasquez@mwt-faberloom.co"]
+        channel: "email_standard"
+        sla_minutes: 60
+    - type: "create_open_item"
+      details:
+        item_type: "substitution_approval_pending"
+        sku: "BC-7240-STEEL"
+        priority: "high"
+        due_date: "2025-05-03T08:00:00-05:00"
+        vertical: "safety_footwear"
+    - type: "persist_audit_event"
+      details:
+        event_type: "QUOTE_DRAFT_SUBSTITUTION"
+        severity: "high"
+        trace_id: "TRACE-caseSF04-20250502"
+        tenant: "MWT"
+  exceptions_raised:
+    - "SUSTITUCIÓN_ACEPTABLE"
+  hitl_gate_triggered: true
+  output_destination: "draft_approval"
+
+edge_cases:
+  - description: "Cliente rechaza sustitución por peso (+180g) — sistema debe buscar otra alternativa o backorder original"
+    expected_behavior: "Si cliente rechaza, sistema ofrece backorder BC-7240 composite 45 días o busca alternativa de otro proveedor con composite.",
+    variant_data:
+      client_response: "rechaza_por_peso"
+      expected_action: "backorder_or_alternative_search"
+  - description: "Cliente acepta sustitución verbal por teléfono — sistema exige confirmación por escrito"
+    expected_behavior: "NO procesar aprobación verbal. Requiere email firmado o documento escaneado. AM registra aprobación documentada.",
+    variant_data:
+      client_approval_channel: "telefono"
+      expected_action: "request_written_confirmation"
+  - description: "Sustitución implica cambio de norma (composite cert F2413-18 vs acero cert F2413-11 legacy) — rechazo automático"
+    expected_behavior: "Rechazo automático de sustitución si cambia versión norma. Evidence bundle muestra incompatibilidad normativa.",
+    variant_data:
+      substitute_sku: "BC-7240-LEGACY-STEEL"
+      substitute_norm: "ASTM F2413-11"
+      expected_action: "rejection_automatic"
+
+pass_criteria:
+  must_pass:
+    - "output.exceptions_raised contains 'SUSTITUCIÓN_ACEPTABLE'"
+    - "output.primary_output.status == 'DRAFT_PENDING_APPROVAL'"
+    - "output.primary_output.proforma_generated == true"
+    - "output.primary_output.approval_pending == true"
+    - "output.hitl_gate_triggered == true"
+    - "output.side_effects contains notify_AM with sla_minutes <= 60"
+    - "evidence_bundle.per_quote.aprobador == 'AM+supervisor + cliente'"
+    - "evidence_bundle.audit_view.fallback_used == true"
+    - "expected_pipeline[4].expected_output.evidence contains toe_resistance_impact equivalent"
+    - "expected_pipeline[4].expected_output.requires_approval == true"
+  must_not_do:
+    - "output contains proforma final sin nota de sustitución"
+    - "system auto-aproba sustitución composite→acero sin cliente"
+    - "agente solo envía proforma sin AM+supervisor firma"
+    - "system ignores weight difference (+180g) as irrelevant"
+    - "system processes verbal approval as sufficient"
+    - "output.primary_output.customer_notified == false (debe notificar con draft)"
+
+severity_weight_validation:
+  expected_severity: "high"
+  if_misclassified_as_lower: |
+    Si clasificado como Medium: sustitución podría auto-aprobarse o
+    enviarse como "nota menor" sin escalamiento AM+supervisor.
+    Consecuencia: cliente recibe calzado con puntera diferente a la
+    solicitada sin aprobación explícita. En campo petrolero, +180g
+    por par × 12h turno = fatiga acumulada, riesgo HSE. Además,
+    viola política MWT "sustitución técnica no idéntica requiere
+    aprobación AM+supervisor + cliente".
+
+privacy_tier:
+  inputs: "TENANT_DERIVED"
+  outputs: "TENANT_DERIVED"
+  cross_tenant_eligibility: "no"
+  promotion_notes: |
+    Caso específico Petrolera Andina CO. No promovible.
+    Patrón abstracto (sustit puntera safety_footwear con evidence
+    técnica) puede promoverse a GLOBAL_PROMOTABLE tras anonimización.
+
+gaps_detected: []

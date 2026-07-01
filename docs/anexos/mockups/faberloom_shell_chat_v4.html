@@ -1,0 +1,1357 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faber*loom · Chat workspace v4</title>
+<style>
+:root {
+  --cream:#F4F1ED;
+  --ink:#1F1E1C;
+  --coral:#C96442;
+  --coral-hover:#A84F33;
+  --coral-tint:rgba(201,100,66,.10);
+  --vino:#6E1F2B;
+  --salvia:#7A8E6D;
+  --amber:#B88A4A;
+  --pizarra:#5A6B7C;
+  --bg-surface:#FFFFFF;
+  --bg-subtle:#EDE8DF;
+  --rail-bg:#ECE7DF;
+  --hair:rgba(31,30,28,.12);
+  --hair-soft:rgba(31,30,28,.06);
+  --text-primary:#1F1E1C;
+  --text-secondary:#5A544C;
+  --text-muted:#8A8278;
+  --shadow-soft:0 18px 48px rgba(31,30,28,.07);
+  --topbar-h:58px;
+  --rail-w:264px;
+  --tools-w:272px;
+}
+* { box-sizing: border-box; }
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow: hidden;
+}
+button { border: 0; background: transparent; cursor: pointer; font: inherit; color: inherit; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.serif-italic { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--tools-w);
+  grid-template-rows: var(--topbar-h) 1fr;
+  background: var(--cream);
+}
+.app.tools-collapsed {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) 0;
+}
+.app.tools-collapsed .tools-panel { display: none; }
+.app.tools-collapsed .tools-toggle-floating { display: flex; }
+
+/* ===== TOPBAR ===== */
+.topbar {
+  grid-column: 1 / 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  border-bottom: 0.5px solid var(--hair);
+  background: rgba(244,241,237,0.92);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+}
+.breadcrumb {
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.breadcrumb .screen {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.breadcrumb .entity {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.top-spacer { flex: 1; }
+.cmdk {
+  height: 36px;
+  min-width: 320px;
+  max-width: 420px;
+  border: 0.5px solid var(--hair);
+  background: var(--bg-surface);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: text;
+}
+.cmdk:hover { border-color: var(--coral); color: var(--text-secondary); }
+.cmdk svg { width: 14px; height: 14px; flex-shrink: 0; }
+.cmdk .ph { flex: 1; }
+.cmdk .kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  border: 0.5px solid var(--hair);
+  background: var(--cream);
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+.clock {
+  height: 36px;
+  border: 0.5px solid rgba(184,138,74,.4);
+  background: rgba(184,138,74,.08);
+  color: var(--amber);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.clock .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.clock:hover { background: rgba(184,138,74,.14); }
+.role {
+  height: 30px;
+  border: 0.5px solid var(--hair);
+  background: var(--bg-surface);
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+}
+.theme {
+  width: 32px;
+  height: 32px;
+  border: 0.5px solid var(--hair);
+  background: var(--bg-surface);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* ===== SIDEBAR LEFT ===== */
+.rail {
+  background: var(--rail-bg);
+  border-right: 0.5px solid var(--hair);
+  overflow-y: auto;
+  padding: 12px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.brand {
+  padding: 4px 10px 14px;
+  border-bottom: 0.5px solid var(--hair-soft);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand .mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  background: var(--coral-tint);
+  color: var(--coral);
+  display: grid;
+  place-items: center;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 900;
+  font-size: 16px;
+}
+.brand .copy .b1 {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 18px;
+  letter-spacing: -.045em;
+  line-height: 1;
+}
+.brand .copy .b1 em {
+  color: var(--coral);
+  font-style: italic;
+}
+.brand .copy .b2 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.collapse-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.collapse-btn:hover { background: var(--bg-subtle); color: var(--text-secondary); }
+.collapse-btn .ico { width: 16px; }
+
+.nav-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+.nav-item:hover { background: var(--bg-subtle); color: var(--ink); }
+.nav-item.active { background: var(--coral-tint); color: var(--coral); }
+.nav-item .ico {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+.nav-item.active .ico { background: var(--coral); color: white; }
+.nav-item .badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.nav-item .badge.coral { background: var(--coral); color: white; }
+.nav-item .badge.amber { background: rgba(184,138,74,.15); color: var(--amber); }
+
+/* Chat expanded (parent workspace) */
+.parent-ws {
+  border-top: 0.5px solid var(--hair-soft);
+  border-bottom: 0.5px solid var(--hair-soft);
+  margin: 8px 0;
+  padding: 6px 0;
+  background: rgba(201,100,66,.04);
+}
+.parent-ws .nav-item.active {
+  background: var(--coral-tint);
+  color: var(--coral);
+  font-weight: 600;
+}
+.parent-ws .nav-item .ico { background: var(--coral); color: white; }
+.sub-items { padding: 4px 0 8px 32px; display: flex; flex-direction: column; gap: 2px; }
+.sub-action {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--coral);
+  padding: 6px 10px;
+  border: 0.5px dashed rgba(201,100,66,.3);
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+}
+.sub-action:hover { background: var(--coral-tint); }
+.sub-section {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--text-muted);
+  padding: 8px 4px 3px;
+  font-weight: 700;
+}
+.sub-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sub-item:hover { background: var(--bg-subtle); color: var(--ink); }
+.sub-item .pin { color: var(--coral); width: 8px; }
+.sub-item .pin-empty { color: var(--text-muted); width: 8px; }
+.sub-item small {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.sub-link {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.sub-link:hover { color: var(--coral); }
+
+.section {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--text-muted);
+  padding: 12px 10px 4px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section .plus {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+}
+.section .plus:hover { background: var(--coral); color: white; }
+.subgroup {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  padding: 8px 10px 4px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+/* Foot avatar */
+.foot {
+  margin-top: auto;
+  border-top: 0.5px solid var(--hair-soft);
+  padding: 10px 10px 4px;
+  position: relative;
+}
+.foot-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+}
+.foot-trigger:hover { background: var(--bg-subtle); }
+.avatar-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--coral-tint);
+  color: var(--coral);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  border: 0.5px solid rgba(201,100,66,.25);
+}
+.foot-info { flex: 1; min-width: 0; }
+.foot-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.foot-role {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--salvia);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.foot-caret { color: var(--text-muted); font-size: 10px; }
+.foot-dropdown {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 8px;
+  right: 8px;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--hair);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  padding: 6px;
+  display: none;
+  z-index: 20;
+}
+.foot-dropdown.show { display: block; }
+.foot-dropdown a {
+  display: block;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+}
+.foot-dropdown a:hover { background: var(--bg-subtle); color: var(--ink); }
+.foot-dropdown .sep {
+  height: 0.5px;
+  background: var(--hair-soft);
+  margin: 4px 8px;
+}
+
+/* ===== CANVAS ===== */
+.canvas {
+  overflow-y: auto;
+  padding: 32px 56px 60px;
+  background: var(--cream);
+}
+.canvas-inner { max-width: 760px; margin: 0 auto; }
+.ws-header { margin-bottom: 28px; }
+.ws-title {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: -.025em;
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+.ws-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 540px;
+}
+
+.input-card {
+  background: var(--bg-surface);
+  border: 0.5px solid var(--hair);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin: 0 0 18px;
+  box-shadow: 0 4px 14px rgba(31,30,28,.04);
+}
+.input-card .placeholder {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+  min-height: 24px;
+}
+.input-card .input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.input-card .ws-mention {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.input-card .ws-mention strong { color: var(--coral); }
+.input-card .actions { display: flex; gap: 8px; }
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.btn-icon:hover { background: var(--hair); color: var(--ink); }
+.btn-primary {
+  height: 32px;
+  background: var(--coral);
+  color: white;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-primary:hover { background: var(--coral-hover); }
+
+.suggestions {
+  margin-bottom: 28px;
+}
+.suggestions .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.suggestions ul { margin: 0; padding: 0; list-style: none; }
+.suggestions li {
+  padding: 7px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 0.5px solid var(--hair-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.suggestions li:hover { color: var(--coral); }
+.suggestions li::before { content: "→"; color: var(--text-muted); }
+.suggestions li:last-child { border-bottom: none; }
+
+.divider {
+  height: 0.5px;
+  background: var(--hair-soft);
+  margin: 24px 0;
+}
+
+.convo {
+  margin-bottom: 28px;
+}
+.convo-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: .04em;
+}
+.convo-q {
+  font-size: 16px;
+  color: var(--ink);
+  margin: 0 0 14px;
+  font-weight: 500;
+  font-style: italic;
+  font-family: Georgia, serif;
+  letter-spacing: -.01em;
+}
+.convo-context {
+  background: var(--bg-subtle);
+  border-left: 2px solid var(--text-muted);
+  padding: 8px 14px;
+  margin: 0 0 14px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: 0 6px 6px 0;
+}
+.convo-context div { padding: 1px 0; }
+.convo-context strong { color: var(--ink); }
+.convo-answer {
+  background: var(--bg-surface);
+  border: 0.5px solid var(--hair);
+  border-radius: 10px;
+  padding: 18px 22px;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  line-height: 1.65;
+}
+.convo-answer p { margin: 0 0 10px; }
+.convo-answer p:last-child { margin-bottom: 0; }
+
+.cta-indexar {
+  background: rgba(184,138,74,.06);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 18px;
+  margin: 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cta-indexar .head {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cta-indexar .body {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+.cta-indexar .meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.cta-indexar .actions { display: flex; gap: 8px; margin-top: 4px; }
+.cta-indexar .btn-amber {
+  background: var(--amber);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cta-indexar .btn-amber:hover { background: #9a7239; }
+.cta-indexar .btn-ghost {
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: 0.5px solid var(--hair);
+}
+.cta-indexar .btn-ghost:hover { border-color: var(--ink); color: var(--ink); }
+
+.convo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.convo-action {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 0.5px solid var(--hair);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: var(--bg-surface);
+}
+.convo-action:hover { border-color: var(--coral); color: var(--coral); }
+
+.convo-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 0.5px solid var(--hair-soft);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  font-size: 13px;
+  cursor: pointer;
+}
+.convo-summary:hover { border-color: var(--hair); }
+.convo-summary .time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); }
+.convo-summary .q { flex: 1; color: var(--text-primary); font-style: italic; font-family: Georgia, serif; font-size: 14px; }
+.convo-summary .tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  border: 0.5px solid rgba(184,138,74,.4);
+  background: rgba(184,138,74,.05);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+/* ===== TOOLS PANEL (right) ===== */
+.tools-panel {
+  background: var(--bg-surface);
+  border-left: 0.5px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.tools-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 0.5px solid var(--hair);
+  background: var(--rail-bg);
+}
+.tools-tab {
+  padding: 10px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  position: relative;
+}
+.tools-tab:hover { color: var(--text-secondary); }
+.tools-tab.active {
+  color: var(--ink);
+  background: var(--bg-surface);
+  border-bottom-color: var(--ink);
+}
+.tools-tab .badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.tools-content { padding: 16px 14px; flex: 1; }
+.tools-header {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 18px;
+  font-weight: 400;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.tools-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin: 0 0 18px;
+}
+
+.tools-section {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin: 16px 0 6px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.tools-section:first-child { margin-top: 0; }
+.tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tools-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.tools-row:hover { background: var(--bg-subtle); }
+.tools-row .indicator { width: 10px; text-align: center; font-size: 10px; }
+.tools-row.propio .indicator { color: var(--coral); }
+.tools-row.heredado .indicator { color: var(--text-muted); }
+.tools-row .name { color: var(--text-primary); }
+.tools-row .layer {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .04em;
+}
+.tools-row .alert { color: var(--amber); font-size: 11px; }
+.tools-row.heredado .name { color: var(--text-secondary); }
+
+.tools-link {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.tools-link:hover { color: var(--coral); }
+
+.tools-actions {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.tools-actions .btn-tool {
+  flex: 1;
+  padding: 7px 10px;
+  border: 0.5px solid var(--hair);
+  background: var(--bg-surface);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.tools-actions .btn-tool:hover { border-color: var(--coral); color: var(--coral); }
+
+.tools-clock-foot {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--hair-soft);
+}
+.tools-clock-foot .head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--amber);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.tools-clock-foot .head::before {
+  content: "◷";
+  font-size: 14px;
+}
+.tools-clock-foot ul {
+  margin: 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+}
+.tools-clock-foot li {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+  position: relative;
+}
+.tools-clock-foot li::before {
+  content: "─";
+  position: absolute;
+  left: -14px;
+  color: var(--text-muted);
+}
+
+.tools-collapse {
+  margin-top: 14px;
+  padding: 8px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-top: 0.5px solid var(--hair-soft);
+}
+.tools-collapse:hover { color: var(--coral); }
+
+.tools-toggle-floating {
+  display: none;
+  position: fixed;
+  right: 18px;
+  top: 80px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--hair);
+  box-shadow: var(--shadow-soft);
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  z-index: 8;
+}
+
+/* Hidden tool tabs (only Conocimiento shown by default) */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============ TOPBAR ============ -->
+  <header class="topbar">
+    <div class="breadcrumb">
+      <span class="screen">Chat</span>
+      <span class="entity">home cognitivo · KB tenant</span>
+    </div>
+    <div class="top-spacer"></div>
+    <div class="cmdk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <span class="ph">Buscar o ejecutar&hellip;</span>
+      <span class="kbd">&#8984;K</span>
+    </div>
+    <button class="clock" onclick="toggleClock()">
+      <span class="dot"></span>
+      <span>Aprendizaje &middot; atento &middot; 5 &#9783;</span>
+    </button>
+    <select class="role">
+      <option>Operator</option>
+      <option>Admin</option>
+      <option>Owner</option>
+    </select>
+    <button class="theme">&#9680;</button>
+  </header>
+
+  <!-- ============ SIDEBAR LEFT ============ -->
+  <aside class="rail">
+    <div class="brand">
+      <div class="mark">F*</div>
+      <div class="copy">
+        <div class="b1">Faber<em>*</em>loom</div>
+        <div class="b2">tenant &middot; MWT</div>
+      </div>
+    </div>
+
+    <button class="collapse-btn">
+      <span class="ico">&#8676;</span><span>Colapsar</span>
+    </button>
+
+    <button class="nav-item">
+      <span class="ico">Mc</span>
+      <span>Mesa de trabajo</span>
+      <span class="badge">7</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Ix</span>
+      <span>Inbox sin asignar</span>
+      <span class="badge">24</span>
+    </button>
+
+    <!-- Parent workspace: Chat (active, expanded) -->
+    <div class="parent-ws">
+      <button class="nav-item active">
+        <span class="ico">&#9679;</span>
+        <span>Chat</span>
+        <span class="badge coral">27</span>
+      </button>
+
+      <div class="sub-items">
+        <div class="sub-action">+ Nueva conversación</div>
+
+        <div class="sub-section">Pinned (3)</div>
+        <div class="sub-item">
+          <span class="pin">&#9673;</span>
+          <span>Voice MWT banned phrases</span>
+        </div>
+        <div class="sub-item">
+          <span class="pin">&#9673;</span>
+          <span>Política descuentos por tier</span>
+        </div>
+        <div class="sub-item">
+          <span class="pin">&#9673;</span>
+          <span>Plantilla follow-up B2B v2</span>
+        </div>
+
+        <div class="sub-section">Hoy</div>
+        <div class="sub-item">
+          <span class="pin-empty">&#9675;</span>
+          <span>Industrias Norte</span>
+          <small>09:14</small>
+        </div>
+        <div class="sub-item">
+          <span class="pin-empty">&#9675;</span>
+          <span>Glossary safety MX</span>
+          <small>11:30</small>
+        </div>
+        <div class="sub-item">
+          <span class="pin-empty">&#9675;</span>
+          <span>Sondel renovación</span>
+          <small>14:02</small>
+        </div>
+
+        <div class="sub-section">Ayer</div>
+        <div class="sub-item">
+          <span class="pin-empty">&#9675;</span>
+          <span>Deep research dieléctrico</span>
+        </div>
+
+        <div class="sub-section">Esta semana (5)</div>
+        <div class="sub-link">&#8627; ver todas</div>
+      </div>
+    </div>
+
+    <!-- Espacios de Trabajo -->
+    <div class="section">
+      <span>Espacios de Trabajo</span>
+      <span class="plus">+</span>
+    </div>
+
+    <div class="subgroup">Administrados</div>
+    <button class="nav-item">
+      <span class="ico">Mw</span>
+      <span>Mwt.one</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Fl</span>
+      <span>FaberLoom</span>
+      <span class="badge">2</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Rw</span>
+      <span>Rana Walk</span>
+      <span class="badge">1</span>
+    </button>
+
+    <div class="subgroup">Heredados</div>
+    <button class="nav-item">
+      <span class="ico">In</span>
+      <span>Industrias del Norte</span>
+      <span class="badge coral">Crítico</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Sn</span>
+      <span>Sondel SA</span>
+      <span class="badge">3</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Rm</span>
+      <span>Distribuidora Ramírez</span>
+      <span class="badge">2</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Al</span>
+      <span>Constructoras Alfa</span>
+      <span class="badge">1</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Mn</span>
+      <span>Minera Central</span>
+    </button>
+
+    <!-- Administrar -->
+    <div class="section"><span>Administrar</span></div>
+
+    <div class="subgroup">Capacidades</div>
+    <button class="nav-item">
+      <span class="ico">Sk</span>
+      <span>Skills</span>
+      <span class="badge">16</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Ag</span>
+      <span>Agents</span>
+      <span class="badge">7</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Kn</span>
+      <span>Knowledge Atlas</span>
+      <span class="badge">7</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Cu</span>
+      <span>Knowledge Curetaje</span>
+      <span class="badge amber">&#9783; 5</span>
+    </button>
+
+    <div class="subgroup">Tenant</div>
+    <button class="nav-item">
+      <span class="ico">Us</span>
+      <span>Usuarios y permisos</span>
+      <span class="badge">12</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Ia</span>
+      <span>IA: modelos y ruteo</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Au</span>
+      <span>Audit</span>
+    </button>
+    <button class="nav-item">
+      <span class="ico">Cf</span>
+      <span>Configuración tenant</span>
+    </button>
+
+    <!-- Avatar foot with dropdown -->
+    <div class="foot">
+      <div class="foot-dropdown" id="foot-dropdown">
+        <a>Mi cuenta</a>
+        <a>Mi voz</a>
+        <a>Preferencias</a>
+        <div class="sep"></div>
+        <a>Cerrar sesión</a>
+      </div>
+      <button class="foot-trigger" onclick="toggleFootDropdown()">
+        <span class="avatar-circle">AF</span>
+        <div class="foot-info">
+          <div class="foot-name">Alejandro Faro</div>
+          <div class="foot-role">Operator</div>
+        </div>
+        <span class="foot-caret">&#9662;</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============ CANVAS ============ -->
+  <main class="canvas">
+    <div class="canvas-inner">
+      <div class="ws-header">
+        <h1 class="ws-title">Chat</h1>
+        <p class="ws-sub">Home cognitivo &middot; conversación libre con la IA contra la KB del tenant. El contexto se auto-detecta o lo fijás con @workspace.</p>
+      </div>
+
+      <div class="input-card">
+        <div class="placeholder">Pregunta o pedí algo. Mencioná @workspace para fijar scope.</div>
+        <div class="input-actions">
+          <span class="ws-mention">contexto auto: <strong>Sin scope explícito</strong></span>
+          <div class="actions">
+            <button class="btn-icon" title="Adjuntar">&#8593;</button>
+            <button class="btn-primary">Enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="suggestions">
+        <div class="label">Sugerencias del día</div>
+        <ul>
+          <li>Curar 3 candidatos pending en Knowledge Curetaje</li>
+          <li>Iterar voice MWT con 4 términos sectoriales nuevos detectados ayer</li>
+          <li>Continuar deep research mercado dieléctrico LATAM (en curso, día 2)</li>
+        </ul>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="convo">
+        <div class="convo-meta">09:14 &middot; @ws_industrias_norte</div>
+        <p class="convo-q">"¿Cómo cerramos el follow-up de Industrias del Norte?"</p>
+        <div class="convo-context">
+          <div><strong>contexto:</strong> ws_industrias_norte (cuenta gold)</div>
+          <div><strong>KB consultada:</strong> histórico cliente · voice MWT · políticas comerciales</div>
+          <div><strong>modelo:</strong> Sonnet 4.6 (vía Routing Inheritance)</div>
+        </div>
+
+        <div class="convo-answer">
+          <p>Para cerrar el follow-up con Industrias del Norte, te sugiero confirmar tres puntos clave en un mensaje breve: (1) la fecha exacta de despacho del lote pendiente, (2) la disponibilidad de stock para los próximos 30 días según el SAP, y (3) ratificar las condiciones gold que ya tienen. El histórico muestra que prefieren mensajes directos, sin formalismos largos.</p>
+          <p>Detecté que aparecieron varios términos sectoriales nuevos en este intercambio (categoría dieléctricos clase II, norma NOM-113-STPS revisión 2026). Conviene incorporarlos al glosario vertical.</p>
+        </div>
+
+        <div class="cta-indexar">
+          <div class="head">
+            <span>&#9783;</span>
+            <span>Esto puede valer la pena indexar</span>
+          </div>
+          <div class="body">"4 términos sectoriales nuevos detectados"</div>
+          <div class="meta">contexto sugerido: L1 vertical &middot; safety_footwear</div>
+          <div class="actions">
+            <button class="btn-amber">Indexar a L1</button>
+            <button class="btn-ghost">Más tarde</button>
+            <button class="btn-ghost">No</button>
+          </div>
+        </div>
+
+        <div class="convo-actions">
+          <span class="convo-action">Promover a workspace</span>
+          <span class="convo-action">Guardar como contexto pinned</span>
+          <span class="convo-action">Crear borrador en ws_industrias_norte</span>
+          <span class="convo-action">Iterar (refinar pregunta)</span>
+        </div>
+      </div>
+
+      <div class="convo-summary">
+        <span class="time">11:30</span>
+        <span class="q">"Términos sectoriales nuevos en safety footwear MX"</span>
+        <span class="tag">candidato L1</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ TOOLS PANEL (right) ============ -->
+  <aside class="tools-panel" id="tools-panel">
+    <div class="tools-tabs">
+      <div class="tools-tab" onclick="selectTab('agentes')">Agentes</div>
+      <div class="tools-tab" onclick="selectTab('skills')">Skills</div>
+      <div class="tools-tab active" onclick="selectTab('conocimiento')">
+        Conocimiento<span class="badge"></span>
+      </div>
+      <div class="tools-tab" onclick="selectTab('workspace')">Workspace</div>
+    </div>
+
+    <div class="tools-content">
+      <!-- AGENTES -->
+      <div class="tab-pane" id="tab-agentes">
+        <h2 class="tools-header">Agentes</h2>
+        <p class="tools-count">12 disponibles</p>
+
+        <div class="tools-section">Propios (5)</div>
+        <div class="tools-list">
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">industrias_account_manager</span><span></span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">sondel_followup_writer</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">ramirez_dunning_specialist</span><span></span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">alfa_negotiator</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">minera_proposals</span><span></span><span></span></div>
+        </div>
+
+        <div class="tools-section">Heredados (7)</div>
+        <div class="tools-list">
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">account_manager</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">dunning_gentle</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">classify_router</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">proforma_builder</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">escalation_handler</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">deep_research</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">explorer_lab</span><span></span><span></span></div>
+        </div>
+
+        <div class="tools-actions">
+          <button class="btn-tool">+ Crear</button>
+          <button class="btn-tool">⎘ Adoptar</button>
+        </div>
+      </div>
+
+      <!-- SKILLS -->
+      <div class="tab-pane" id="tab-skills">
+        <h2 class="tools-header">Skills</h2>
+        <p class="tools-count">24 disponibles</p>
+
+        <div class="tools-section">Propios (4)</div>
+        <div class="tools-list">
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">proforma_builder_safety</span><span></span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">dunning_gentle_mwt</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">industrias_pricing_calc</span><span></span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">sondel_voice_tweak</span><span></span><span></span></div>
+        </div>
+
+        <div class="tools-section">Heredados (20)</div>
+        <div class="tools-list">
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">classify_intent</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">retrieve_kb</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">generate_quote</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">format_output</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">voice_humanizer</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">extract_metadata</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">classify_destination</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">detect_exception</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">dunning_message</span><span></span><span></span></div>
+        </div>
+        <div class="tools-link">&#8627; ver todos (11 más)</div>
+
+        <div class="tools-actions">
+          <button class="btn-tool">+ Crear</button>
+          <button class="btn-tool">⎘ Adoptar</button>
+        </div>
+      </div>
+
+      <!-- CONOCIMIENTO (active by default) -->
+      <div class="tab-pane active" id="tab-conocimiento">
+        <h2 class="tools-header">Conocimiento</h2>
+        <p class="tools-count">19 contextos disponibles</p>
+
+        <div class="tools-section">Propios (7)</div>
+        <div class="tools-list">
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Voice MWT</span><span class="layer">L4</span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Histórico Sondel</span><span class="layer">L3</span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Política descuentos</span><span class="layer">L2</span><span class="alert">&#9783;</span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Plantilla follow-up</span><span class="layer">L2</span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Replay set Q1</span><span class="layer">L4</span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Notas Industrias</span><span class="layer">L4</span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Glosario minería</span><span class="layer">L1</span><span></span></div>
+        </div>
+
+        <div class="tools-section">Heredados (12)</div>
+        <div class="tools-list">
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Catálogo BC-7240</span><span class="layer">L1</span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Normas EPP LATAM</span><span class="layer">L0</span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Banned phrases tenant</span><span class="layer">L2</span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Voice tenant MWT</span><span class="layer">L2</span><span class="alert">&#9783;</span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Replay safety_footwear</span><span class="layer">L1</span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Política LFPDPPP</span><span class="layer">L0</span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Glosario comercial</span><span class="layer">L2</span><span></span></div>
+        </div>
+        <div class="tools-link">&#8627; ver todos (5 más)</div>
+
+        <div class="tools-actions">
+          <button class="btn-tool">+ Crear</button>
+          <button class="btn-tool">⎘ Adoptar</button>
+        </div>
+
+        <div class="tools-clock-foot">
+          <div class="head">5 niveles a indexar</div>
+          <ul>
+            <li>3 candidatos en Knowledge Curetaje</li>
+            <li>1 conflicto de fuente (BC-7240)</li>
+            <li>1 promoción L4→L2 esperando Owner</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- WORKSPACE -->
+      <div class="tab-pane" id="tab-workspace">
+        <h2 class="tools-header">Workspace</h2>
+        <p class="tools-count">13 espacios de trabajo</p>
+
+        <div class="tools-section">Administrados (3)</div>
+        <div class="tools-list">
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Mwt.one</span><span></span><span></span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">FaberLoom</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row propio"><span class="indicator">&#9679;</span><span class="name">Rana Walk</span><span></span><span></span></div>
+        </div>
+
+        <div class="tools-section">Heredados (10)</div>
+        <div class="tools-list">
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Industrias del Norte</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Sondel SA</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Distribuidora Ramírez</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Constructoras Alfa</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Minera Central</span><span></span><span></span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Lab MWT</span><span></span><span class="alert">&#9679;</span></div>
+          <div class="tools-row heredado"><span class="indicator">&#9675;</span><span class="name">Inbox sin asignar</span><span></span><span class="alert">&#9679;</span></div>
+        </div>
+        <div class="tools-link">&#8627; ver todos (3 más)</div>
+
+        <div class="tools-actions">
+          <button class="btn-tool">+ Crear</button>
+          <button class="btn-tool">⎘ Adoptar</button>
+        </div>
+      </div>
+
+      <div class="tools-collapse" onclick="toggleTools()">→ colapsar</div>
+    </div>
+  </aside>
+
+  <button class="tools-toggle-floating" onclick="toggleTools()" title="Mostrar herramientas">&#8678;</button>
+</div>
+
+<script>
+function toggleFootDropdown() {
+  document.getElementById('foot-dropdown').classList.toggle('show');
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.foot-trigger') && !e.target.closest('.foot-dropdown')) {
+    document.getElementById('foot-dropdown').classList.remove('show');
+  }
+});
+
+function selectTab(name) {
+  document.querySelectorAll('.tools-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tools-tab').forEach(t => {
+    if (t.textContent.toLowerCase().includes(name.toLowerCase())) t.classList.add('active');
+  });
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function toggleTools() {
+  document.getElementById('app').classList.toggle('tools-collapsed');
+}
+
+function toggleClock() {
+  alert('Panel del reloj de aprendizaje\n\n5 niveles a indexar:\n - 3 candidatos en Curetaje\n - 1 conflicto de fuente\n - 1 promoción L4→L2 pending');
+}
+</script>
+</body>
+</html>
