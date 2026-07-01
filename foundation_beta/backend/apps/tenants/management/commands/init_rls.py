@@ -27,6 +27,8 @@ class Command(BaseCommand):
         "outboxes",
         "event_logs",
         "sample_items",
+        "memberships",
+        "outbox_events",
     ]
 
     def add_arguments(self, parser):

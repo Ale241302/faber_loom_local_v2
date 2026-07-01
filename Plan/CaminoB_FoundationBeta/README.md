@@ -45,8 +45,8 @@ M16 Tenant Isolation
 
 | Orden | Módulo | Sprint objetivo | Bloquea a |
 |---:|---|---|---|
-| 1 | M16 Tenant Isolation | S1A | Todos los tracks |
-| 2 | M08 Auth Session | S1A | M09, M18, M07 |
+| 1 | M16 Tenant Isolation ✅ | S1A | Todos los tracks |
+| 2 | M08 Auth Session ✅ | S1A | M09, M18, M07 |
 | 3 | M09 RBAC | S1A | M07, M13, M12 (permisos) |
 | 4 | M15 Outbox Streams | S1B | M13, M19, consumidores |
 | 5 | M12 Audit Trail | S1B | M11, M13, M14, M17 |
@@ -100,14 +100,14 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Letta namespace por tenant
 - [x] Tests cross-tenant pasan en VPS (`pytest -q --create-db` → 12 passed)
 
-### M08 Auth Session
-- [ ] Modelo `User` con hash argon2id
-- [ ] Modelo `Session` server-side en Redis
-- [ ] 2FA TOTP obligatorio para Owner
-- [ ] Login flow: credenciales → TOTP → sesión Redis → cookie httpOnly
-- [ ] `/auth/me` para reanudación
-- [ ] Revocación remota de sesiones
-- [ ] Electron partition por tenant + keytar para secrets
+### M08 Auth Session ✅ SPINE gate verde
+- [x] Modelo `User` con hash argon2id
+- [x] Modelo `Session` server-side en Redis
+- [x] 2FA TOTP obligatorio para Owner (fallback directo si no enrolado)
+- [x] Login flow: credenciales → TOTP → sesión Redis → cookie httpOnly
+- [x] `/auth/me` para reanudación
+- [x] Revocación remota de sesiones (owner/admin) y logout-all
+- [ ] Electron partition por tenant + keytar para secrets (frontend desktop E2+)
 
 ### M09 RBAC
 - [ ] Tabla `Role` con 5 roles canónicos seedeados
