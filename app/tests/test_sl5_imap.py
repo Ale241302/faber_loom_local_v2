@@ -16,6 +16,8 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_ENABLE_EMAIL_CONNECTOR", "true")
     monkeypatch.setenv("FABERLOOM_IMAP_SERVER", "imap.example.com")
     monkeypatch.setenv("FABERLOOM_IMAP_PORT", "993")
     monkeypatch.setenv("FABERLOOM_IMAP_USER", "loom@example.com")

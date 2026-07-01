@@ -1,11 +1,11 @@
 ---
 id: SPEC_SPACELOOM_SL5
-version: 1.0
-status: DIFERIDO
+version: 1.1
+status: ACTIVE_SPIKE
 visibility: [INTERNAL]
 domain: FaberLoom (docs/faberloom/)
 type: SPEC
-stamp: DIFERIDO — 2026-06-30 — correo multi-cuenta read-first
+stamp: ACTIVE_SPIKE — 2026-06-30 — correo usable en servidor, keyring/OAuth reservados para desktop
 aplica_a: [FaberLoom, MWT]
 relacionado:
   - PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md
@@ -14,34 +14,51 @@ relacionado:
   - IDX_SPACELOOM_ETAPA1_v1.md
 ---
 
-# SPEC_SPACELOOM_SL5_v1 — Correo (diferido)
+# SPEC_SPACELOOM_SL5_v1.1 — Correo (spike usable, canonización parcial)
 
 ## Objetivo
 
-Conectar una o varias cuentas de correo (OAuth/IMAP) en modo read-first, generar drafts desde emails entrantes y permitir envío solo tras aprobación HITL.
+Conectar una cuenta de correo IMAP por workspace en modo read-first, generar drafts desde emails entrantes y permitir envío SMTP solo tras aprobación HITL.
 
 ## Estado
 
-**DIFERIDO** en Etapa 1.
+**ACTIVE_SPIKE**. La funcionalidad base está implementada y desplegada en el VPS, protegida por feature flag (`FABERLOOM_ENABLE_EMAIL_CONNECTOR`).
 
-## Razón
+## Alcance de la Fase 1 (spike usable)
 
-- El correo es lo único recortable sin romper el núcleo del telar single-user.
-- Requiere credenciales IMAP de Kimi Work rotadas y un connector multi-cuenta robusto.
-- Para el dogfood interno actual se puede copiar/pegar contenido a mano.
-- El riesgo P0 de injection por contenido de email obliga a tests específicos antes de liberar.
+- Feature flag `FABERLOOM_ENABLE_EMAIL_CONNECTOR` (default `false`).
+- Configuración IMAP por workspace con password cifrado mediante `FABERLOOM_MASTER_KEY`.
+- Configuración SMTP por `(workspace, user)` con password cifrado.
+- Firma / footer de correo configurable por workspace.
+- Envío HITL: draft aprobado + `confirmation_token` + `idempotency_key`.
+- Retry/timeout en `mail_outbox` para envíos fallidos.
+- Test P0 de prompt injection desde email.
 
-## Decisiones pendientes
+## Límites explícitos del spike
 
-| # | Decisión | Quién |
+| Funcionalidad | Estado | Nota |
 |---|---|---|
-| 1 | ¿SL5 entra en Etapa 1 o se difiere a Etapa 2? | CEO |
-| 2 | Rotar credenciales IMAP de Kimi Work | CEO/IT |
-| 3 | ¿Gmail OAuth + IMAP/SMTP custom, o solo IMAP/SMTP directo? | CEO/Arquitecto |
+| Multi-cuenta IMAP por workspace | 🟡 Una cuenta default | Multi-cuenta completa queda para Fase 2. |
+| OAuth | ❌ No implementado | Requiere runtime desktop + browser. |
+| Keyring del OS | ❌ No implementado | En servidor se usa almacén cifrado con master key. |
+| Polling automático | ❌ No implementado | Sync manual; Fase 2 lo añade. |
+| Enriquecimiento de KB | ❌ No implementado | Fase 2. |
+| Adjuntos | ❌ No procesados | Se ignoran; Fase 2 añade parser sandboxeado. |
+| HTML sanitizado | 🟡 Regex básico | Fase 2 usaría sanitizador real. |
+| Borrar/mover/marcar emails | ❌ No implementado | Fase 2 con HITL. |
+
+## Canonización completa
+
+Para cumplir `SPEC_SPACELOOM_IMAP_CONNECTOR_v1.md` al 100% se requiere:
+
+1. Runtime desktop (SL4) con acceso a keyring OS y navegador para OAuth.
+2. Migrar secretos IMAP/SMTP del almacén cifrado SQLite al keyring del OS.
+3. Implementar OAuth read-only para Gmail/Microsoft 365.
+4. En el VPS, mantener el conector deshabilitado por defecto o en modo relay seguro.
 
 ## Flag explícito
 
-`email_connector_enabled=false` hasta que SL5 se reactive.
+`FABERLOOM_ENABLE_EMAIL_CONNECTOR=false` por defecto. Activar solo en deploys donde se acepte la superficie de riesgo del correo.
 
 ## Documento de referencia
 
@@ -49,4 +66,5 @@ Conectar una o varias cuentas de correo (OAuth/IMAP) en modo read-first, generar
 
 ## Changelog
 
-- v1.0 (2026-06-30): Especificación diferida. Registro del spike en `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md`.
+- v1.0 (2026-06-30): Especificación diferida.
+- v1.1 (2026-06-30): Fase 1 del spike usable cerrada en servidor; límites y ruta a canonización documentados.

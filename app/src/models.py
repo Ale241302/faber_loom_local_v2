@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -682,6 +682,44 @@ MIGRATIONS: dict[int, str] = {
     -- Data backfill is performed by _migrate_v19_data in db.py because the
     -- target user_id must be read from the FABERLOOM_USERS environment variable.
     """,
+    20: """
+    -- SL5 Phase 1: per-workspace IMAP accounts, encrypted credentials,
+    -- outbox retry tracking, and workspace email signature.
+
+    CREATE TABLE IF NOT EXISTS email_account (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT,
+        user_id TEXT,
+        label TEXT,
+        provider TEXT NOT NULL DEFAULT 'imap',
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL,
+        folders_json TEXT NOT NULL DEFAULT '["INBOX"]',
+        auth_type TEXT NOT NULL DEFAULT 'password' CHECK (auth_type IN ('password', 'oauth')),
+        read_only INTEGER NOT NULL DEFAULT 1,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        schema_version INTEGER NOT NULL DEFAULT 20,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_account_workspace_id ON email_account(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_email_account_default ON email_account(workspace_id, is_default);
+
+    ALTER TABLE mail_message ADD COLUMN account_id TEXT REFERENCES email_account(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_mail_message_account_id ON mail_message(account_id);
+
+    ALTER TABLE mail_outbox ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mail_outbox ADD COLUMN failed_at TEXT;
+    ALTER TABLE mail_outbox ADD COLUMN error_json TEXT NOT NULL DEFAULT '{}';
+
+    ALTER TABLE workspace ADD COLUMN email_signature TEXT;
+    """,
 }
 
 
@@ -738,6 +776,7 @@ class WorkspaceRead(BaseModel):
     parent_id: str | None = None
     inherits_kb: int = 0
     confidential: int = 0
+    email_signature: str | None = None
     created_at: str
     updated_at: str
 
@@ -1248,6 +1287,77 @@ class SMTPConfigWrite(BaseModel):
 class SMTPTestResponse(BaseModel):
     sent_to: str
     status: str
+
+
+class EmailAccountCreate(BaseModel):
+    label: str = Field(default="", max_length=200)
+    provider: str = Field(default="imap", max_length=50)
+    host: str = Field(min_length=1, max_length=500)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=500)
+    password: str = Field(min_length=1, max_length=2000)
+    folders_json: str = Field(default='["INBOX"]', max_length=2000)
+    auth_type: str = Field(default="password", max_length=20)
+    read_only: int = Field(default=1, ge=0, le=1)
+    is_default: int = Field(default=0, ge=0, le=1)
+
+    @field_validator("auth_type")
+    @classmethod
+    def auth_type_must_be_supported(cls, value: str) -> str:
+        if value not in {"password", "oauth"}:
+            raise ValueError("auth_type must be 'password' or 'oauth'")
+        return value
+
+    @field_validator("folders_json")
+    @classmethod
+    def folders_json_must_be_array(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            return "[]"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"folders_json must be valid JSON: {exc}") from exc
+        if not isinstance(parsed, list):
+            raise ValueError("folders_json must be a JSON array")
+        if not all(isinstance(item, str) and item.strip() for item in parsed):
+            raise ValueError("folders_json must contain only non-empty strings")
+        return stripped
+
+
+class EmailAccountWrite(EmailAccountCreate):
+    pass
+
+
+class EmailAccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    label: str | None = None
+    provider: str
+    host: str
+    port: int
+    username: str
+    password: str
+    folders_json: str
+    auth_type: str
+    read_only: int
+    is_default: int
+    schema_version: int
+    source_version: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkspaceEmailSignatureUpdate(BaseModel):
+    email_signature: str = Field(default="", max_length=2000)
+
+
+class FeaturesRead(BaseModel):
+    email_connector_enabled: bool
 
 
 # -----------------------------------------------------------------------------

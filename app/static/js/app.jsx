@@ -194,7 +194,7 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout }) {
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout, features }) {
   const [counts, setCounts] = useState({});
 
   const loadCounts = useCallback(async () => {
@@ -272,8 +272,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "space-acc", title: "FaberLoom", badge: counts.chats, children: <RailItem label="FaberLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
         ]} defaultOpen={activeAccordionId === "space-acc" ? ["space-acc"] : []} />
         <Accordion items={[
-          { id: "entrada-acc", title: "Entrada", badge: counts.mail + counts.workloom, children: <>
-            <RailItem label="Inbox" icon="inbox" badge={counts.mail} active={nav === "inbox"} onClick={() => setNav("inbox")} />
+          { id: "entrada-acc", title: "Entrada", badge: (features?.email_connector_enabled ? counts.mail : 0) + counts.workloom, children: <>
+            {features?.email_connector_enabled && <RailItem label="Inbox" icon="inbox" badge={counts.mail} active={nav === "inbox"} onClick={() => setNav("inbox")} />}
             <RailItem label="WorkLoom" icon="check" badge={counts.workloom} active={nav === "workloom"} onClick={() => setNav("workloom")} />
           </> }
         ]} defaultOpen={activeAccordionId === "entrada-acc" ? ["entrada-acc"] : []} />
@@ -802,7 +802,7 @@ function SpaceView({ activeWorkspace }) {
 }
 
 function PlaceholderView({ nav }) {
-  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría", skills: "Skills", agents: "Agentes", gold: "Gold Samples", routing: "IA: modelos y ruteo", users: "Usuarios", inbox: "Inbox", stackloom: "StackLoom", "hitl-signals": "Señales HITL" };
+  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría", skills: "Skills", agents: "Agentes", gold: "Gold Samples", routing: "IA: modelos y ruteo", users: "Usuarios", inbox: "Inbox", mail: "Correo", stackloom: "StackLoom", "hitl-signals": "Señales HITL" };
   return <div className="placeholder"><div className="placeholder-card"><Icon name="loom"/><h2>{labels[nav] || "Vista futura"}</h2><p>Esta superficie queda señalizada en SL0, pero se implementa en hitos posteriores del plan FaberLoom.</p></div></div>;
 }
 
@@ -2102,6 +2102,134 @@ function AuditHistoryPanel({ activeWorkspace }) {
 }
 
 const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "" };
+const IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0 };
+
+function IMAPConfigPanel({ activeWorkspace }) {
+  const [accounts, setAccounts] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ ...IMAP_DEFAULTS });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  const load = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/admin/imap-config`);
+      setAccounts(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace]);
+
+  const update = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const reset = () => {
+    setEditing(null);
+    setForm({ ...IMAP_DEFAULTS });
+  };
+
+  const edit = (account) => {
+    setEditing(account.id);
+    setForm({
+      label: account.label || "",
+      provider: account.provider || "imap",
+      host: account.host || "",
+      port: account.port ?? 993,
+      username: account.username || "",
+      password: account.password || "",
+      folders_json: account.folders_json || '["INBOX"]',
+      auth_type: account.auth_type || "password",
+      read_only: account.read_only ?? 1,
+      is_default: account.is_default ?? 0,
+    });
+  };
+
+  const save = async () => {
+    if (!activeWorkspace) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = {
+        ...form,
+        port: Number(form.port),
+        read_only: Number(form.read_only),
+        is_default: Number(form.is_default),
+      };
+      if (editing) {
+        await apiPut(`/api/workspaces/${activeWorkspace.id}/admin/imap-config/${editing}`, payload);
+      } else {
+        await apiPost(`/api/workspaces/${activeWorkspace.id}/admin/imap-config`, payload);
+      }
+      await load();
+      reset();
+      setSuccess("Cuenta IMAP guardada.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const remove = async (id) => {
+    if (!activeWorkspace) return;
+    if (!confirm("¿Eliminar esta cuenta IMAP?")) return;
+    try {
+      await apiDelete(`/api/workspaces/${activeWorkspace.id}/admin/imap-config/${id}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return <section className="panel" aria-label="Configuración IMAP">
+    <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">IMAP</div></div></div>
+    <div style={S.panelBody}>
+      {loading && <div style={S.loading}>Cargando…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {success && <div style={S.success}>{success}</div>}
+      <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
+        <label style={S.label}>Etiqueta<input style={S.input} value={form.label} onChange={(e) => update("label", e.target.value)} placeholder="Cuenta principal"/></label>
+        <label style={S.label}>Host<input style={S.input} value={form.host} onChange={(e) => update("host", e.target.value)} placeholder="imap.ejemplo.com"/></label>
+        <label style={S.label}>Puerto<input type="number" style={S.input} value={form.port} onChange={(e) => update("port", e.target.value)} min={1} max={65535}/></label>
+        <label style={S.label}>Usuario<input style={S.input} value={form.username} onChange={(e) => update("username", e.target.value)}/></label>
+        <label style={S.label}>Contraseña<input type="password" style={S.input} value={form.password} onChange={(e) => update("password", e.target.value)}/></label>
+        <label style={S.label}>Carpetas (JSON)<input style={S.input} value={form.folders_json} onChange={(e) => update("folders_json", e.target.value)} placeholder='["INBOX"]'/></label>
+        <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+          <Toggle checked={!!form.is_default} onChange={(checked) => update("is_default", checked ? 1 : 0)}/>
+          Cuenta por defecto
+        </div>
+        <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+          <Toggle checked={!!form.read_only} onChange={(checked) => update("read_only", checked ? 1 : 0)}/>
+          Solo lectura
+        </div>
+        <div style={S.inlineGroup}>
+          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving}>{saving ? "Guardando…" : (editing ? "Actualizar" : "Agregar")}</button>
+          {editing && <button type="button" style={S.button} onClick={reset}>Cancelar</button>}
+        </div>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>CUENTAS ({accounts.length})</div>
+        {accounts.map((acc) => <div key={acc.id} style={S.card}>
+          <div style={S.cardTitle}>{acc.label || acc.username} {acc.is_default ? <span style={S.badge}>default</span> : null}</div>
+          <div style={S.cardMeta}>{acc.host}:{acc.port} · {acc.username} · {acc.auth_type}</div>
+          <div style={S.inlineGroup}>
+            <button style={S.button} onClick={() => edit(acc)}>Editar</button>
+            <button style={S.buttonDanger} onClick={() => remove(acc.id)}>Eliminar</button>
+          </div>
+        </div>)}
+      </div>
+    </div>
+  </section>;
+}
 
 function SMTPConfigPanel({ activeWorkspace }) {
   const [config, setConfig] = useState({ ...SMTP_DEFAULTS });
@@ -2208,6 +2336,58 @@ function SMTPConfigPanel({ activeWorkspace }) {
   </section>;
 }
 
+function EmailSignaturePanel({ activeWorkspace }) {
+  const [signature, setSignature] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  const load = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiGet(`/api/workspaces/${activeWorkspace.id}/email-signature`);
+      setSignature(data?.email_signature || "");
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace]);
+
+  const save = async () => {
+    if (!activeWorkspace) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiPut(`/api/workspaces/${activeWorkspace.id}/email-signature`, { email_signature: signature });
+      setSuccess("Firma guardada.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  return <section className="panel" aria-label="Firma de correo">
+    <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">Firma de correo</div></div></div>
+    <div style={S.panelBody}>
+      {loading && <div style={S.loading}>Cargando…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {success && <div style={S.success}>{success}</div>}
+      <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
+        <label style={S.label}>Firma / footer<textarea style={S.textarea} value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Saludos,&#10;Equipo FaberLoom"/></label>
+        <div style={S.inlineGroup}>
+          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
 function AuditView({ activeWorkspace }) {
   const [tab, setTab] = useState("audit");
 
@@ -2219,20 +2399,24 @@ function AuditView({ activeWorkspace }) {
       <div style={{ display: "flex", gap: 8 }}>
         {[
           { id: "audit", label: "Auditoría" },
+          { id: "imap", label: "IMAP" },
           { id: "smtp", label: "SMTP" },
+          { id: "signature", label: "Firma" },
         ].map((t) => (
           <button key={t.id} type="button" style={tab === t.id ? S.buttonPrimary : S.button} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
       </div>
     </div>
     {tab === "audit" && <AuditHistoryPanel activeWorkspace={activeWorkspace}/>}
+    {tab === "imap" && <IMAPConfigPanel activeWorkspace={activeWorkspace}/>}
     {tab === "smtp" && <SMTPConfigPanel activeWorkspace={activeWorkspace}/>}
+    {tab === "signature" && <EmailSignaturePanel activeWorkspace={activeWorkspace}/>}
   </div>;
 }
 
-function SendMailModal({ mailId, workspaceId, token, onClose, onSent }) {
+function SendMailModal({ mail, workspaceId, token, onClose, onSent }) {
   const [confirmationToken, setConfirmationToken] = useState("");
-  const [idempotencyKey, setIdempotencyKey] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => `send-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -2242,7 +2426,7 @@ function SendMailModal({ mailId, workspaceId, token, onClose, onSent }) {
     setError(null);
     try {
       const params = new URLSearchParams({ confirmation_token: confirmationToken, idempotency_key: idempotencyKey });
-      await apiPost(`/api/workspaces/${workspaceId}/mail/${mailId}/send?${params.toString()}`);
+      await apiPost(`/api/workspaces/${workspaceId}/mail/${mail.id}/send?${params.toString()}`);
       onSent();
       onClose();
     } catch (err) {
@@ -2254,12 +2438,20 @@ function SendMailModal({ mailId, workspaceId, token, onClose, onSent }) {
   return <div style={S.modalOverlay} onClick={onClose}>
     <div style={S.modal} onClick={(e) => e.stopPropagation()}>
       <h3 style={S.modalTitle}>Confirmar envío de correo</h3>
-      <p style={{ margin: 0, color: "var(--text-2)", fontSize: 13 }}>Escribe el confirmation_token mostrado y una idempotency_key única.</p>
+      <div style={{ marginBottom: 12, fontSize: 13, color: "var(--text-2)" }}>Revisa el destinatario y escribe el token de confirmación.</div>
+      <div style={S.card}>
+        <div style={S.cardMeta}>Para</div>
+        <div style={S.cardTitle}>{mail.sender || "(sin remitente)"}</div>
+        <div style={S.cardMeta}>Asunto</div>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>Re: {mail.subject || "(sin asunto)"}</div>
+        <div style={S.cardMeta}>Cuerpo</div>
+        <div style={{ fontSize: 12, color: "var(--text-2)" }}>Se enviará el borrador aprobado desde WorkLoom.</div>
+      </div>
       <div style={S.modalToken}>{token}</div>
       {error && <div style={S.error}>{error}</div>}
       <form style={S.form} onSubmit={submit}>
         <label style={S.label}>confirmation_token<input style={S.input} value={confirmationToken} onChange={(e) => setConfirmationToken(e.target.value)} required/></label>
-        <label style={S.label}>idempotency_key<input style={S.input} value={idempotencyKey} onChange={(e) => setIdempotencyKey(e.target.value)} placeholder="ej: send-2024-001" required/></label>
+        <label style={S.label}>idempotency_key<input style={S.input} value={idempotencyKey} onChange={(e) => setIdempotencyKey(e.target.value)} required/></label>
         <div style={S.inlineGroup}>
           <button type="submit" style={S.buttonPrimary} disabled={busy}>{busy ? "Enviando…" : "Enviar"}</button>
           <button type="button" style={S.button} onClick={onClose} disabled={busy}>Cancelar</button>
@@ -2273,7 +2465,7 @@ function MailView({ activeWorkspace }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [sendModalMailId, setSendModalMailId] = useState(null);
+  const [sendModalMail, setSendModalMail] = useState(null);
   const [sendToken, setSendToken] = useState("");
 
   const load = async () => {
@@ -2318,7 +2510,7 @@ function MailView({ activeWorkspace }) {
   const openSend = async (mail) => {
     const token = await sha256Truncated(mail.id);
     setSendToken(token);
-    setSendModalMailId(mail.id);
+    setSendModalMail(mail);
   };
 
   useEffect(() => { load(); }, [activeWorkspace]);
@@ -2326,7 +2518,7 @@ function MailView({ activeWorkspace }) {
   if (!activeWorkspace) return <WorkspaceRequired icon="mail" title="Correo"/>;
 
   return <div className="classic" style={S.view}>
-    {sendModalMailId && <SendMailModal mailId={sendModalMailId} workspaceId={activeWorkspace.id} token={sendToken} onClose={() => setSendModalMailId(null)} onSent={load}/>}
+    {sendModalMail && <SendMailModal mail={sendModalMail} workspaceId={activeWorkspace.id} token={sendToken} onClose={() => setSendModalMail(null)} onSent={load}/>}
     <div className="vhead"><div><div className="vtitle">Correo</div><div className="vsub">Bandeja IMAP/SMTP con confirmación HITL</div></div><div className="vactions"><button style={S.button} onClick={sync} disabled={loading}>Sync IMAP</button></div></div>
     <section className="panel" aria-label="Correo">
       <div className="panel-header"><div><div className="panel-kicker">Mail</div><div className="panel-title">Bandeja ({messages.length})</div></div></div>
@@ -2350,7 +2542,7 @@ function MailView({ activeWorkspace }) {
   </div>;
 }
 
-function Canvas({ nav, activeWorkspace, status }) {
+function Canvas({ nav, activeWorkspace, status, features }) {
   return <main className="canvas">
     <ContextStrip activeWorkspace={activeWorkspace}/>
     {status === "error" && <div className="workspace-warning"><Icon/>No se pudo cargar /api/workspaces. El shell sigue disponible para revisar la interfaz.</div>}
@@ -2360,7 +2552,7 @@ function Canvas({ nav, activeWorkspace, status }) {
      : nav === "workloom" ? <WorkloomView activeWorkspace={activeWorkspace}/>
      : nav === "settings" || nav === "config" || nav === "routing" ? <SettingsView activeWorkspace={activeWorkspace}/>
      : nav === "audit" ? <AuditView activeWorkspace={activeWorkspace}/>
-     : nav === "mail" || nav === "inbox" ? <MailView activeWorkspace={activeWorkspace}/>
+     : (nav === "mail" || nav === "inbox") && features?.email_connector_enabled ? <MailView activeWorkspace={activeWorkspace}/>
      : nav === "skills" ? <SkillsView activeWorkspace={activeWorkspace}/>
      : nav === "agents" ? <AgentsView activeWorkspace={activeWorkspace}/>
      : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
@@ -2513,8 +2705,17 @@ function App({ user, onLogout }) {
   const [leftRailOpen, setLeftRailOpen] = useState(true);
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [budget, setBudget] = useState(null);
+  const [features, setFeatures] = useState({ email_connector_enabled: false });
 
   useEffect(() => { applyTheme(theme); }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet("/api/features")
+      .then((data) => { if (!cancelled) setFeatures(data || { email_connector_enabled: false }); })
+      .catch(() => { if (!cancelled) setFeatures({ email_connector_enabled: false }); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const handler = (e) => {
@@ -2566,8 +2767,8 @@ function App({ user, onLogout }) {
     <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
-      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout}/>
-      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status}/>
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features}/>
+      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>
     <ToastContainer toasts={toasts} onDismiss={dismissToast}/>

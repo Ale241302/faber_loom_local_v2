@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .db import db_session, initialize_database
+from .features import is_email_connector_enabled
+from .models import FeaturesRead
 from .router.config_store import load_env_file
 from .seed import seed_demo_workspace
 
@@ -119,6 +121,10 @@ def create_app() -> FastAPI:
             status_code=403,
             content={"detail": "Workspace seal verification failed"},
         )
+
+    @app.get("/api/features", response_model=FeaturesRead)
+    def features():
+        return FeaturesRead(email_connector_enabled=is_email_connector_enabled())
 
     @app.get("/", include_in_schema=False)
     def index():

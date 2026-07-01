@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -22,20 +23,25 @@ from .audit import audit_writer
 from .auth import get_current_user
 from .context import SYSTEM_WORKSPACE_ID, Context, system_context
 from .connectors.imap import fetch_unread_messages, send_message
+from .features import is_email_connector_enabled
 from .db import (
     approve_routine,
     approve_routine_run,
     create_chat,
+    create_email_account,
     create_mail_message,
     create_or_get_mail_outbox,
     create_routine,
     create_routine_run,
     create_workspace,
     delete_chat,
+    delete_email_account,
     delete_routine,
     get_chat,
     get_database_path,
     get_db,
+    get_default_email_account,
+    get_email_account,
     get_mail_message,
     get_mail_outbox,
     get_message_history,
@@ -43,16 +49,18 @@ from .db import (
     get_routine,
     get_routine_by_name,
     get_routine_run,
-    is_routine_name_taken,
     get_schema_version,
     get_workspace,
+    get_workspace_email_signature,
     get_workspace_field_aliases,
     get_workspace_smtp_config,
     insert_message,
     insert_usage_record,
+    is_routine_name_taken,
     link_mail_message_to_draft,
     list_chats,
     list_editorial_history,
+    list_email_accounts,
     list_mail_messages,
     list_routine_runs,
     list_routines,
@@ -62,13 +70,15 @@ from .db import (
     record_routine_run_edit,
     reject_routine_run,
     set_routine_run_output,
+    set_workspace_email_signature,
+    set_workspace_smtp_config,
     sum_workspace_usage_cost,
     transaction,
     update_chat,
+    update_email_account,
     update_mail_message_status,
     update_mail_outbox_status,
     update_routine,
-    set_workspace_smtp_config,
     update_routine_run_output,
     update_workspace_field_aliases,
     workspace_seal_id,
@@ -125,6 +135,10 @@ from .models import (
     HealthRead,
     KBSourceCreate,
     KBSourceRead,
+    EmailAccountCreate,
+    EmailAccountRead,
+    EmailAccountWrite,
+    FeaturesRead,
     MailMessageRead,
     MessageRead,
     ProviderConfigListRead,
@@ -147,6 +161,7 @@ from .models import (
     UsageRecordRead,
     WorkLoomRead,
     WorkspaceCreate,
+    WorkspaceEmailSignatureUpdate,
     WorkspaceFieldAliasesUpdate,
     WorkspaceListRead,
     WorkspaceRead,
@@ -2211,12 +2226,23 @@ def api_export_draft(
 # -----------------------------------------------------------------------------
 
 
+def _require_email_connector_enabled() -> None:
+    """Raise 404 if the email connector feature flag is disabled."""
+
+    if not is_email_connector_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email connector is not enabled",
+        )
+
+
 @router.get("/workspaces/{workspace_id}/mail", response_model=list[MailMessageRead])
 def api_list_mail_messages(
     workspace_id: str,
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> list[MailMessageRead]:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2297,22 +2323,42 @@ def api_sync_mail(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> dict[str, Any]:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    try:
+    account = get_default_email_account(ctx, conn)
+    if account is not None:
+        try:
+            folders = json.loads(account["folders_json"] or '["INBOX"]')
+        except json.JSONDecodeError:
+            folders = ["INBOX"]
+        mailbox = folders[0] if folders else "INBOX"
         creds = {
-            "server": os.environ["FABERLOOM_IMAP_SERVER"],
-            "port": int(os.environ["FABERLOOM_IMAP_PORT"]),
-            "username": os.environ["FABERLOOM_IMAP_USER"],
-            "password": os.environ["FABERLOOM_IMAP_PASSWORD"],
+            "server": account["host"],
+            "port": account["port"],
+            "username": account["username"],
+            "password": account["password"],
+            "mailbox": mailbox,
+            "account_id": account["id"],
         }
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="IMAP credentials are not configured. Set FABERLOOM_IMAP_* environment variables.",
-        ) from exc
+    else:
+        # Fallback to environment variables for legacy / headless deployments.
+        try:
+            creds = {
+                "server": os.environ["FABERLOOM_IMAP_SERVER"],
+                "port": int(os.environ["FABERLOOM_IMAP_PORT"]),
+                "username": os.environ["FABERLOOM_IMAP_USER"],
+                "password": os.environ["FABERLOOM_IMAP_PASSWORD"],
+                "mailbox": "INBOX",
+                "account_id": None,
+            }
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="IMAP credentials are not configured. Add an account in Audit > IMAP or set FABERLOOM_IMAP_* environment variables.",
+            ) from exc
 
     try:
         fetched = fetch_unread_messages(
@@ -2320,6 +2366,7 @@ def api_sync_mail(
             creds["port"],
             creds["username"],
             creds["password"],
+            mailbox=creds["mailbox"],
         )
     except RuntimeError as exc:
         raise HTTPException(
@@ -2341,8 +2388,18 @@ def api_sync_mail(
                 raw_payload=msg.get("raw_payload"),
                 status="unread",
                 category=_classify_mail(msg.get("subject"), msg.get("sender")),
+                account_id=creds.get("account_id"),
             )
             created.append(MailMessageRead(**row))
+
+    audit_event = audit_writer.write(
+        ctx,
+        conn,
+        action="mail.sync",
+        payload={"account_id": creds.get("account_id"), "created": len(created)},
+        mirror_jsonl=False,
+    )
+    _mirror_audit(audit_event)
 
     return {"created": len(created), "messages": created}
 
@@ -2354,6 +2411,7 @@ def api_draft_mail_reply(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> DraftRead:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2427,6 +2485,7 @@ def api_send_mail_reply(
     idempotency_key: str | None = None,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> MailMessageRead:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2474,14 +2533,21 @@ def api_send_mail_reply(
             status_code=status.HTTP_409_CONFLICT,
             detail="This send was already completed",
         )
+
     if outbox["status"] == "sending":
-        # If this exact request created the row just now, continue; otherwise
-        # another concurrent request is already delivering it.
-        if outbox.get("idempotency_key") != idempotency_key:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A send is already in progress for this message",
-            )
+        # Detect abandoned/stuck sends and allow retry after a timeout.
+        timeout_seconds = int(os.getenv("FABERLOOM_MAIL_OUTBOX_TIMEOUT_SECONDS", "300"))
+        updated_at = outbox.get("updated_at") or outbox.get("created_at")
+        try:
+            updated = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+        except Exception:
+            updated = datetime.now(timezone.utc)
+        if datetime.now(timezone.utc) - updated < timedelta(seconds=timeout_seconds):
+            if outbox.get("idempotency_key") != idempotency_key:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A send is already in progress for this message",
+                )
 
     smtp_config = _resolve_smtp_config(ctx, conn)
     if smtp_config is None:
@@ -2499,6 +2565,9 @@ def api_send_mail_reply(
 
     subject = draft.get("subject") or f"Re: {mail.get('subject') or ''}"
     body = draft.get("body_md") or ""
+    signature = get_workspace_email_signature(ctx, conn) or ""
+    if signature.strip():
+        body = f"{body}\n\n--\n{signature}"
 
     try:
         send_message(
@@ -2513,6 +2582,16 @@ def api_send_mail_reply(
             from_email=smtp_config.get("from_email"),
         )
     except RuntimeError as exc:
+        error_json = json.dumps({"error": str(exc)}, ensure_ascii=False)
+        with transaction(conn):
+            update_mail_outbox_status(
+                ctx,
+                conn,
+                outbox["id"],
+                status="failed",
+                error_json=error_json,
+                increment_retry=True,
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"SMTP send failed: {exc}",
@@ -2547,6 +2626,7 @@ def api_get_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPConfigRead:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2563,6 +2643,7 @@ def api_update_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPConfigRead:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2592,6 +2673,7 @@ def api_test_smtp_config(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> SMTPTestResponse:
+    _require_email_connector_enabled()
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
@@ -2628,6 +2710,127 @@ def api_test_smtp_config(
         ) from exc
 
     return SMTPTestResponse(sent_to=sent_to, status="sent")
+
+
+@router.get("/workspaces/{workspace_id}/admin/imap-config", response_model=list[EmailAccountRead])
+def api_list_imap_configs(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[EmailAccountRead]:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return [EmailAccountRead(**row) for row in list_email_accounts(ctx, conn)]
+
+
+@router.post("/workspaces/{workspace_id}/admin/imap-config", response_model=EmailAccountRead, status_code=status.HTTP_201_CREATED)
+def api_create_imap_config(
+    workspace_id: str,
+    payload: EmailAccountCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> EmailAccountRead:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    row = create_email_account(
+        ctx,
+        conn,
+        label=payload.label,
+        provider=payload.provider,
+        host=payload.host,
+        port=payload.port,
+        username=payload.username,
+        password=payload.password,
+        folders_json=payload.folders_json,
+        auth_type=payload.auth_type,
+        read_only=payload.read_only,
+        is_default=payload.is_default,
+    )
+    return EmailAccountRead(**row)
+
+
+@router.put("/workspaces/{workspace_id}/admin/imap-config/{account_id}", response_model=EmailAccountRead)
+def api_update_imap_config(
+    workspace_id: str,
+    account_id: str,
+    payload: EmailAccountWrite,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> EmailAccountRead:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    existing = get_email_account(ctx, conn, account_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+    row = update_email_account(
+        ctx,
+        conn,
+        account_id,
+        label=payload.label,
+        provider=payload.provider,
+        host=payload.host,
+        port=payload.port,
+        username=payload.username,
+        password=payload.password,
+        folders_json=payload.folders_json,
+        auth_type=payload.auth_type,
+        read_only=payload.read_only,
+        is_default=payload.is_default,
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+    return EmailAccountRead(**row)
+
+
+@router.delete("/workspaces/{workspace_id}/admin/imap-config/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_imap_config(
+    workspace_id: str,
+    account_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> None:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if not delete_email_account(ctx, conn, account_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+
+
+@router.get("/workspaces/{workspace_id}/email-signature", response_model=dict[str, str])
+def api_get_email_signature(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, str]:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return {"email_signature": get_workspace_email_signature(ctx, conn) or ""}
+
+
+@router.put("/workspaces/{workspace_id}/email-signature", response_model=WorkspaceRead)
+def api_update_email_signature(
+    workspace_id: str,
+    payload: WorkspaceEmailSignatureUpdate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceRead:
+    _require_email_connector_enabled()
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    row = set_workspace_email_signature(ctx, conn, payload.email_signature)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return WorkspaceRead(**row)
 
 
 # -----------------------------------------------------------------------------

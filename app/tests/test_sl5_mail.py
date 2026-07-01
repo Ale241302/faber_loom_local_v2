@@ -14,6 +14,8 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("FABERLOOM_ENABLE_EMAIL_CONNECTOR", "true")
 
     # Keep IMAP env vars present so other SL5 paths do not fail; SMTP-specific
     # tests will override/disable as needed.
@@ -59,12 +61,12 @@ def _create_workspace(client: TestClient, name: str) -> str:
 
 def _sample_smtp_config() -> dict[str, Any]:
     return {
-        "host": "mail.mwt.one",
+        "host": "mail.example.com",
         "port": 465,
         "use_ssl": True,
-        "username": "info@mwt.one",
-        "password": "AB&4@B8)wZSH",
-        "from_email": "info@mwt.one",
+        "username": "info@example.com",
+        "password": "example-app-password",
+        "from_email": "info@example.com",
     }
 
 
@@ -124,14 +126,14 @@ def test_smtp_test_endpoint_sends_to_local_user(client: TestClient, monkeypatch:
 
     assert len(calls) == 1
     call = calls[0]
-    assert call["args"][0] == "mail.mwt.one"
+    assert call["args"][0] == "mail.example.com"
     assert call["args"][1] == 465
-    assert call["args"][2] == "info@mwt.one"
+    assert call["args"][2] == "info@example.com"
     assert call["kwargs"]["to"] == "local"
     assert call["kwargs"]["subject"] == "FaberLoom: prueba SMTP"
     assert call["kwargs"]["body"] == "Este es un correo de prueba desde FaberLoom."
     assert call["kwargs"]["use_ssl"] is True
-    assert call["kwargs"]["from_email"] == "info@mwt.one"
+    assert call["kwargs"]["from_email"] == "info@example.com"
 
 
 def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

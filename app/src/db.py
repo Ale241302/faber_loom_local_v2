@@ -23,6 +23,7 @@ from typing import Any, Iterator
 from .context import Context
 from .models import MIGRATIONS, SCHEMA_VERSION, RoutineCreate, WorkspaceCreate
 from .router import cost as router_cost
+from .router.config_store import decrypt_value, encrypt_value
 
 try:
     import sqlcipher3
@@ -92,6 +93,7 @@ WORKSPACE_COLUMNS = """
     parent_id,
     inherits_kb,
     confidential,
+    email_signature,
     created_at,
     updated_at
 """
@@ -615,10 +617,11 @@ def create_workspace(
             parent_id,
             inherits_kb,
             confidential,
+            email_signature,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             workspace_id,
@@ -638,6 +641,7 @@ def create_workspace(
             parent_id,
             inherits_kb,
             confidential,
+            None,
             now,
             now,
         ),
@@ -1563,6 +1567,7 @@ def create_mail_message(
     raw_payload: bytes | None,
     status: str = "unread",
     category: str = "other",
+    account_id: str | None = None,
 ) -> dict[str, Any]:
     """Insert a mail_message row scoped to the current workspace.
 
@@ -1603,13 +1608,14 @@ def create_mail_message(
             status,
             category,
             draft_id,
+            account_id,
             schema_version,
             source_version,
             approved_by,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             mail_id,
@@ -1627,6 +1633,7 @@ def create_mail_message(
             status,
             category,
             None,
+            account_id,
             SCHEMA_VERSION,
             None,
             None,
@@ -2360,8 +2367,8 @@ def get_mail_outbox(
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
         """
-        SELECT id, workspace_id, mail_id, idempotency_key, status,
-               smtp_message_id, created_at, updated_at
+        SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
+               failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
         WHERE workspace_id = ? AND mail_id = ?
         """,
@@ -2380,8 +2387,8 @@ def get_mail_outbox_by_key(
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
         """
-        SELECT id, workspace_id, mail_id, idempotency_key, status,
-               smtp_message_id, created_at, updated_at
+        SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
+               failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
         WHERE workspace_id = ? AND idempotency_key = ?
         """,
@@ -2445,23 +2452,32 @@ def update_mail_outbox_status(
     *,
     status: str,
     smtp_message_id: str | None = None,
+    error_json: str | None = None,
+    increment_retry: bool = False,
 ) -> dict[str, Any] | None:
     """Update outbox status after SMTP attempt."""
 
     workspace_id = ctx.require_scoped_workspace()
+    now = utc_now()
+    failed_at = now if status == "failed" else None
     with transaction(conn):
         conn.execute(
             """
             UPDATE mail_outbox
-            SET status = ?, smtp_message_id = ?, updated_at = ?
+            SET status = ?,
+                smtp_message_id = ?,
+                error_json = COALESCE(?, error_json),
+                retry_count = retry_count + ?,
+                failed_at = ?,
+                updated_at = ?
             WHERE id = ? AND workspace_id = ?
             """,
-            (status, smtp_message_id, utc_now(), outbox_id, workspace_id),
+            (status, smtp_message_id, error_json, 1 if increment_retry else 0, failed_at, now, outbox_id, workspace_id),
         )
     row = conn.execute(
         """
-        SELECT id, workspace_id, mail_id, idempotency_key, status,
-               smtp_message_id, created_at, updated_at
+        SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
+               failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
         WHERE id = ? AND workspace_id = ?
         """,
@@ -2487,7 +2503,10 @@ def get_workspace_smtp_config(
     ctx: Context,
     conn: sqlite3.Connection,
 ) -> dict[str, Any] | None:
-    """Return the workspace SMTP configuration row or None."""
+    """Return the workspace SMTP configuration row or None.
+
+    The password is decrypted with the master key before being returned.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     user_id = ctx.user_id or "local"
@@ -2499,7 +2518,11 @@ def get_workspace_smtp_config(
         """,
         (workspace_id, user_id),
     ).fetchone()
-    return row_to_dict(row) if row else None
+    if row is None:
+        return None
+    data = row_to_dict(row)
+    data["password"] = decrypt_value(data.get("password"))
+    return data
 
 
 def set_workspace_smtp_config(
@@ -2512,11 +2535,15 @@ def set_workspace_smtp_config(
     password: str,
     from_email: str,
 ) -> dict[str, Any]:
-    """Upsert the per-user workspace SMTP configuration."""
+    """Upsert the per-user workspace SMTP configuration.
+
+    The password is encrypted with the master key before persistence.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     user_id = ctx.user_id or "local"
     now = utc_now()
+    encrypted_password = encrypt_value(password)
     with transaction(conn):
         conn.execute(
             """
@@ -2534,15 +2561,281 @@ def set_workspace_smtp_config(
                 from_email = excluded.from_email,
                 updated_at = excluded.updated_at
             """,
-            (workspace_id, user_id, host, port, 1 if use_ssl else 0, username, password, from_email, now, now),
+            (workspace_id, user_id, host, port, 1 if use_ssl else 0, username, encrypted_password, from_email, now, now),
+        )
+    return get_workspace_smtp_config(ctx, conn)
+
+
+# -----------------------------------------------------------------------------
+# SL5: per-workspace IMAP accounts + email signature
+# -----------------------------------------------------------------------------
+
+EMAIL_ACCOUNT_COLUMNS = """
+    id,
+    workspace_id,
+    tenant_id,
+    user_id,
+    label,
+    provider,
+    host,
+    port,
+    username,
+    password,
+    folders_json,
+    auth_type,
+    read_only,
+    is_default,
+    schema_version,
+    source_version,
+    created_at,
+    updated_at
+"""
+
+
+def create_email_account(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    label: str,
+    provider: str,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    folders_json: str,
+    auth_type: str,
+    read_only: int,
+    is_default: int,
+) -> dict[str, Any]:
+    """Insert an email account scoped to the current workspace.
+
+    The password is encrypted with the master key before persistence.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    now = utc_now()
+    account_id = new_id("email")
+    encrypted_password = encrypt_value(password)
+
+    with transaction(conn):
+        # A workspace can only have one default account at a time.
+        if is_default:
+            conn.execute(
+                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ?",
+                (workspace_id,),
+            )
+        conn.execute(
+            f"""
+            INSERT INTO email_account (
+                id, workspace_id, tenant_id, user_id, label, provider, host, port,
+                username, password, folders_json, auth_type, read_only, is_default,
+                schema_version, source_version, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                workspace_id,
+                ctx.tenant_id,
+                ctx.user_id,
+                label,
+                provider,
+                host,
+                port,
+                username,
+                encrypted_password,
+                folders_json,
+                auth_type,
+                read_only,
+                is_default,
+                SCHEMA_VERSION,
+                "v1",
+                now,
+                now,
+            ),
         )
     row = conn.execute(
         f"""
-        SELECT {SMTP_CONFIG_COLUMNS}
-        FROM workspace_smtp_config
-        WHERE workspace_id = ? AND user_id = ?
+        SELECT {EMAIL_ACCOUNT_COLUMNS}
+        FROM email_account
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
         """,
-        (workspace_id, user_id),
+        (account_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     assert row is not None
-    return row_to_dict(row)
+    data = row_to_dict(row)
+    data["password"] = decrypt_value(data.get("password"))
+    return data
+
+
+def list_email_accounts(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    """Return all email accounts for the current workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    rows = conn.execute(
+        f"""
+        SELECT {EMAIL_ACCOUNT_COLUMNS}
+        FROM email_account
+        WHERE workspace_id = ? AND tenant_id IS ?
+        ORDER BY is_default DESC, created_at ASC
+        """,
+        (workspace_id, ctx.tenant_id),
+    ).fetchall()
+    result = []
+    for row in rows:
+        data = row_to_dict(row)
+        data["password"] = decrypt_value(data.get("password"))
+        result.append(data)
+    return result
+
+
+def get_email_account(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    account_id: str,
+) -> dict[str, Any] | None:
+    """Return a single email account if it belongs to the current workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"""
+        SELECT {EMAIL_ACCOUNT_COLUMNS}
+        FROM email_account
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        """,
+        (account_id, workspace_id, ctx.tenant_id),
+    ).fetchone()
+    if row is None:
+        return None
+    data = row_to_dict(row)
+    data["password"] = decrypt_value(data.get("password"))
+    return data
+
+
+def get_default_email_account(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> dict[str, Any] | None:
+    """Return the default email account for the workspace, if any."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"""
+        SELECT {EMAIL_ACCOUNT_COLUMNS}
+        FROM email_account
+        WHERE workspace_id = ? AND tenant_id IS ? AND is_default = 1
+        ORDER BY created_at ASC
+        LIMIT 1
+        """,
+        (workspace_id, ctx.tenant_id),
+    ).fetchone()
+    if row is None:
+        return None
+    data = row_to_dict(row)
+    data["password"] = decrypt_value(data.get("password"))
+    return data
+
+
+def update_email_account(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    account_id: str,
+    *,
+    label: str,
+    provider: str,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    folders_json: str,
+    auth_type: str,
+    read_only: int,
+    is_default: int,
+) -> dict[str, Any] | None:
+    """Update an existing email account. Password is encrypted on write."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    now = utc_now()
+    encrypted_password = encrypt_value(password)
+
+    with transaction(conn):
+        if is_default:
+            conn.execute(
+                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ?",
+                (workspace_id,),
+            )
+        conn.execute(
+            """
+            UPDATE email_account
+            SET label = ?, provider = ?, host = ?, port = ?, username = ?,
+                password = ?, folders_json = ?, auth_type = ?, read_only = ?,
+                is_default = ?, updated_at = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            """,
+            (
+                label,
+                provider,
+                host,
+                port,
+                username,
+                encrypted_password,
+                folders_json,
+                auth_type,
+                read_only,
+                is_default,
+                now,
+                account_id,
+                workspace_id,
+                ctx.tenant_id,
+            ),
+        )
+    return get_email_account(ctx, conn, account_id)
+
+
+def delete_email_account(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    account_id: str,
+) -> bool:
+    """Delete an email account. Returns True if a row was removed."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    with transaction(conn):
+        cursor = conn.execute(
+            "DELETE FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            (account_id, workspace_id, ctx.tenant_id),
+        )
+    return cursor.rowcount > 0
+
+
+def get_workspace_email_signature(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> str | None:
+    """Return the workspace-level email signature, if configured."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        "SELECT email_signature FROM workspace WHERE id = ? AND tenant_id IS ?",
+        (workspace_id, ctx.tenant_id),
+    ).fetchone()
+    return row["email_signature"] if row else None
+
+
+def set_workspace_email_signature(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    signature: str,
+) -> dict[str, Any] | None:
+    """Update the workspace-level email signature."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    with transaction(conn):
+        conn.execute(
+            "UPDATE workspace SET email_signature = ?, updated_at = ? WHERE id = ? AND tenant_id IS ?",
+            (signature, utc_now(), workspace_id, ctx.tenant_id),
+        )
+    return get_workspace(ctx, conn)

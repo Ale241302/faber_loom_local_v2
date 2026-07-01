@@ -25,6 +25,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("FABERLOOM_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("FABERLOOM_ENABLE_EMAIL_CONNECTOR", "true")
     monkeypatch.setenv(
         "FABERLOOM_USERS",
         f'{{"{USER_A}":"{PASSWORD}","{USER_B}":"{PASSWORD}"}}',

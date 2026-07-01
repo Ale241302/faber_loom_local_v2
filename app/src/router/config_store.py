@@ -98,6 +98,33 @@ def mask_key(value: str | None) -> str | None:
     return value[:4] + "•" * (len(value) - 8) + value[-4:]
 
 
+def encrypt_value(value: str | None) -> str | None:
+    """Encrypt a sensitive string with the configured master key.
+
+    Returns ``None`` for ``None`` input so nullable secrets stay null.
+    """
+
+    if value is None:
+        return None
+    return Fernet(get_master_key()).encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_value(value: str | None) -> str | None:
+    """Decrypt a value encrypted with :func:`encrypt_value`.
+
+    If decryption fails, the original value is returned as a fallback for
+    legacy plaintext rows. This makes migrations from plaintext to encrypted
+    storage transparent.
+    """
+
+    if value is None:
+        return None
+    try:
+        return Fernet(get_master_key()).decrypt(value.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return value
+
+
 def _is_global_user_id(user_id: str | None) -> bool:
     """Return True for identities that should use the shared/global config slice."""
 
