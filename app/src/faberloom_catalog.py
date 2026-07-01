@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from .context import Context
 from .db import create_routine, get_routine_by_name, update_routine
+from .skills import _detect_dangerous, compile_skill_md
 
 
 _PERSONA_MD_MAX_LEN = 20000
@@ -242,12 +243,29 @@ def import_catalog_items(
 
     Existing routines with the same name are updated (their content is replaced
     and approval is cleared). New routines are created inactive and unapproved.
+    All imported content passes the same injection canaries used for SKILL.md.
     """
 
     items = [get_catalog_item(item_id) for item_id in item_ids]
     items = [item for item in items if item is not None]
     if not items:
         return []
+
+    for item in items:
+        for field, label in (
+            (item.persona_md, "persona_md"),
+            (item.skill_md, "skill_md"),
+        ):
+            dangers = _detect_dangerous(field)
+            if dangers:
+                raise ValueError(
+                    f"Unsafe {label} content in catalog item '{item.id}': " + "; ".join(dangers)
+                )
+        # Ensure the minimal skill_md is syntactically valid and frontmatter is safe.
+        try:
+            compile_skill_md(item.skill_md)
+        except ValueError as exc:
+            raise ValueError(f"Invalid skill_md in catalog item '{item.id}': {exc}") from exc
 
     routines: list[dict[str, Any]] = []
     for item in items:

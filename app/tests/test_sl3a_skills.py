@@ -121,13 +121,15 @@ def _approve_routine(
 def _patch_fake_router(
     monkeypatch: pytest.MonkeyPatch,
     content_json: dict[str, Any] | None = None,
+    cost_usd: float = 0.0,
 ) -> None:
     from app.src.router import cost as cost_module
     from app.src.router.engine import Router
-    from app.src.router.models import CompletionRequest, CompletionResult, ProviderConfig
+    from app.src.router.models import CompletionRequest, CompletionResult, ProviderConfig, RouterSettings
     from app.src.router.providers import Provider
 
     import app.src.api as api_module
+    import os
 
     original_build_router = api_module.build_router
     original_allowlist = {k: v.copy() for k, v in cost_module.MODEL_ALLOWLIST.items()}
@@ -154,12 +156,20 @@ def _patch_fake_router(
                 provider_slug="fake",
                 input_tokens=10,
                 output_tokens=8,
-                cost_usd=0.0,
+                cost_usd=cost_usd,
                 duration_ms=5,
             )
 
     def fake_build_router() -> Router:
-        return Router(providers=[FakeProvider()])
+        budget_cap = 5.0
+        try:
+            budget_cap = float(os.getenv("FABERLOOM_BUDGET_CAP_USD", "5.0"))
+        except ValueError:
+            pass
+        return Router(
+            settings=RouterSettings(budget_cap_usd=budget_cap),
+            providers=[FakeProvider()],
+        )
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
 
@@ -604,7 +614,7 @@ def test_chat_invoke_routine_endpoint(client: TestClient, monkeypatch: pytest.Mo
 
     response = client.post(
         f"/api/workspaces/{workspace_id}/chats/{chat['id']}/invoke",
-        json={"routine_id": routine["id"]},
+        json={"routine_id": routine["id"], "user_request": "Oxford"},
     )
     assert response.status_code == 200, response.text
     data = response.json()
@@ -612,7 +622,7 @@ def test_chat_invoke_routine_endpoint(client: TestClient, monkeypatch: pytest.Mo
     assert "12.5" in data["message"]["content"]
 
     messages = client.get(f"/api/workspaces/{workspace_id}/chats/{chat['id']}/messages").json()
-    assert any(m["role"] == "user" and "@cotizador" in m["content"] for m in messages)
+    assert any(m["role"] == "user" and m["content"] == "Oxford" for m in messages)
 
 
 def test_chat_invoke_with_model_override(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -728,3 +738,233 @@ def test_routine_tenant_isolation(client: TestClient, monkeypatch: pytest.Monkey
         headers=headers_a,
     )
     assert response.status_code == 200
+
+
+# -----------------------------------------------------------------------------
+# Fase 3 must-fix gates (AUDITORIA_FASE3_fugu.md)
+# -----------------------------------------------------------------------------
+
+
+def test_at_mention_duplicate_name_returns_409(client: TestClient) -> None:
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    # Bypass the API-level duplicate-name guard to simulate two routines with the
+    # same name in the same workspace/tenant.
+    from app.src.context import Context
+    from app.src.db import create_routine as db_create_routine, db_session
+
+    with db_session() as conn:
+        ctx = Context(workspace_id=workspace_id)
+        db_create_routine(
+            ctx,
+            conn,
+            name="cotizador",
+            skill_md=SKILL_MD,
+            is_active=1,
+            category="custom",
+            source_version="v1",
+        )
+        conn.commit()
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Ambiguous mention"},
+    ).json()
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "@cotizador cuánto sale Oxford"},
+    )
+    assert response.status_code == 409, response.text
+    assert "ambiguous" in response.json()["detail"].lower()
+
+
+def test_at_mention_inactive_routine_returns_409(client: TestClient) -> None:
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    response = client.patch(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}",
+        json={"is_active": 0},
+    )
+    assert response.status_code == 200, response.text
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Inactive mention"},
+    ).json()
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "@cotizador cuánto sale Oxford"},
+    )
+    assert response.status_code == 409, response.text
+    assert "inactive" in response.json()["detail"].lower()
+
+
+def test_invoke_inactive_routine_returns_409(client: TestClient) -> None:
+    _patch_fake_router(pytest.MonkeyPatch(), content_json={"precio": 12.5})
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    response = client.patch(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}",
+        json={"is_active": 0},
+    )
+    assert response.status_code == 200, response.text
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Inactive invoke"},
+    ).json()
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/invoke",
+        json={"routine_id": routine["id"]},
+    )
+    assert response.status_code == 409, response.text
+    assert "inactive" in response.json()["detail"].lower()
+
+
+def test_template_category_cannot_run_or_invoke(client: TestClient) -> None:
+    _patch_fake_router(pytest.MonkeyPatch(), content_json={"precio": 12.5})
+    workspace_id = _demo_workspace_id(client)
+    payload = _compile_payload(SKILL_MD)
+    payload["category"] = "template"
+    response = client.post(f"/api/workspaces/{workspace_id}/routines", json=payload)
+    assert response.status_code == 201, response.text
+    routine = response.json()
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}/run",
+        json={"input_json": {"producto": "Oxford"}},
+    )
+    assert response.status_code == 409, response.text
+    assert "cannot be executed" in response.json()["detail"].lower()
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Template invoke"},
+    ).json()
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/invoke",
+        json={"routine_id": routine["id"]},
+    )
+    assert response.status_code == 409, response.text
+
+
+def test_invalid_preset_model_returns_422(client: TestClient) -> None:
+    workspace_id = _demo_workspace_id(client)
+    payload = _compile_payload(SKILL_MD)
+    payload["preset_id"] = "openai:gpt-5"  # not in allowlist
+    response = client.post(f"/api/workspaces/{workspace_id}/routines", json=payload)
+    assert response.status_code == 422, response.text
+
+
+def test_malformed_tools_allowlist_returns_422(client: TestClient) -> None:
+    workspace_id = _demo_workspace_id(client)
+    payload = _compile_payload(SKILL_MD)
+    payload["tools_allowlist"] = "not-json"
+    response = client.post(f"/api/workspaces/{workspace_id}/routines", json=payload)
+    assert response.status_code == 422, response.text
+
+    payload = _compile_payload(SKILL_MD)
+    payload["tools_allowlist"] = '{"tool": "calculator"}'
+    response = client.post(f"/api/workspaces/{workspace_id}/routines", json=payload)
+    assert response.status_code == 422, response.text
+
+
+def test_skill_run_respects_budget_cap(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FABERLOOM_BUDGET_CAP_USD", "0.5")
+    _patch_fake_router(monkeypatch, content_json={"precio": 12.5}, cost_usd=1.0)
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}/run",
+        json={"input_json": {"producto": "Oxford"}},
+    )
+    assert response.status_code == 200, response.text
+    run = response.json()
+    assert run["status"] == "failed"
+    evidence = json.loads(run["evidence_json"])
+    assert any("exceeds" in str(item) or "budget" in str(item).lower() for item in evidence)
+
+
+def test_provider_override_rejected_for_run_and_mention(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_fake_router(monkeypatch, content_json={"precio": 12.5})
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}/run",
+        json={"input_json": {"producto": "Oxford"}, "provider_slug": "fake", "model": "fake-model"},
+    )
+    assert response.status_code == 409, response.text
+    assert "override" in response.json()["detail"].lower()
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Override mention"},
+    ).json()
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "@cotizador cuánto sale Oxford", "provider_slug": "fake", "model": "fake-model"},
+    )
+    assert response.status_code == 409, response.text
+    assert "override" in response.json()["detail"].lower()
+
+
+def test_invoke_persists_versions_and_run_id(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_fake_router(monkeypatch, content_json={"precio": 12.5})
+    workspace_id = _demo_workspace_id(client)
+    routine = _create_routine(client, workspace_id, SKILL_MD)
+    _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
+
+    # Force explicit source/skill versions via update.
+    response = client.patch(
+        f"/api/workspaces/{workspace_id}/routines/{routine['id']}",
+        json={"source_version": "v42", "skill_version": "1.2.3"},
+    )
+    assert response.status_code == 200, response.text
+    routine = response.json()
+    assert routine["source_version"] == "v42"
+    assert routine["skill_version"] == "1.2.3"
+
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats",
+        json={"title": "Versioned invoke"},
+    ).json()
+
+    response = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/invoke",
+        json={"routine_id": routine["id"], "user_request": "Oxford"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["message"]["role"] == "assistant"
+
+    route = data["message"]["route"]
+    assert route["routine_id"] == routine["id"]
+    assert route["routine_version"] == routine["routine_version"]
+    assert route["skill_version"] == "1.2.3"
+    assert route["source_version"] == "v42"
+    assert "run_id" in route
+
+    messages = client.get(f"/api/workspaces/{workspace_id}/chats/{chat['id']}/messages").json()
+    user_msg = next((m for m in messages if m["role"] == "user"), None)
+    assert user_msg is not None
+    assert user_msg["content"] == "Oxford"
+
+    run_id = route["run_id"]
+    run = client.get(f"/api/workspaces/{workspace_id}/routine-runs/{run_id}").json()
+    assert run["routine_version"] == routine["routine_version"]
+    assert run["skill_version"] == "1.2.3"
+    assert run["source_version"] == "v42"

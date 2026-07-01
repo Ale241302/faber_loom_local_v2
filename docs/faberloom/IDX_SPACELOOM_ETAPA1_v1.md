@@ -100,6 +100,7 @@ Este es el índice maestro del track **SpaceLoom Etapa 1**: app de escritorio si
 | `AUDIT_SPACELOOM_ETAPA1_STRESS_v1.md` | Stress audit del spike | VIGENTE |
 | `AUDIT_FB_IDENTITY_NORMALIZER_v1.md` | Audit identidad | DRAFT |
 | `AUDIT_FB_SESION_20260615_v1.md` | Audit sesión 2026-06-15 | DRAFT |
+| `Plan/AUDITORIA_FASE3_fugu.md` | Must-fix SL3a/b seguridad/HITL | RESUELTO |
 
 ---
 

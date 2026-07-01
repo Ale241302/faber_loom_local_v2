@@ -611,16 +611,12 @@ function SpaceView({ activeWorkspace }) {
 
   useEffect(() => {
     const handler = async (e) => {
-      const { routine_id, provider_slug, model } = e.detail || {};
+      const { routine_id } = e.detail || {};
       if (!activeWorkspace || !activeChatId || !routine_id) return;
       setBusy(true);
       setError(null);
       try {
         const body = { routine_id };
-        if (provider_slug && model) {
-          body.provider_slug = provider_slug;
-          body.model = model;
-        }
         const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${activeChatId}/invoke`, body);
         if (completion && completion.message) {
           setTypingTarget({ id: completion.message.id, content: completion.message.content });
@@ -809,22 +805,14 @@ function ToolsetPanel({ activeWorkspace }) {
   const [routines, setRoutines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [routerStatus, setRouterStatus] = useState(null);
-  const [modelAllowlist, setModelAllowlist] = useState({});
 
   const load = async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     setError(null);
     try {
-      const [list, status, cfg] = await Promise.all([
-        apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
-        apiGet(`/api/workspaces/${activeWorkspace.id}/router/status`),
-        apiGet(`/api/workspaces/${activeWorkspace.id}/providers`),
-      ]);
+      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/routines`);
       setRoutines(Array.isArray(list) ? list : []);
-      setRouterStatus(status);
-      setModelAllowlist(cfg.model_allowlist || {});
     } catch (err) {
       setError(err.message);
     }
@@ -838,9 +826,9 @@ function ToolsetPanel({ activeWorkspace }) {
     return () => window.removeEventListener("faberloom-refresh", handler);
   }, [activeWorkspace]);
 
-  const invoke = (routine, provider_slug, model) => {
+  const invoke = (routine) => {
     window.dispatchEvent(new CustomEvent("faberloom:invoke-routine", {
-      detail: { routine_id: routine.id, provider_slug, model },
+      detail: { routine_id: routine.id },
     }));
   };
 
@@ -877,8 +865,6 @@ function ToolsetPanel({ activeWorkspace }) {
           <ToolsetItem
             key={routine.id}
             routine={routine}
-            routerStatus={routerStatus}
-            modelAllowlist={modelAllowlist}
             onInvoke={isExecutableTab ? invoke : null}
           />
         ))}
@@ -887,43 +873,16 @@ function ToolsetPanel({ activeWorkspace }) {
   </div>;
 }
 
-function ToolsetItem({ routine, routerStatus, modelAllowlist, onInvoke }) {
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
-
-  useEffect(() => {
-    const preset = parsePreset(routine.preset_id || "");
-    setProvider(preset.provider_slug || "");
-    setModel(preset.model || "");
-  }, [routine.preset_id]);
-
-  const providers = (routerStatus?.providers || []).filter((p) => p.available);
-  const models = modelAllowlist[provider] || [];
-
+function ToolsetItem({ routine, onInvoke }) {
   return <div className="toolset-card">
     <div className="toolset-card-head">
       <div className="toolset-card-title">{routine.name}</div>
       <span style={S.badge}>{routine.category}</span>
     </div>
     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{routine.id}</div>
-    <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
-      <label style={{ ...S.label, margin: 0, fontSize: 11 }}>
-        Provider
-        <select style={S.select} value={provider} onChange={(e) => { setProvider(e.target.value); setModel(""); }}>
-          <option value="">Auto</option>
-          {providers.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
-        </select>
-      </label>
-      <label style={{ ...S.label, margin: 0, fontSize: 11 }}>
-        Modelo
-        <select style={S.select} value={model} onChange={(e) => setModel(e.target.value)} disabled={!provider}>
-          <option value="">Seleccionar</option>
-          {models.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-      </label>
-    </div>
+    {routine.preset_id && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}><Icon name="route" size={12}/> {routine.preset_id}</div>}
     {onInvoke && (
-      <button className="toolset-invoke" onClick={() => onInvoke(routine, provider || undefined, model || undefined)} disabled={!provider || !model}>
+      <button className="toolset-invoke" onClick={() => onInvoke(routine)}>
         <Icon name="send" size={14}/>Invocar en chat
       </button>
     )}

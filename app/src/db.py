@@ -922,6 +922,10 @@ def insert_message(
     role: str,
     content: str,
     route: dict[str, Any] | None = None,
+    routine_version: str | None = None,
+    skill_version: str | None = None,
+    source_version: str | None = None,
+    approved_by: str | None = None,
 ) -> dict[str, Any]:
     workspace_id = ctx.require_scoped_workspace()
     if get_chat(ctx, conn, chat_id) is None:
@@ -964,11 +968,11 @@ def insert_message(
             ctx.actor_role_at_decision,
             role,
             json.dumps(content_json, ensure_ascii=False),
-            None,
-            None,
+            routine_version,
+            skill_version,
             SCHEMA_VERSION,
-            None,
-            None,
+            source_version,
+            approved_by,
             now,
         ),
     )
@@ -1656,6 +1660,7 @@ def create_routine(
     persona_md: str = "",
     is_active: int = 1,
     source_version: str = "v1",
+    skill_version: str | None = None,
     category: str = "custom",
 ) -> dict[str, Any]:
     """Insert a routine scoped to the current workspace."""
@@ -1693,7 +1698,7 @@ def create_routine(
             is_active,
             category,
             routine_version,
-            None,
+            skill_version,
             SCHEMA_VERSION,
             source_version,
             None,
@@ -2009,9 +2014,9 @@ def approve_routine(
         """
         UPDATE routine
         SET approved_by = ?, updated_at = ?
-        WHERE id = ? AND workspace_id = ? AND approved_by IS NULL
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND approved_by IS NULL
         """,
-        (approved_by, utc_now(), routine_id, workspace_id),
+        (approved_by, utc_now(), routine_id, workspace_id, ctx.tenant_id),
     )
     if cursor.rowcount == 0:
         return None
@@ -2132,6 +2137,7 @@ ALLOWED_ROUTINE_UPDATE_FIELDS = frozenset(
         "persona_md",
         "is_active",
         "source_version",
+        "skill_version",
         "approved_by",
         "category",
         "routine_version",

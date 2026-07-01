@@ -646,10 +646,16 @@ def api_create_completion(
             )
         routine = routines[0]
 
+        # Provider/model overrides are not allowed for @mention of approved routines;
+        # the routine's preset_id is the HITL-approved source of truth.
+        if payload.provider_slug is not None or payload.model is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Provider/model overrides are not allowed for @mention",
+            )
+
         router = build_router()
-        provider_slug, model = _resolve_routine_provider_model(
-            routine, payload.provider_slug, payload.model, router
-        )
+        provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
         if router.has_available_provider():
             _validate_completion_choice(
                 ChatCompletionRequest(
@@ -676,7 +682,16 @@ def api_create_completion(
         assistant_content = _skill_result_content(result)
         audit_event: AuditEvent | None = None
         with transaction(conn):
-            insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.message)
+            insert_message(
+                ctx,
+                conn,
+                chat_id=chat_id,
+                role="user",
+                content=payload.message,
+                routine_version=routine.get("routine_version"),
+                skill_version=routine.get("skill_version"),
+                source_version=routine.get("source_version"),
+            )
             route = {
                 "provider_slug": result.get("provider_slug", "router"),
                 "model": result.get("model", "unknown"),
@@ -685,10 +700,14 @@ def api_create_completion(
                 "cost_usd": result.get("cost_usd", 0.0),
                 "duration_ms": result.get("duration_ms", 0),
                 "routine_id": routine["id"],
+                "run_id": run["id"],
                 "routine_name": routine["name"],
                 "routine_preset_id": routine.get("preset_id"),
-                "requested_provider_slug": payload.provider_slug or provider_slug,
-                "requested_model": payload.model or model,
+                "routine_version": routine.get("routine_version"),
+                "skill_version": routine.get("skill_version"),
+                "source_version": routine.get("source_version"),
+                "requested_provider_slug": provider_slug,
+                "requested_model": model,
                 "pricing_version": router_cost.PRICING_VERSION,
                 "budget_usd": round(spent + result.get("cost_usd", 0.0), 8),
                 "budget_cap_usd": router.settings.budget_cap_usd,
@@ -701,6 +720,9 @@ def api_create_completion(
                     role="assistant",
                     content=assistant_content,
                     route=route,
+                    routine_version=routine.get("routine_version"),
+                    skill_version=routine.get("skill_version"),
+                    source_version=routine.get("source_version"),
                 )
             )
             audit_event = _persist_skill_usage(
@@ -716,11 +738,15 @@ def api_create_completion(
                     "user_request": user_request,
                     "provider_slug": provider_slug,
                     "model": model,
-                    "requested_provider_slug": payload.provider_slug,
-                    "requested_model": payload.model,
                     "routine_preset_id": routine.get("preset_id"),
                     "routine_version": routine.get("routine_version"),
+                    "skill_version": routine.get("skill_version"),
+                    "source_version": routine.get("source_version"),
+                    "invoked_via": "mention",
                 },
+                routine_version=routine.get("routine_version"),
+                skill_version=routine.get("skill_version"),
+                source_version=routine.get("source_version"),
             )
 
         _mirror_audit(audit_event)
@@ -1020,7 +1046,8 @@ def api_invoke_routine(
 
     spent = sum_workspace_usage_cost(ctx, conn)
     user_request = (payload.user_request or "").strip()
-    user_message_content = f"@{routine['name']}" + (f" {user_request}" if user_request else "")
+    # Persist the real user request (which may be empty) instead of inventing a
+    # synthetic @mention. The route carries the routine identity and run_id.
     run, result = _execute_skill_run(
         ctx,
         conn,
@@ -1034,7 +1061,17 @@ def api_invoke_routine(
     assistant_content = _skill_result_content(result)
     audit_event: AuditEvent | None = None
     with transaction(conn):
-        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message_content)
+        if user_request:
+            insert_message(
+                ctx,
+                conn,
+                chat_id=chat_id,
+                role="user",
+                content=user_request,
+                routine_version=routine.get("routine_version"),
+                skill_version=routine.get("skill_version"),
+                source_version=routine.get("source_version"),
+            )
         route = {
             "provider_slug": result.get("provider_slug", "router"),
             "model": result.get("model", "unknown"),
@@ -1043,8 +1080,12 @@ def api_invoke_routine(
             "cost_usd": result.get("cost_usd", 0.0),
             "duration_ms": result.get("duration_ms", 0),
             "routine_id": routine["id"],
+            "run_id": run["id"],
             "routine_name": routine["name"],
             "routine_preset_id": routine.get("preset_id"),
+            "routine_version": routine.get("routine_version"),
+            "skill_version": routine.get("skill_version"),
+            "source_version": routine.get("source_version"),
             "requested_provider_slug": provider_slug,
             "requested_model": model,
             "pricing_version": router_cost.PRICING_VERSION,
@@ -1059,6 +1100,9 @@ def api_invoke_routine(
                 role="assistant",
                 content=assistant_content,
                 route=route,
+                routine_version=routine.get("routine_version"),
+                skill_version=routine.get("skill_version"),
+                source_version=routine.get("source_version"),
             )
         )
         audit_event = _persist_skill_usage(
@@ -1077,8 +1121,13 @@ def api_invoke_routine(
                 "model": model,
                 "routine_preset_id": routine.get("preset_id"),
                 "routine_version": routine.get("routine_version"),
+                "skill_version": routine.get("skill_version"),
+                "source_version": routine.get("source_version"),
                 "invoked_via": "toolset",
             },
+            routine_version=routine.get("routine_version"),
+            skill_version=routine.get("skill_version"),
+            source_version=routine.get("source_version"),
         )
 
     _mirror_audit(audit_event)
@@ -1157,7 +1206,7 @@ def _mirror_audit(event: AuditEvent) -> None:
 # -----------------------------------------------------------------------------
 
 
-_AT_MENTION_RE = re.compile(r"^@([A-Za-z0-9_\-]+)(?:\s+(.*))?$", re.DOTALL)
+_AT_MENTION_RE = re.compile(r"^@(\S+)(?:\s+(.*))?$", re.DOTALL)
 
 _EXECUTABLE_ROUTINE_CATEGORIES = {"skill", "agent", "custom"}
 
@@ -1304,6 +1353,8 @@ def _execute_skill_run(
             status="running",
             task_type=routine.get("category"),
             routine_version=routine.get("routine_version"),
+            skill_version=routine.get("skill_version"),
+            source_version=routine.get("source_version"),
         )
 
     result = execute_skill(
@@ -1339,6 +1390,9 @@ def _persist_skill_usage(
     run_id: str,
     result: dict[str, Any],
     request_json: dict[str, Any],
+    routine_version: str | None = None,
+    skill_version: str | None = None,
+    source_version: str | None = None,
 ) -> AuditEvent:
     """Record a usage_record and audit event for a skill execution."""
 
@@ -1361,7 +1415,7 @@ def _persist_skill_usage(
         attempts_json=[{"provider": result.get("provider_slug", "router"), "status": status}],
         request_json=request_json,
         response_json={"run_id": run_id, "finish_status": status},
-        source_version=router_cost.PRICING_VERSION,
+        source_version=source_version or router_cost.PRICING_VERSION,
     )
     return audit_writer.write(
         ctx,
@@ -1375,7 +1429,13 @@ def _persist_skill_usage(
             "model": result.get("model"),
             "cost_usd": result.get("cost_usd"),
             "error": error,
+            "routine_version": routine_version,
+            "skill_version": skill_version,
+            "source_version": source_version,
         },
+        routine_version=routine_version,
+        skill_version=skill_version,
+        source_version=source_version,
         mirror_jsonl=False,
     )
 
@@ -2761,6 +2821,10 @@ def api_create_routine(
     if not persona_md and payload.skill_md:
         persona_md = _extract_runtime(payload.skill_md).get("persona", "")
 
+    skill_version = payload.skill_version
+    if skill_version is None and compiled.get("version"):
+        skill_version = compiled["version"]
+
     event: AuditEvent | None = None
     with transaction(conn):
         created = create_routine(
@@ -2775,6 +2839,7 @@ def api_create_routine(
             persona_md=persona_md,
             is_active=payload.is_active,
             source_version=payload.source_version,
+            skill_version=skill_version,
             category=payload.category,
         )
         event = audit_writer.write(
@@ -2873,9 +2938,11 @@ def api_update_routine(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Routine name must match the SKILL.md frontmatter name.",
             )
-        # Keep frontmatter-derived persona unless the user explicitly supplied one.
+        # Keep frontmatter-derived persona and skill_version unless the user explicitly supplied them.
         if "persona_md" not in updates:
             updates["persona_md"] = _extract_runtime(updates["skill_md"]).get("persona", "")
+        if "skill_version" not in updates and compiled.get("version"):
+            updates["skill_version"] = compiled["version"]
 
     if "name" in updates and updates["name"] != existing.get("name"):
         if is_routine_name_taken(ctx, conn, updates["name"], exclude_id=routine_id):
@@ -2890,6 +2957,10 @@ def api_update_routine(
         field in updates and updates[field] != existing.get(field)
         for field in _ROUTINE_APPROVAL_SENSITIVE_FIELDS
     )
+
+    # Bumping skill_version is also a content change; include it in approval invalidation.
+    if "skill_version" in updates and updates.get("skill_version") != existing.get("skill_version"):
+        approval_cleared = True
 
     with transaction(conn):
         updated = update_routine(ctx, conn, routine_id, **updates)
@@ -2993,10 +3064,16 @@ def api_run_routine(
             detail=f"Routine category '{routine.get('category')}' cannot be executed",
         )
 
+    # Provider/model overrides are not allowed for approved routines; the HITL
+    # approval covers the routine's preset_id.
+    if payload.provider_slug is not None or payload.model is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Provider/model overrides are not allowed for routine runs",
+        )
+
     router = build_router()
-    provider_slug, model = _resolve_routine_provider_model(
-        routine, payload.provider_slug, payload.model, router
-    )
+    provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
             ChatCompletionRequest(
@@ -3033,11 +3110,14 @@ def api_run_routine(
                 "input_json": payload.input_json,
                 "provider_slug": provider_slug,
                 "model": model,
-                "requested_provider_slug": payload.provider_slug,
-                "requested_model": payload.model,
                 "routine_preset_id": routine.get("preset_id"),
                 "routine_version": routine.get("routine_version"),
+                "skill_version": routine.get("skill_version"),
+                "source_version": routine.get("source_version"),
             },
+            routine_version=routine.get("routine_version"),
+            skill_version=routine.get("skill_version"),
+            source_version=routine.get("source_version"),
         )
 
     _mirror_audit(audit_event)

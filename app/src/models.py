@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 SCHEMA_VERSION = 17
@@ -50,13 +50,20 @@ def _must_be_json_array_of_strings(value: str, field_name: str) -> str:
         raise ValueError(f"{field_name} must be valid JSON: {exc}") from exc
     if not isinstance(parsed, list):
         raise ValueError(f"{field_name} must be a JSON array")
+    if len(parsed) > 100:
+        raise ValueError(f"{field_name} may not contain more than 100 entries")
     if not all(isinstance(item, str) and item.strip() for item in parsed):
         raise ValueError(f"{field_name} must contain only non-empty strings")
+    # Wildcard '*' must be the only entry to keep the allowlist unambiguous.
+    if "*" in parsed and len(parsed) > 1:
+        raise ValueError(f"{field_name}: wildcard '*' must be the only entry")
     return stripped
 
 
 def _validate_preset_id(value: str | None) -> str | None:
-    """Validate that a preset_id is in 'provider:model' format with a known provider."""
+    """Validate that a preset_id is in 'provider:model' format with a known provider
+    and a model that appears in the allowlist for that provider.
+    """
 
     if value is None:
         return None
@@ -70,6 +77,15 @@ def _validate_preset_id(value: str | None) -> str | None:
         raise ValueError("preset_id must have non-empty provider and model")
     if provider not in _PROVIDER_SLUGS_FOR_PRESET:
         raise ValueError(f"Unknown provider '{provider}' in preset_id")
+
+    # Avoid a circular import: router.cost is a leaf module.
+    from .router import cost as router_cost
+
+    allowed = router_cost.MODEL_ALLOWLIST.get(provider, set())
+    if model not in allowed:
+        raise ValueError(
+            f"Model '{model}' is not allowed for provider '{provider}'. Allowed: {sorted(allowed)}"
+        )
     return stripped
 
 
@@ -789,6 +805,7 @@ class RoutineCreate(BaseModel):
     persona_md: str = Field(default="", max_length=20000)
     is_active: int = Field(default=1, ge=0, le=1)
     source_version: str = Field(default="v1", min_length=1, max_length=120)
+    skill_version: str | None = Field(default=None, max_length=120)
     category: str = Field(default="custom", max_length=20)
 
     @field_validator("category")
@@ -855,6 +872,7 @@ class RoutineUpdate(BaseModel):
     persona_md: str | None = Field(default=None, max_length=20000)
     is_active: int | None = Field(default=None, ge=0, le=1)
     source_version: str | None = Field(default=None, min_length=1, max_length=120)
+    skill_version: str | None = Field(default=None, max_length=120)
     category: str | None = Field(default=None, max_length=20)
 
     @field_validator("category")
