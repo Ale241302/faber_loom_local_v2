@@ -40,10 +40,10 @@ def create_session(
     }
     redis = get_redis_client()
     # Global index to resolve tenant_id from session_id.
-    redis.setex(f"{SESSION_INDEX_PREFIX}{session_id}", ttl, str(tenant_id))
+    redis.set(f"{SESSION_INDEX_PREFIX}{session_id}", str(tenant_id), ex=ttl)
     # Tenant-scoped payload key.
     key = tenant_key(tenant_id, f"session:{session_id}")
-    redis.setex(key, ttl, json.dumps(payload))
+    redis.set(key, json.dumps(payload), ex=ttl)
     return session_id
 
 

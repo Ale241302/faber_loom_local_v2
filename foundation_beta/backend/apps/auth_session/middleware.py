@@ -34,7 +34,11 @@ class SessionMiddleware:
         if not tenant_id_raw:
             return
 
-        tenant_id = tenant_id_raw.decode()
+        tenant_id = (
+            tenant_id_raw.decode()
+            if isinstance(tenant_id_raw, bytes)
+            else tenant_id_raw
+        )
         payload = get_session(session_id, tenant_id)
         if not payload:
             return

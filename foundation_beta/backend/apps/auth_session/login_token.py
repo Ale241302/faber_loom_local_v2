@@ -29,7 +29,7 @@ def create_login_token(
     redis = get_redis_client()
     key = _key(tenant_id, token)
     # Short-lived: 5 minutes is plenty for the 2FA step.
-    redis.setex(key, 300, json.dumps(payload))
+    redis.set(key, json.dumps(payload), ex=300)
     return token
 
 
