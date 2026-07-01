@@ -50,13 +50,10 @@ def test_postgres_rls_tenant_a_cannot_read_tenant_b(
         visible = list(SampleItem.objects.filter(id=sample_item_b.id))
         assert visible == []
 
-        # Raw query with explicit tenant_id parameter for comparison.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id FROM sample_items WHERE tenant_id = %s",
-                [str(tenant_b.id)],
-            )
-            assert cursor.fetchone() is not None  # Row exists in the table.
+        # Same row is visible when we switch to tenant B context.
+        set_db_tenant(tenant_b.id)
+        visible_b = list(SampleItem.objects.filter(id=sample_item_b.id))
+        assert visible_b == [sample_item_b]
     finally:
         clear_db_tenant()
 
