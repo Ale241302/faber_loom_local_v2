@@ -60,6 +60,16 @@ class Command(BaseCommand):
         )
         return cursor.fetchone() is not None
 
+    def _policy_exists(self, cursor, policy_name, table):
+        cursor.execute(
+            """
+            SELECT 1 FROM pg_policies
+            WHERE policyname = %s AND tablename = %s
+            """,
+            [policy_name, table],
+        )
+        return cursor.fetchone() is not None
+
     def handle(self, *args, **options):
         tables = options["tables"] or self.DEFAULT_TABLES
         drop_existing = options["drop_existing"]
@@ -89,16 +99,24 @@ class Command(BaseCommand):
                     f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY;'
                 )
 
-                if drop_existing:
+                if drop_existing and self._policy_exists(cursor, policy_name, table):
                     cursor.execute(
-                        f'DROP POLICY IF EXISTS "{policy_name}" ON "{table}";'
+                        f'DROP POLICY "{policy_name}" ON "{table}";'
                     )
 
-                cursor.execute(
-                    f"""
-                    CREATE POLICY "{policy_name}" ON "{table}"
-                        USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID);
-                    """
-                )
+                if not self._policy_exists(cursor, policy_name, table):
+                    cursor.execute(
+                        f"""
+                        CREATE POLICY "{policy_name}" ON "{table}"
+                            USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID);
+                        """
+                    )
+                    self.stdout.write(
+                        self.style.NOTICE(f"  Created policy {policy_name}.")
+                    )
+                else:
+                    self.stdout.write(
+                        self.style.NOTICE(f"  Policy {policy_name} already exists.")
+                    )
 
         self.stdout.write(self.style.SUCCESS("RLS policies applied successfully."))
