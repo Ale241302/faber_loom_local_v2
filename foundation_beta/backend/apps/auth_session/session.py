@@ -83,7 +83,11 @@ def revoke_all_user_sessions(user_id: str | uuid.UUID, tenant_id: str | uuid.UUI
         try:
             payload = json.loads(raw)
             if payload.get("user_id") == str(user_id):
-                session_id = key.decode().split(":")[-1]
+                session_id = (
+                    key.decode().split(":")[-1]
+                    if isinstance(key, bytes)
+                    else key.split(":")[-1]
+                )
                 redis.delete(f"{SESSION_INDEX_PREFIX}{session_id}")
                 redis.delete(key)
                 removed += 1
@@ -105,7 +109,11 @@ def list_user_sessions(user_id: str | uuid.UUID, tenant_id: str | uuid.UUID) -> 
             payload = json.loads(raw)
             if payload.get("user_id") == str(user_id):
                 # key format: tenant:<id>:session:<session_id>
-                session_id = key.decode().split(":")[-1]
+                session_id = (
+                    key.decode().split(":")[-1]
+                    if isinstance(key, bytes)
+                    else key.split(":")[-1]
+                )
                 sessions.append(
                     {
                         "session_id": session_id,
