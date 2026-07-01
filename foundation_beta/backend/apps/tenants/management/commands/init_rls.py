@@ -50,12 +50,28 @@ class Command(BaseCommand):
         )
         return cursor.fetchone() is not None
 
+    def _table_exists(self, cursor, table):
+        cursor.execute(
+            """
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = %s
+            """,
+            [table],
+        )
+        return cursor.fetchone() is not None
+
     def handle(self, *args, **options):
         tables = options["tables"] or self.DEFAULT_TABLES
         drop_existing = options["drop_existing"]
 
         with connection.cursor() as cursor:
             for table in tables:
+                if not self._table_exists(cursor, table):
+                    self.stdout.write(
+                        self.style.WARNING(f"Skipping {table}: table does not exist.")
+                    )
+                    continue
+
                 if not self._has_tenant_id_column(cursor, table):
                     self.stdout.write(
                         self.style.WARNING(f"Skipping {table}: no tenant_id column.")
@@ -64,59 +80,25 @@ class Command(BaseCommand):
 
                 self.stdout.write(self.style.NOTICE(f"Applying RLS to {table}..."))
 
-                cursor.execute(
-                    """
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1 FROM information_schema.tables
-                            WHERE table_name = %s
-                        ) THEN
-                            EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', %s);
-                            EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', %s);
-                        END IF;
-                    END $$;
-                    """,
-                    [table, table, table, table],
-                )
-
                 policy_name = f"tenant_isolation_{table}"
+
+                cursor.execute(
+                    f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY;'
+                )
+                cursor.execute(
+                    f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY;'
+                )
 
                 if drop_existing:
                     cursor.execute(
-                        """
-                        DO $$
-                        BEGIN
-                            IF EXISTS (
-                                SELECT 1 FROM pg_policies
-                                WHERE policyname = %s AND tablename = %s
-                            ) THEN
-                                EXECUTE format('DROP POLICY %I ON %I', %s, %s);
-                            END IF;
-                        END $$;
-                        """,
-                        [policy_name, table, policy_name, table],
+                        f'DROP POLICY IF EXISTS "{policy_name}" ON "{table}";'
                     )
 
                 cursor.execute(
+                    f"""
+                    CREATE POLICY "{policy_name}" ON "{table}"
+                        USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::UUID);
                     """
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1 FROM information_schema.tables
-                            WHERE table_name = %s
-                        ) AND NOT EXISTS (
-                            SELECT 1 FROM pg_policies
-                            WHERE policyname = %s AND tablename = %s
-                        ) THEN
-                            EXECUTE format(
-                                'CREATE POLICY %I ON %I USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::UUID)',
-                                %s, %s
-                            );
-                        END IF;
-                    END $$;
-                    """,
-                    [table, policy_name, table, policy_name, table],
                 )
 
         self.stdout.write(self.style.SUCCESS("RLS policies applied successfully."))
