@@ -154,8 +154,13 @@ def _resolve_value(env_value: str | None, stored_value: Any) -> str | None:
     return None
 
 
-def build_router() -> Router:
-    """Build the default SL1a "Balanceado" router from env vars and local store."""
+def build_router(user_id: str | None = None) -> Router:
+    """Build the default SL1a "Balanceado" router from env vars and local store.
+
+    When ``user_id`` is provided (typically the JWT ``sub`` claim), provider
+    configuration is resolved from that user's encrypted slice. Local/test mode
+    passes ``None`` or ``"local"`` and uses the shared/global configuration.
+    """
 
     settings = RouterSettings(
         budget_cap_usd=_env_float("FABERLOOM_BUDGET_CAP_USD", 5.0),
@@ -163,7 +168,7 @@ def build_router() -> Router:
     )
 
     store = ProviderConfigStore()
-    stored = store.all()
+    stored = store.all(user_id)
     providers: list[Provider] = []
 
     openai_stored = stored.get("openai", {})

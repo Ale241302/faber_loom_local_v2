@@ -132,7 +132,7 @@ def test_workspace_alias_resolves_precio_to_precio_usd(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -219,7 +219,7 @@ def test_unknown_source_label_in_body_is_blocker(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -309,7 +309,7 @@ def test_missing_source_label_in_body_is_warning(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 

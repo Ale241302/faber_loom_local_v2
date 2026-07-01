@@ -72,3 +72,45 @@ def test_store_delete_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
     assert store.get("openai") == {}
     assert store.get("anthropic")["api_key"] == "sk-ant-secret"
+
+
+def test_store_isolates_users(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Changing a provider for one user must not affect another user or the global fallback."""
+
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+
+    # Seed a global default.
+    store.set("openai", {"api_key": "sk-global", "model_default": "gpt-4o-mini"})
+
+    # User A changes only their copy.
+    store.set("openai", {"api_key": "sk-user-a"}, user_id="user-a@example.com")
+    assert store.get("openai", user_id="user-a@example.com")["api_key"] == "sk-user-a"
+    assert store.get("openai", user_id="user-a@example.com")["model_default"] == "gpt-4o-mini"
+
+    # User B falls back to global.
+    assert store.get("openai", user_id="user-b@example.com")["api_key"] == "sk-global"
+
+    # Global/local reads remain unchanged.
+    assert store.get("openai")["api_key"] == "sk-global"
+    assert store.get("openai", user_id="local")["api_key"] == "sk-global"
+
+
+def test_store_user_delete_does_not_affect_global(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+    store.set("openai", {"api_key": "sk-global"})
+
+    store.delete_key("openai", user_id="user-a@example.com")
+    assert store.get("openai", user_id="user-a@example.com").get("api_key") is None
+    assert store.get("openai")["api_key"] == "sk-global"
+
+
+def test_store_user_delete_provider_does_not_affect_global(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+    store.set("openai", {"api_key": "sk-global"})
+
+    store.delete("openai", user_id="user-a@example.com")
+    assert store.get("openai", user_id="user-a@example.com") == {}
+    assert store.get("openai")["api_key"] == "sk-global"

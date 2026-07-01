@@ -395,7 +395,7 @@ def test_kimi_probar_surfaces_real_error(client: TestClient, monkeypatch: pytest
         is_enabled=True,
     )
     router = Router(settings=RouterSettings(), providers={"kimi": FailingKimi(config)})
-    monkeypatch.setattr(api, "build_router", lambda: router)
+    monkeypatch.setattr(api, "build_router", lambda user_id=None: router)
 
     workspace_id = _demo_workspace_id(client)
     response = client.post(f"/api/workspaces/{workspace_id}/providers/kimi/test")
@@ -448,7 +448,7 @@ def test_kimi_models_fetched_from_provider(client: TestClient, monkeypatch: pyte
         is_enabled=True,
     )
     router = Router(settings=RouterSettings(), providers={"kimi": WorkingKimi(config)})
-    monkeypatch.setattr(api, "build_router", lambda: router)
+    monkeypatch.setattr(api, "build_router", lambda user_id=None: router)
 
     workspace_id = _demo_workspace_id(client)
     response = client.post(f"/api/workspaces/{workspace_id}/providers/kimi/test")
@@ -498,7 +498,7 @@ def test_kimi_routes_when_configured(client: TestClient, monkeypatch: pytest.Mon
         is_enabled=True,
     )
     router = Router(settings=RouterSettings(), providers={"kimi": WorkingKimi(config)})
-    monkeypatch.setattr(api, "build_router", lambda: router)
+    monkeypatch.setattr(api, "build_router", lambda user_id=None: router)
 
     workspace_id = _demo_workspace_id(client)
     chat = client.post(
@@ -694,7 +694,7 @@ def test_provider_test_uses_draft_overrides(client: TestClient, monkeypatch: pyt
         is_enabled=True,
     )
     router = Router(settings=RouterSettings(), providers={"kimi": CapturingKimi(config)})
-    monkeypatch.setattr(api, "build_router", lambda: router)
+    monkeypatch.setattr(api, "build_router", lambda user_id=None: router)
 
     workspace_id = _demo_workspace_id(client)
     response = client.post(

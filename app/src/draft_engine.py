@@ -691,7 +691,7 @@ def generate_draft(
         {"role": "user", "content": f"Evidence pack:\n{evidence_text}\n\nUser request:\n{user_request}\n\nDraft the reply as JSON."},
     ]
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     request = CompletionRequest(
         messages=messages,
         model=model,

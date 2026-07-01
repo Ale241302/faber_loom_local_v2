@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -659,6 +659,28 @@ MIGRATIONS: dict[int, str] = {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
+    """,
+    19: """
+    -- Migrate workspace_smtp_config from workspace-scoped to (workspace, user).
+    ALTER TABLE workspace_smtp_config RENAME TO _workspace_smtp_config_v18;
+
+    CREATE TABLE workspace_smtp_config (
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        use_ssl INTEGER NOT NULL DEFAULT 1,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL,
+        from_email TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, user_id),
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+
+    -- Data backfill is performed by _migrate_v19_data in db.py because the
+    -- target user_id must be read from the FABERLOOM_USERS environment variable.
     """,
 }
 

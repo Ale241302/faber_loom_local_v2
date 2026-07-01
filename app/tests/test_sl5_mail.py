@@ -138,8 +138,6 @@ def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest
     import app.src.auth as auth_module
 
     workspace_id = _create_workspace(client, "SMTP Test JWT")
-    client.put(f"/api/workspaces/{workspace_id}/admin/smtp-config", json=_sample_smtp_config())
-    calls = _patch_send_message(monkeypatch)
 
     # Enable auth with a deterministic secret and user.
     monkeypatch.setenv("FABERLOOM_SECRET_KEY", "test-secret")
@@ -148,10 +146,15 @@ def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest
     login = client.post("/api/auth/login", json={"email": "admin@mwt.one", "password": "secret"})
     assert login.status_code == 200, login.text
     token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Store the SMTP config as the authenticated user so the per-user lookup succeeds.
+    client.put(f"/api/workspaces/{workspace_id}/admin/smtp-config", headers=headers, json=_sample_smtp_config())
+    calls = _patch_send_message(monkeypatch)
 
     response = client.post(
         f"/api/workspaces/{workspace_id}/admin/smtp-config/test",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
     assert response.status_code == 200, response.text
     assert response.json()["sent_to"] == "admin@mwt.one"

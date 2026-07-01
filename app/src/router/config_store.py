@@ -5,6 +5,12 @@ Provider API keys and runtime settings are persisted in the user data directory
 master key is read from FABERLOOM_MASTER_KEY or stored in .master_key in the same
 directory. Environment variables always take precedence over stored values so
 users can BYOK without persisting secrets to disk.
+
+From schema v19 the store also supports per-user configuration. Global settings
+live at the root of the encrypted document; each authenticated user has a slice
+under ``users[<email>]``. The global slice is used as a fallback when a user has
+no persisted configuration, and the first write for a user copies the global
+configuration so that later edits do not affect other users.
 """
 
 from __future__ import annotations
@@ -92,6 +98,12 @@ def mask_key(value: str | None) -> str | None:
     return value[:4] + "•" * (len(value) - 8) + value[-4:]
 
 
+def _is_global_user_id(user_id: str | None) -> bool:
+    """Return True for identities that should use the shared/global config slice."""
+
+    return user_id is None or user_id == "local"
+
+
 class ProviderConfigStore:
     """Encrypted JSON store for provider runtime configuration."""
 
@@ -104,7 +116,7 @@ class ProviderConfigStore:
         self._fernet = Fernet(get_master_key())
 
     def load(self) -> dict[str, Any]:
-        """Decrypt and return the provider configuration dictionary."""
+        """Decrypt and return the full provider configuration dictionary."""
 
         if not self._path.exists():
             return {}
@@ -124,36 +136,83 @@ class ProviderConfigStore:
         encrypted = self._fernet.encrypt(payload)
         self._path.write_bytes(encrypted)
 
-    def get(self, slug: str) -> dict[str, Any]:
-        return self.load().get(slug, {})
+    def _user_root(self, data: dict[str, Any], user_id: str | None) -> dict[str, Any]:
+        """Return the configuration slice for ``user_id``.
 
-    def set(self, slug: str, values: dict[str, Any]) -> None:
+        For the global/local identity this is the document root. For real users
+        the slice is taken from ``data["users"][user_id]``; if the user has no
+        slice yet the global configuration is returned so existing deployments
+        keep working.
+        """
+
+        if _is_global_user_id(user_id):
+            return data
+        users = data.setdefault("users", {})
+        return users.get(user_id, data) if isinstance(users, dict) else data
+
+    def _ensure_user_copy(
+        self, data: dict[str, Any], user_id: str | None
+    ) -> dict[str, Any]:
+        """Return a mutable per-user config slice, seeding it from global if needed."""
+
+        if _is_global_user_id(user_id):
+            return data
+        users = data.setdefault("users", {})
+        if not isinstance(users, dict):
+            users = {}
+            data["users"] = users
+        if user_id not in users:
+            # Seed the user's slice from global provider entries so that later
+            # edits are isolated from the shared configuration.
+            users[user_id] = {
+                slug: dict(config) for slug, config in data.items() if slug != "users"
+            }
+        return users[user_id]
+
+    def get(self, slug: str, user_id: str | None = None) -> dict[str, Any]:
+        """Return the stored configuration for a single provider."""
+
+        data = self.load()
+        return self._user_root(data, user_id).get(slug, {})
+
+    def set(
+        self,
+        slug: str,
+        values: dict[str, Any],
+        user_id: str | None = None,
+    ) -> None:
         """Merge new values into a provider entry and persist."""
 
         data = self.load()
-        current = data.get(slug, {})
+        root = self._ensure_user_copy(data, user_id)
+        current = root.get(slug, {})
         for key, value in values.items():
             if value is None:
                 current.pop(key, None)
             else:
                 current[key] = value
-        data[slug] = current
+        root[slug] = current
         self.save(data)
 
-    def delete_key(self, slug: str) -> None:
+    def delete_key(self, slug: str, user_id: str | None = None) -> None:
         """Remove only the API key for a provider."""
 
         data = self.load()
-        if slug in data:
-            data[slug].pop("api_key", None)
+        root = self._ensure_user_copy(data, user_id)
+        if slug in root:
+            root[slug].pop("api_key", None)
             self.save(data)
 
-    def delete(self, slug: str) -> None:
+    def delete(self, slug: str, user_id: str | None = None) -> None:
         """Remove an entire provider entry."""
 
         data = self.load()
-        data.pop(slug, None)
+        root = self._ensure_user_copy(data, user_id)
+        root.pop(slug, None)
         self.save(data)
 
-    def all(self) -> dict[str, Any]:
-        return self.load()
+    def all(self, user_id: str | None = None) -> dict[str, Any]:
+        """Return the provider configuration dictionary for ``user_id``."""
+
+        data = self.load()
+        return dict(self._user_root(data, user_id))

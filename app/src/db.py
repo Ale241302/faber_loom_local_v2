@@ -261,6 +261,134 @@ def recompute_all_workspace_hmacs(conn: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_v19_data(conn: sqlite3.Connection) -> None:
+    """Backfill per-user data for the v19 schema change.
+
+    Reads FABERLOOM_USERS as JSON to determine the default owner for existing
+    shared rows. Existing SMTP config rows and unowned chats/messages are
+    assigned to the first configured user (or "local" in unauthenticated mode).
+    Chats are then duplicated for every additional configured user so each one
+    starts with an independent history. usage_record rows are intentionally left
+    pointing at the original chats.
+    """
+
+    users: list[str] = []
+    raw_users = os.getenv("FABERLOOM_USERS", "")
+    if raw_users:
+        try:
+            parsed = json.loads(raw_users)
+            if isinstance(parsed, dict):
+                users = [str(k) for k in parsed.keys()]
+        except Exception:
+            pass
+    first_user = users[0] if users else "local"
+
+    # Migrate SMTP config: assign existing workspace configs to the first user.
+    smtp_rows = conn.execute(
+        "SELECT workspace_id, host, port, use_ssl, username, password, from_email, created_at, updated_at "
+        "FROM _workspace_smtp_config_v18"
+    ).fetchall()
+    for row in smtp_rows:
+        conn.execute(
+            """
+            INSERT INTO workspace_smtp_config (
+                workspace_id, user_id, host, port, use_ssl, username, password, from_email,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["workspace_id"],
+                first_user,
+                row["host"],
+                row["port"],
+                row["use_ssl"],
+                row["username"],
+                row["password"],
+                row["from_email"],
+                row["created_at"],
+                row["updated_at"],
+            ),
+        )
+    conn.execute("DROP TABLE _workspace_smtp_config_v18")
+
+    # Claim any unowned chats/messages for the first user.
+    conn.execute(
+        "UPDATE chat SET user_id = ? WHERE user_id IS NULL",
+        (first_user,),
+    )
+    conn.execute(
+        "UPDATE message SET user_id = ? WHERE user_id IS NULL",
+        (first_user,),
+    )
+
+    # Duplicate shared chats (and their messages) for every additional user.
+    for additional_user in users[1:]:
+        chats = conn.execute(
+            "SELECT * FROM chat WHERE user_id = ?", (first_user,)
+        ).fetchall()
+        for chat in chats:
+            new_chat_id = new_id("chat")
+            conn.execute(
+                """
+                INSERT INTO chat (
+                    id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
+                    title, model_preset, routine_version, skill_version, schema_version,
+                    source_version, approved_by, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_chat_id,
+                    chat["workspace_id"],
+                    chat["tenant_id"],
+                    additional_user,
+                    additional_user,
+                    chat["actor_role_at_decision"],
+                    chat["title"],
+                    chat["model_preset"],
+                    chat["routine_version"],
+                    chat["skill_version"],
+                    chat["schema_version"],
+                    chat["source_version"],
+                    chat["approved_by"],
+                    chat["created_at"],
+                ),
+            )
+            messages = conn.execute(
+                "SELECT * FROM message WHERE chat_id = ?", (chat["id"],)
+            ).fetchall()
+            for msg in messages:
+                new_message_id = new_id("msg")
+                conn.execute(
+                    """
+                    INSERT INTO message (
+                        id, chat_id, workspace_id, tenant_id, user_id, actor_id,
+                        actor_role_at_decision, role, content_json, routine_version,
+                        skill_version, schema_version, source_version, approved_by, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_message_id,
+                        new_chat_id,
+                        msg["workspace_id"],
+                        msg["tenant_id"],
+                        additional_user,
+                        additional_user,
+                        msg["actor_role_at_decision"],
+                        msg["role"],
+                        msg["content_json"],
+                        msg["routine_version"],
+                        msg["skill_version"],
+                        msg["schema_version"],
+                        msg["source_version"],
+                        msg["approved_by"],
+                        msg["created_at"],
+                    ),
+                )
+
+
 def initialize_database(conn: sqlite3.Connection | None = None) -> None:
     owns_conn = conn is None
     conn = conn or connect()
@@ -285,6 +413,8 @@ def initialize_database(conn: sqlite3.Connection | None = None) -> None:
                 "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
                 (version, utc_now()),
             )
+            if version == 19:
+                _migrate_v19_data(conn)
         recompute_all_workspace_hmacs(conn)
         conn.commit()
     except Exception:
@@ -783,16 +913,27 @@ USAGE_RECORD_COLUMNS = """
 """
 
 
+def _chat_user_id(ctx: Context) -> str:
+    """Return the user_id value to use for chat/message filters.
+
+    Local/test mode uses the sentinel ``"local"`` value so existing tests keep
+    working without JWT tokens.
+    """
+
+    return ctx.user_id or "local"
+
+
 def create_chat(
     ctx: Context,
     conn: sqlite3.Connection,
     title: str,
 ) -> dict[str, Any]:
-    """Insert a chat scoped to the current workspace."""
+    """Insert a chat scoped to the current workspace and user."""
 
     workspace_id = ctx.require_scoped_workspace()
     chat_id = new_id("chat")
     now = utc_now()
+    user_id = _chat_user_id(ctx)
 
     conn.execute(
         f"""
@@ -818,7 +959,7 @@ def create_chat(
             chat_id,
             workspace_id,
             ctx.tenant_id,
-            ctx.user_id,
+            user_id,
             ctx.resolved_actor_id(),
             ctx.actor_role_at_decision,
             title.strip(),
@@ -832,8 +973,8 @@ def create_chat(
         ),
     )
     row = conn.execute(
-        f"SELECT {CHAT_COLUMNS} FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
-        (chat_id, workspace_id, ctx.tenant_id),
+        f"SELECT {CHAT_COLUMNS} FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?",
+        (chat_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)
@@ -841,14 +982,15 @@ def create_chat(
 
 def list_chats(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, Any]]:
     workspace_id = ctx.require_scoped_workspace()
+    user_id = _chat_user_id(ctx)
     rows = conn.execute(
         f"""
         SELECT {CHAT_COLUMNS}
         FROM chat
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id IS ? AND user_id = ?
         ORDER BY created_at DESC
         """,
-        (workspace_id, ctx.tenant_id),
+        (workspace_id, ctx.tenant_id, user_id),
     ).fetchall()
     return [row_to_dict(row) for row in rows]
 
@@ -859,13 +1001,14 @@ def get_chat(
     chat_id: str,
 ) -> dict[str, Any] | None:
     workspace_id = ctx.require_scoped_workspace()
+    user_id = _chat_user_id(ctx)
     row = conn.execute(
         f"""
         SELECT {CHAT_COLUMNS}
         FROM chat
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
         """,
-        (chat_id, workspace_id, ctx.tenant_id),
+        (chat_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -879,13 +1022,14 @@ def update_chat(
     """Rename a chat. Returns the updated row or None if not found/scoped."""
 
     workspace_id = ctx.require_scoped_workspace()
+    user_id = _chat_user_id(ctx)
     cursor = conn.execute(
         """
         UPDATE chat
         SET title = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
         """,
-        (title.strip(), chat_id, workspace_id, ctx.tenant_id),
+        (title.strip(), chat_id, workspace_id, ctx.tenant_id, user_id),
     )
     if cursor.rowcount == 0:
         return None
@@ -897,19 +1041,20 @@ def delete_chat(
     conn: sqlite3.Connection,
     chat_id: str,
 ) -> bool:
-    """Delete a chat and its messages (cascade), scoped to workspace/tenant.
+    """Delete a chat and its messages (cascade), scoped to workspace/tenant/user.
 
     Leaves usage records with a dangling chat_id; callers may clean them up.
     """
 
     workspace_id = ctx.require_scoped_workspace()
+    user_id = _chat_user_id(ctx)
     conn.execute(
         "UPDATE usage_record SET chat_id = NULL WHERE chat_id = ? AND workspace_id = ?",
         (chat_id, workspace_id),
     )
     cursor = conn.execute(
-        "DELETE FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
-        (chat_id, workspace_id, ctx.tenant_id),
+        "DELETE FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?",
+        (chat_id, workspace_id, ctx.tenant_id, user_id),
     )
     return cursor.rowcount > 0
 
@@ -932,6 +1077,7 @@ def insert_message(
         raise ValueError("Chat not found in current Context")
     message_id = new_id("msg")
     now = utc_now()
+    user_id = _chat_user_id(ctx)
 
     content_json: dict[str, Any] = {"content": content}
     if route:
@@ -963,7 +1109,7 @@ def insert_message(
             chat_id,
             workspace_id,
             ctx.tenant_id,
-            ctx.user_id,
+            user_id,
             ctx.resolved_actor_id(),
             ctx.actor_role_at_decision,
             role,
@@ -980,9 +1126,9 @@ def insert_message(
         f"""
         SELECT {MESSAGE_COLUMNS}
         FROM message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
         """,
-        (message_id, workspace_id, ctx.tenant_id),
+        (message_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)
@@ -994,14 +1140,15 @@ def get_messages(
     chat_id: str,
 ) -> list[dict[str, Any]]:
     workspace_id = ctx.require_scoped_workspace()
+    user_id = _chat_user_id(ctx)
     rows = conn.execute(
         f"""
         SELECT {MESSAGE_COLUMNS}
         FROM message
-        WHERE chat_id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE chat_id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
         ORDER BY created_at ASC, id ASC
         """,
-        (chat_id, workspace_id, ctx.tenant_id),
+        (chat_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchall()
     return [row_to_dict(row) for row in rows]
 
@@ -2343,13 +2490,14 @@ def get_workspace_smtp_config(
     """Return the workspace SMTP configuration row or None."""
 
     workspace_id = ctx.require_scoped_workspace()
+    user_id = ctx.user_id or "local"
     row = conn.execute(
         f"""
         SELECT {SMTP_CONFIG_COLUMNS}
         FROM workspace_smtp_config
-        WHERE workspace_id = ?
+        WHERE workspace_id = ? AND user_id = ?
         """,
-        (workspace_id,),
+        (workspace_id, user_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -2364,19 +2512,20 @@ def set_workspace_smtp_config(
     password: str,
     from_email: str,
 ) -> dict[str, Any]:
-    """Upsert the workspace SMTP configuration."""
+    """Upsert the per-user workspace SMTP configuration."""
 
     workspace_id = ctx.require_scoped_workspace()
+    user_id = ctx.user_id or "local"
     now = utc_now()
     with transaction(conn):
         conn.execute(
             """
             INSERT INTO workspace_smtp_config (
-                workspace_id, host, port, use_ssl, username, password, from_email,
+                workspace_id, user_id, host, port, use_ssl, username, password, from_email,
                 created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(workspace_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(workspace_id, user_id) DO UPDATE SET
                 host = excluded.host,
                 port = excluded.port,
                 use_ssl = excluded.use_ssl,
@@ -2385,15 +2534,15 @@ def set_workspace_smtp_config(
                 from_email = excluded.from_email,
                 updated_at = excluded.updated_at
             """,
-            (workspace_id, host, port, 1 if use_ssl else 0, username, password, from_email, now, now),
+            (workspace_id, user_id, host, port, 1 if use_ssl else 0, username, password, from_email, now, now),
         )
     row = conn.execute(
         f"""
         SELECT {SMTP_CONFIG_COLUMNS}
         FROM workspace_smtp_config
-        WHERE workspace_id = ?
+        WHERE workspace_id = ? AND user_id = ?
         """,
-        (workspace_id,),
+        (workspace_id, user_id),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)

@@ -659,7 +659,7 @@ def api_create_completion(
                 detail="Provider/model overrides are not allowed for @mention",
             )
 
-        router = build_router()
+        router = build_router(user_id=ctx.user_id)
         provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
         if router.has_available_provider():
             _validate_completion_choice(
@@ -765,7 +765,7 @@ def api_create_completion(
             duration_ms=result.get("duration_ms", 0),
         )
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
 
     if not router.has_available_provider():
         failure_event = _record_completion_failure(
@@ -1036,7 +1036,7 @@ def api_invoke_routine(
             detail="Routine must be approved before invoking",
         )
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
@@ -1469,8 +1469,8 @@ def api_list_provider_configs(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     store = ProviderConfigStore()
-    stored = store.all()
-    router = build_router()
+    stored = store.all(ctx.user_id)
+    router = build_router(user_id=ctx.user_id)
     providers: list[ProviderConfigRead] = []
 
     for slug in sorted(_VISIBLE_PROVIDER_SLUGS):
@@ -1530,7 +1530,7 @@ def api_update_provider_config(
             )
 
     store = ProviderConfigStore()
-    previous = store.get(provider_slug)
+    previous = store.get(provider_slug, ctx.user_id)
     values: dict[str, Any] = {}
     if payload.api_key is not None:
         values["api_key"] = payload.api_key.strip() or None
@@ -1543,8 +1543,8 @@ def api_update_provider_config(
     if payload.is_enabled is not None:
         values["is_enabled"] = payload.is_enabled
 
-    store.set(provider_slug, values)
-    cfg = store.get(provider_slug)
+    store.set(provider_slug, values, ctx.user_id)
+    cfg = store.get(provider_slug, ctx.user_id)
 
     changed_fields = [k for k in values if previous.get(k) != cfg.get(k)]
     diff_payload: dict[str, Any] = {}
@@ -1573,7 +1573,7 @@ def api_update_provider_config(
             },
         )
 
-    engine_router = build_router()
+    engine_router = build_router(user_id=ctx.user_id)
     provider = engine_router.providers.get(provider_slug)
     return ProviderConfigRead(
         provider_slug=provider_slug,
@@ -1604,7 +1604,7 @@ def api_delete_provider_key(
         )
 
     _require_confirmation(provider_slug, confirmation_token)
-    ProviderConfigStore().delete_key(provider_slug)
+    ProviderConfigStore().delete_key(provider_slug, ctx.user_id)
     with transaction(conn):
         record_editorial_event(
             ctx,
@@ -1635,7 +1635,7 @@ def api_test_provider(
             detail=f"Unknown provider '{provider_slug}'",
         )
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     provider = router.providers.get(provider_slug)
     if provider is None:
         return ProviderTestResult(ok=False, provider_slug=provider_slug, error="provider not registered")
@@ -1740,7 +1740,7 @@ def api_router_status(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     spent = sum_workspace_usage_cost(ctx, conn)
     visible_providers = [provider for provider in router.all_providers() if provider.provider_slug in _VISIBLE_PROVIDER_SLUGS]
     visible_model_allowlist = {k: sorted(v) for k, v in router_cost.MODEL_ALLOWLIST.items() if k in _VISIBLE_PROVIDER_SLUGS}
@@ -1946,7 +1946,7 @@ def api_generate_draft(
     if payload.chat_id is not None and get_chat(ctx, conn, payload.chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     if not router.has_available_provider():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2362,7 +2362,7 @@ def api_draft_mail_reply(
     if mail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mail message not found")
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     if not router.has_available_provider():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -3208,7 +3208,7 @@ def api_run_routine(
             detail="Provider/model overrides are not allowed for routine runs",
         )
 
-    router = build_router()
+    router = build_router(user_id=ctx.user_id)
     provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
