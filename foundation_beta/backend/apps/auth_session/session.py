@@ -74,7 +74,7 @@ def revoke_session(session_id: str, tenant_id: str | uuid.UUID) -> None:
 def revoke_all_user_sessions(user_id: str | uuid.UUID, tenant_id: str | uuid.UUID) -> int:
     """Delete all sessions belonging to a user in a tenant."""
     redis = get_redis_client()
-    pattern = tenant_key(tenant_id, "session:*")
+    pattern = f"tenant:{tenant_id}:session:*"
     removed = 0
     for key in redis.scan_iter(match=pattern):
         raw = redis.get(key)
@@ -95,7 +95,7 @@ def revoke_all_user_sessions(user_id: str | uuid.UUID, tenant_id: str | uuid.UUI
 def list_user_sessions(user_id: str | uuid.UUID, tenant_id: str | uuid.UUID) -> list[dict[str, Any]]:
     """Return metadata for all active sessions of a user in a tenant."""
     redis = get_redis_client()
-    pattern = tenant_key(tenant_id, "session:*")
+    pattern = f"tenant:{tenant_id}:session:*"
     sessions: list[dict[str, Any]] = []
     for key in redis.scan_iter(match=pattern):
         raw = redis.get(key)

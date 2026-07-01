@@ -55,10 +55,17 @@ class User(AbstractBaseUser):
     def set_password(self, raw_password: str | None) -> None:
         super().set_password(raw_password)
         # Invalidate all active sessions across every tenant when password changes.
-        from apps.auth_session.session import revoke_all_user_sessions
+        try:
+            from apps.auth_session.session import revoke_all_user_sessions
 
-        for membership in self.memberships.all():
-            revoke_all_user_sessions(self.id, membership.tenant_id)
+            for membership in self.memberships.all():
+                revoke_all_user_sessions(self.id, membership.tenant_id)
+        except Exception as exc:
+            # Password change must succeed even if Redis is unavailable;
+            # sessions will expire naturally or be rejected by the middleware.
+            import logging
+
+            logging.getLogger(__name__).warning("Failed to revoke sessions on password change: %s", exc)
 
 
 class MembershipStatus(models.TextChoices):
