@@ -19,6 +19,7 @@ import django
 
 django.setup()
 
+from cryptography.fernet import Fernet
 from django.conf import settings
 from django.test import RequestFactory
 
@@ -26,6 +27,10 @@ from apps.core.redis_client import get_redis_client
 from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.core.vector import ensure_tenant_partition
 from apps.tenants.models import Tenant
+
+# M08: deterministic Fernet key for tests so TOTP secrets can be encrypted/decrypted.
+if not settings.TOTP_ENCRYPTION_KEY:
+    settings.TOTP_ENCRYPTION_KEY = Fernet.generate_key().decode()
 
 
 @pytest.fixture
@@ -104,3 +109,57 @@ def _celery_eager():
     app.conf.task_always_eager = True
     yield
     app.conf.task_always_eager = original
+
+
+@pytest.fixture
+def owner_user(db):
+    """Create a test user with owner membership."""
+    from apps.users.models import User
+
+    return User.objects.create_user(
+        email="owner@example.com",
+        password="FaberLoom1234!",
+        display_name="Owner User",
+        is_active=True,
+    )
+
+
+@pytest.fixture
+def owner_membership(db, owner_user, tenant_a):
+    """Create an active owner membership for owner_user in tenant_a."""
+    from apps.users.models import Membership, MembershipStatus
+
+    return Membership.objects.create(
+        user=owner_user,
+        tenant=tenant_a,
+        roles=["owner"],
+        active_hat="owner",
+        status=MembershipStatus.ACTIVE,
+    )
+
+
+@pytest.fixture
+def operator_user(db):
+    """Create a test operator user."""
+    from apps.users.models import User
+
+    return User.objects.create_user(
+        email="operator@example.com",
+        password="FaberLoom1234!",
+        display_name="Operator User",
+        is_active=True,
+    )
+
+
+@pytest.fixture
+def operator_membership(db, operator_user, tenant_a):
+    """Create an active operator membership."""
+    from apps.users.models import Membership, MembershipStatus
+
+    return Membership.objects.create(
+        user=operator_user,
+        tenant=tenant_a,
+        roles=["operator"],
+        active_hat="operator",
+        status=MembershipStatus.ACTIVE,
+    )

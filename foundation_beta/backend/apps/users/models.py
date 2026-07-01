@@ -52,6 +52,18 @@ class User(AbstractBaseUser):
     def __str__(self) -> str:
         return self.email
 
+    def set_password(self, raw_password: str | None) -> None:
+        super().set_password(raw_password)
+        # Invalidate all active sessions across every tenant when password changes.
+        try:
+            from apps.auth_session.session import revoke_all_user_sessions
+
+            for membership in self.memberships.all():
+                revoke_all_user_sessions(self.id, membership.tenant_id)
+        except Exception:
+            # Avoid breaking password changes if Redis is down.
+            pass
+
 
 class MembershipStatus(models.TextChoices):
     INVITED = "invited", "Invited"
