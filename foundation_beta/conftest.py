@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 
 # Ensure backend is on path when running from repo root.
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
