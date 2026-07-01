@@ -28,7 +28,11 @@ class TenantMiddleware:
 
     def _extract_tenant_id(self, request):
         """Resolve tenant_id server-side only."""
-        # In production, tenant_id lives in the server-side session (M08).
+        # M08 custom Redis session already resolved tenant_id.
+        if getattr(request, "tenant_id", None):
+            return UUID(request.tenant_id)
+
+        # Legacy Django session (kept for admin compatibility).
         session_value = request.session.get("tenant_id")
         if session_value:
             return UUID(session_value)

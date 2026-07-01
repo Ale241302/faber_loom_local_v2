@@ -22,6 +22,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.tenants",
+    "apps.users",
+    "apps.auth_session",
+    "apps.events",
 ]
 
 MIDDLEWARE = [
@@ -32,6 +35,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.auth_session.middleware.SessionMiddleware",
     "apps.core.middleware.TenantMiddleware",
 ]
 
@@ -79,7 +83,22 @@ CACHES = {
     }
 }
 
-AUTH_PASSWORD_VALIDATORS = []
+AUTH_USER_MODEL = "users.User"
+
+AUTH_PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+]
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -99,6 +118,15 @@ REST_FRAMEWORK = {
 # Tenant isolation configuration
 TENANT_ID_HEADER = "HTTP_X_TENANT_ID"
 TENANT_TESTING_HEADER_ALLOWED = DEBUG or os.environ.get("TESTING", "False").lower() == "true"
+
+# Auth session settings
+SESSION_COOKIE_NAME = "session_id"
+SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
+SESSION_REMEMBER_TTL_SECONDS = int(os.environ.get("SESSION_REMEMBER_TTL_SECONDS", "2592000"))
+TOTP_ISSUER = os.environ.get("TOTP_ISSUER", "FaberLoom")
+TOTP_ENCRYPTION_KEY = os.environ.get("TOTP_ENCRYPTION_KEY", "")
+TOTP_ATTEMPTS_LIMIT = int(os.environ.get("TOTP_ATTEMPTS_LIMIT", "3"))
+TOTP_LOCKOUT_SECONDS = int(os.environ.get("TOTP_LOCKOUT_SECONDS", "900"))
 
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/1")
