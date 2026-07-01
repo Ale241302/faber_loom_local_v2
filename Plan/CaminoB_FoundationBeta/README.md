@@ -1,0 +1,188 @@
+# Camino B: Foundation Beta v1.3.1 — Plan de Implementación
+
+## 1. Resumen ejecutivo
+
+Este documento es el plan maestro para ejecutar el **Camino B: Foundation Beta v1.3.1**, el track canónico de FaberLoom.  El spike SpaceLoom E1 queda congelado como dogfood interno/no canónico según `DEC-011`.  Este plan describe la transición desde el estado actual del spike (FastAPI + SQLite/sqlcipher + JWT simple + feature flags) hacia el stack objetivo de Foundation Beta:
+
+- **Backend:** Django 4.2 LTS + Django REST Framework (DRF)
+- **Base de datos:** PostgreSQL 16 + extensión pgvector + RLS
+- **Caché / sesiones / streams:** Redis 7
+- **Object storage:** MinIO
+- **Routing LLM:** LiteLLM Proxy (Anthropic-only con DPA)
+- **Memoria:** Letta self-hosted
+- **Frontend web:** Next.js
+- **Frontend desktop:** Electron + React
+- **Deploy:** Docker Compose en Hostinger KVM 8
+
+El trabajo se organiza en un **SPINE serial** de siete módulos funcionales cuyos contratos deben quedar congelados antes de abrir tracks paralelos:
+
+```text
+M16 Tenant Isolation
+  → M08 Auth Session
+      → M09 RBAC
+  → M15 Outbox Streams
+  → M12 Audit Trail
+      → M11 D9 Policy Gate
+      → M07 Bootstrap Wizard
+```
+
+## 2. Stack objetivo
+
+| Capa | Tecnología | Versión/Notas |
+|---|---|---|
+| Aplicación web | Next.js 14+ (App Router) | SSR, server actions donde aplique |
+| API | Django 4.2 + DRF | Command-heavy, no CRUD-first |
+| Base de datos | PostgreSQL 16 | `pgvector`, `FORCE ROW LEVEL SECURITY` |
+| Caché / Sesiones / Streams | Redis 7 | Streams para eventos, Hash para sesiones |
+| Workers | Celery 5 + Redis broker | `with_tenant_session` wrapper obligatorio |
+| Object storage | MinIO | Paths `/tenants/{tenant_id}/...` |
+| LLM routing | LiteLLM Proxy | Anthropic-only en E1; logs taggeados por tenant |
+| Memoria | Letta self-hosted | Namespaces por tenant/agente/tarea |
+| Container runtime | Docker Compose | Hostinger KVM 8, 6+ contenedores |
+| Auth | Django sessions + TOTP | Cookies httpOnly/Secure/SameSite=Strict |
+
+## 3. Orden de ejecución
+
+| Orden | Módulo | Sprint objetivo | Bloquea a |
+|---:|---|---|---|
+| 1 | M16 Tenant Isolation | S1A | Todos los tracks |
+| 2 | M08 Auth Session | S1A | M09, M18, M07 |
+| 3 | M09 RBAC | S1A | M07, M13, M12 (permisos) |
+| 4 | M15 Outbox Streams | S1B | M13, M19, consumidores |
+| 5 | M12 Audit Trail | S1B | M11, M13, M14, M17 |
+| 6 | M11 D9 Policy Gate | S1B | Ejecución M10, M13 outbound, M07 activation |
+| 7 | M07 Bootstrap Wizard | S10 | Go-live del tenant beta |
+
+> **Regla de oro:** ningún track operativo arranca hasta que M16 pase sus 5 tests cross-tenant.
+
+## 4. Dependencias cruzadas
+
+```text
+M16 ──┬── M08 ──┬── M09 ──┬── M07
+      │         │         └── M13 (aprobaciones)
+      │         │
+      │         └── M12 (actor_role_at_decision)
+      │
+      ├── M15 ──┬── M19 (offline sync)
+      │         └── M13 (consumidor de eventos)
+      │
+      ├── M12 ──┬── M11
+      │         ├── M13
+      │         ├── M14
+      │         └── M17
+      │
+      └── M11 ──┬── M10 (ejecución)
+                └── M13 (egress)
+```
+
+## 5. Principios rector
+
+1. **Contract-first:** cada módulo expone inputs, outputs, eventos y schemas versionados.
+2. **Fail-closed:** cualquier duda en aislamiento, auth, permisos o política bloquea.
+3. **No mergear spike:** el código SpaceLoom se conserva congelado; Foundation Beta se construye como código nuevo.
+4. **Kill criteria E1:**
+   - `>=1` incidente privacy cross-tenant confirmado → kill/replan.
+   - N3/N4 sale a provider sin DPA → kill/replan.
+   - D9 cae abierto → kill/replan.
+   - Tests cross-tenant M16 fallan en `main` → no abrir tracks.
+
+## 6. Checklist consolidado
+
+### M16 Tenant Isolation
+- [ ] Esquema Postgres con `tenant_id NOT NULL` en tablas aislables
+- [ ] RLS `FORCE` + policies `USING (tenant_id = current_setting('app.tenant_id')::uuid)`
+- [ ] Middleware Django setea `app.tenant_id` en cada request
+- [ ] Redis keys con prefijo `tenant:{tenant_id}:`
+- [ ] Celery `with_tenant_session` + `DISCARD ALL` + assert
+- [ ] MinIO paths `/tenants/{tenant_id}/...` con anti path-traversal
+- [ ] pgvector partición por tenant para N2+
+- [ ] LiteLLM Proxy recibe `tenant_id` en metadata
+- [ ] Letta namespace por tenant
+- [ ] 5 tests cross-tenant pasan en CI
+
+### M08 Auth Session
+- [ ] Modelo `User` con hash argon2id
+- [ ] Modelo `Session` server-side en Redis
+- [ ] 2FA TOTP obligatorio para Owner
+- [ ] Login flow: credenciales → TOTP → sesión Redis → cookie httpOnly
+- [ ] `/auth/me` para reanudación
+- [ ] Revocación remota de sesiones
+- [ ] Electron partition por tenant + keytar para secrets
+
+### M09 RBAC
+- [ ] Tabla `Role` con 5 roles canónicos seedeados
+- [ ] Tabla `Membership` (user_id, tenant_id, roles[], status, active_hat)
+- [ ] Permission resolver server-side
+- [ ] UI muestra/oculta según rol
+- [ ] Selector de "hat" en desktop
+- [ ] Audit de cambios de rol y denegaciones
+
+### M15 Outbox Streams
+- [ ] Tabla `outbox` transactional
+- [ ] Event envelope canónico (`event_id`, `tenant_id`, `type`, `payload`, `timestamp`)
+- [ ] Relay Celery drena outbox → Redis Streams
+- [ ] WebSocket fanout por tenant + permisos
+- [ ] Reconexión con `?since=last_event_id`
+- [ ] Dedupe por `event_id`
+
+### M12 Audit Trail
+- [ ] Tabla `audit_log` con 18 campos canónicos
+- [ ] Hash chain por `chain_id = tenant_id + audit_domain`
+- [ ] Append-only: triggers NO UPDATE/DELETE + app role sin UPDATE/DELETE
+- [ ] Job diario valida integridad
+- [ ] Export per-tenant (CSV/JSON firmado)
+
+### M11 D9 Policy Gate
+- [ ] `ActionContext` + `PolicyDecision`
+- [ ] Ceiling por plan/tenant
+- [ ] DPA state por tenant
+- [ ] Gate pre-skill + pre-egress
+- [ ] `effective_classification = max(declared, source_default, retrieved_chunks, pre_egress_detected)`
+- [ ] Respuesta `PlanUpgradeRequired` canonizada
+- [ ] Audit de cada bloqueo/paso
+
+### M07 Bootstrap Wizard
+- [ ] Tenant creado en estado `setup` por platform admin
+- [ ] Wizard 10 pasos (datos, Owner+2FA, mailbox, canales, KB, Voice Profile, DPA, seed shadow, sandbox, go-live)
+- [ ] Seed de agentes system en `shadow`
+- [ ] Invitación Owner/Operator
+- [ ] DPA firma in-wizard
+- [ ] Sandbox test obligatorio antes de `active`
+
+## 7. Riesgos P0 transversales
+
+1. **Cross-tenant leak por Celery stale tenant_id.** Mitigación: wrapper + `DISCARD ALL` + tests A→B.
+2. **LLM egress bypass D9.** Mitigación: LiteLLM Proxy como único egress; CI bloquea SDK directos.
+3. **pgvector global HNSW para N2+.** Mitigación: partición por tenant; test `EXPLAIN`.
+4. **Audit mutable.** Mitigación: triggers + app role sin UPDATE/DELETE.
+5. **Electron token leak.** Mitigación: httpOnly cookies + keytar + `contextIsolation`.
+
+## 8. Decisiones de arquitectura tomadas
+
+| Tema | Decisión | Rationale |
+|---|---|---|
+| Framework | Django 4.2 + DRF | `DEC-001`, command-heavy, maduro para multi-tenant |
+| Migración desde spike | No mergear código SQLite | `DEC-011` spike congelado/no canónico |
+| Roles E1 | Schema 5 roles, UI Owner/Operator | Enmienda E-4; Admin/Supervisor/Viewer E3+ |
+| DPA | Firma in-wizard (checkbox + timestamp) | Desbloquea go-live sin esperar e-sign externo; auditable |
+| TTL sesión | 8h / remember 30 días | Jornada laboral + UX desktop |
+| Hash password | argon2id (Django default) | Estándar, verificado por spec M08 |
+| Lockout 2FA | 3 fallos → 15 min cooldown | Balance seguridad/UX |
+| Audit schema | 18 campos de SPEC M12 | Es el superset; cubre evidence bundle |
+| Eventos E1 | Subset de 6 eventos | M15 especifica scope E1 |
+| pgvector | Partición por tenant para todo N2+ | Simplifica operación y cumple M16 |
+| Outbox retención | 7 días publicados / stream 24h | Recuperación sin acumulación infinita |
+
+## 9. Archivos generados
+
+- `Plan/CaminoB_FoundationBeta/README.md` (este archivo)
+- `Plan/CaminoB_FoundationBeta/M16_TENANT_ISOLATION_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M08_AUTH_SESSION_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M09_RBAC_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M15_OUTBOX_STREAMS_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M12_AUDIT_TRAIL_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M11_D9_POLICY_GATE_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M07_BOOTSTRAP_WIZARD_PLAN.md`
+
+---
+*Generado por Fugu (arquitecto senior) — 2026-07-01.  Estado: plan de implementación, sin código.*
