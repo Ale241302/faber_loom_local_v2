@@ -186,19 +186,33 @@ def send_message(
     to: str,
     subject: str,
     body: str,
+    use_ssl: bool = True,
+    from_email: str | None = None,
 ) -> None:
-    """Send an email via SMTP_SSL. This function performs no HITL checks."""
+    """Send an email via SMTP.
+
+    If *use_ssl* is True (default), the connection uses ``SMTP_SSL``. Otherwise
+    it uses plain ``SMTP`` followed by ``starttls()`` (typical for port 587/25).
+    *from_email* overrides the ``From`` header; when omitted *username* is used.
+    This function performs no HITL checks.
+    """
 
     msg = EmailMessage()
-    msg["From"] = username
+    msg["From"] = from_email or username
     msg["To"] = to
     msg["Subject"] = subject or ""
     msg.set_content(body)
 
     try:
-        with smtplib.SMTP_SSL(server, port) as smtp:
-            smtp.login(username, password)
-            smtp.send_message(msg)
+        if use_ssl:
+            with smtplib.SMTP_SSL(server, port) as smtp:
+                smtp.login(username, password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(server, port) as smtp:
+                smtp.starttls()
+                smtp.login(username, password)
+                smtp.send_message(msg)
     except smtplib.SMTPException as exc:
         raise RuntimeError(f"SMTP error: {exc}") from exc
     except OSError as exc:

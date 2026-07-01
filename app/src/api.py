@@ -47,6 +47,7 @@ from .db import (
     get_schema_version,
     get_workspace,
     get_workspace_field_aliases,
+    get_workspace_smtp_config,
     insert_message,
     insert_usage_record,
     link_mail_message_to_draft,
@@ -67,6 +68,7 @@ from .db import (
     update_mail_message_status,
     update_mail_outbox_status,
     update_routine,
+    set_workspace_smtp_config,
     update_routine_run_output,
     update_workspace_field_aliases,
     workspace_seal_id,
@@ -139,6 +141,9 @@ from .models import (
     RouterProviderRead,
     RouterStatusRead,
     SkillInvokeRequest,
+    SMTPConfigRead,
+    SMTPConfigWrite,
+    SMTPTestResponse,
     UsageRecordRead,
     WorkLoomRead,
     WorkspaceCreate,
@@ -2240,6 +2245,52 @@ def _classify_mail(subject: str | None, sender: str | None) -> str:
     return "other"
 
 
+def _resolve_smtp_config(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> dict[str, Any] | None:
+    """Return workspace SMTP config or a fallback from environment variables.
+
+    The returned dict contains: host, port, use_ssl, username, password,
+    from_email. Passwords flow through but are never logged.
+    """
+
+    config = get_workspace_smtp_config(ctx, conn)
+    if config is not None:
+        return {
+            "host": config["host"],
+            "port": config["port"],
+            "use_ssl": bool(config["use_ssl"]),
+            "username": config["username"],
+            "password": config["password"],
+            "from_email": config["from_email"],
+        }
+
+    # Fallback to environment variables so existing deployments keep working.
+    host = os.getenv("FABERLOOM_SMTP_SERVER")
+    port_raw = os.getenv("FABERLOOM_SMTP_PORT")
+    username = os.getenv("FABERLOOM_IMAP_USER") or os.getenv("FABERLOOM_SMTP_USER")
+    password = os.getenv("FABERLOOM_IMAP_PASSWORD") or os.getenv("FABERLOOM_SMTP_PASSWORD")
+    from_email = os.getenv("FABERLOOM_SMTP_FROM") or username
+
+    if not host or not port_raw or not username or not password:
+        return None
+
+    try:
+        port = int(port_raw)
+    except ValueError:
+        return None
+
+    return {
+        "host": host,
+        "port": port,
+        "use_ssl": True,  # legacy env path used SMTP_SSL exclusively
+        "username": username,
+        "password": password,
+        "from_email": from_email or username,
+    }
+
+
 @router.post("/workspaces/{workspace_id}/mail/sync")
 def api_sync_mail(
     workspace_id: str,
@@ -2432,18 +2483,12 @@ def api_send_mail_reply(
                 detail="A send is already in progress for this message",
             )
 
-    try:
-        creds = {
-            "server": os.environ["FABERLOOM_SMTP_SERVER"],
-            "port": int(os.environ["FABERLOOM_SMTP_PORT"]),
-            "username": os.environ["FABERLOOM_IMAP_USER"],
-            "password": os.environ["FABERLOOM_IMAP_PASSWORD"],
-        }
-    except (KeyError, ValueError) as exc:
+    smtp_config = _resolve_smtp_config(ctx, conn)
+    if smtp_config is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SMTP credentials are not configured. Set FABERLOOM_SMTP_* environment variables.",
-        ) from exc
+            detail="SMTP credentials are not configured. Set them in Audit > SMTP or via FABERLOOM_SMTP_* environment variables.",
+        )
 
     recipient = mail.get("sender")
     if not recipient:
@@ -2457,13 +2502,15 @@ def api_send_mail_reply(
 
     try:
         send_message(
-            creds["server"],
-            creds["port"],
-            creds["username"],
-            creds["password"],
+            smtp_config["host"],
+            smtp_config["port"],
+            smtp_config["username"],
+            smtp_config["password"],
             to=recipient,
             subject=subject,
             body=body,
+            use_ssl=smtp_config.get("use_ssl", True),
+            from_email=smtp_config.get("from_email"),
         )
     except RuntimeError as exc:
         raise HTTPException(
@@ -2492,6 +2539,95 @@ def api_send_mail_reply(
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mail message not found")
     return MailMessageRead(**updated)
+
+
+@router.get("/workspaces/{workspace_id}/admin/smtp-config", response_model=SMTPConfigRead)
+def api_get_smtp_config(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> SMTPConfigRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    config = _resolve_smtp_config(ctx, conn)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SMTP config not found")
+    return SMTPConfigRead(**config)
+
+
+@router.put("/workspaces/{workspace_id}/admin/smtp-config", response_model=SMTPConfigRead)
+def api_update_smtp_config(
+    workspace_id: str,
+    payload: SMTPConfigWrite,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> SMTPConfigRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    updated = set_workspace_smtp_config(
+        ctx,
+        conn,
+        host=payload.host,
+        port=payload.port,
+        use_ssl=payload.use_ssl,
+        username=payload.username,
+        password=payload.password,
+        from_email=payload.from_email,
+    )
+    return SMTPConfigRead(
+        host=updated["host"],
+        port=updated["port"],
+        use_ssl=bool(updated["use_ssl"]),
+        username=updated["username"],
+        password=updated["password"],
+        from_email=updated["from_email"],
+    )
+
+
+@router.post("/workspaces/{workspace_id}/admin/smtp-config/test", response_model=SMTPTestResponse)
+def api_test_smtp_config(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> SMTPTestResponse:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    config = _resolve_smtp_config(ctx, conn)
+    if config is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SMTP credentials are not configured. Set them in Audit > SMTP or via FABERLOOM_SMTP_* environment variables.",
+        )
+
+    # In authenticated mode the JWT sets request.state.user; in bypass mode we
+    # fall back to the local identity so tests stay green without tokens.
+    user = getattr(request.state, "user", None) or {"sub": "local", "role": "owner"}
+    sent_to = user["sub"]
+    subject = "FaberLoom: prueba SMTP"
+    body = "Este es un correo de prueba desde FaberLoom."
+
+    try:
+        send_message(
+            config["host"],
+            config["port"],
+            config["username"],
+            config["password"],
+            to=sent_to,
+            subject=subject,
+            body=body,
+            use_ssl=config.get("use_ssl", True),
+            from_email=config.get("from_email"),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"SMTP test failed: {exc}",
+        ) from exc
+
+    return SMTPTestResponse(sent_to=sent_to, status="sent")
 
 
 # -----------------------------------------------------------------------------

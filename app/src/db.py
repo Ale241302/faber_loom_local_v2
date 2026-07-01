@@ -2321,3 +2321,79 @@ def update_mail_outbox_status(
         (outbox_id, workspace_id),
     ).fetchone()
     return row_to_dict(row) if row else None
+
+
+SMTP_CONFIG_COLUMNS = """
+    workspace_id,
+    host,
+    port,
+    use_ssl,
+    username,
+    password,
+    from_email,
+    created_at,
+    updated_at
+"""
+
+
+def get_workspace_smtp_config(
+    ctx: Context,
+    conn: sqlite3.Connection,
+) -> dict[str, Any] | None:
+    """Return the workspace SMTP configuration row or None."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"""
+        SELECT {SMTP_CONFIG_COLUMNS}
+        FROM workspace_smtp_config
+        WHERE workspace_id = ?
+        """,
+        (workspace_id,),
+    ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def set_workspace_smtp_config(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    host: str,
+    port: int,
+    use_ssl: bool,
+    username: str,
+    password: str,
+    from_email: str,
+) -> dict[str, Any]:
+    """Upsert the workspace SMTP configuration."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    now = utc_now()
+    with transaction(conn):
+        conn.execute(
+            """
+            INSERT INTO workspace_smtp_config (
+                workspace_id, host, port, use_ssl, username, password, from_email,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(workspace_id) DO UPDATE SET
+                host = excluded.host,
+                port = excluded.port,
+                use_ssl = excluded.use_ssl,
+                username = excluded.username,
+                password = excluded.password,
+                from_email = excluded.from_email,
+                updated_at = excluded.updated_at
+            """,
+            (workspace_id, host, port, 1 if use_ssl else 0, username, password, from_email, now, now),
+        )
+    row = conn.execute(
+        f"""
+        SELECT {SMTP_CONFIG_COLUMNS}
+        FROM workspace_smtp_config
+        WHERE workspace_id = ?
+        """,
+        (workspace_id,),
+    ).fetchone()
+    assert row is not None
+    return row_to_dict(row)

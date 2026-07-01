@@ -113,6 +113,16 @@ async function apiPost(path, body) {
   return res.json();
 }
 
+async function apiPut(path, body) {
+  const res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 async function apiPatch(path, body) {
   const res = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
@@ -2054,7 +2064,7 @@ function SettingsView({ activeWorkspace, title = "Ajustes", subtitle = "Router, 
   </div>;
 }
 
-function AuditView({ activeWorkspace }) {
+function AuditHistoryPanel({ activeWorkspace }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -2074,25 +2084,149 @@ function AuditView({ activeWorkspace }) {
 
   useEffect(() => { load(); }, [activeWorkspace]);
 
+  return <section className="panel" aria-label="Editorial history">
+    <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">Editorial history ({events.length})</div></div></div>
+    <div style={S.panelBody}>
+      {loading && <div style={S.loading}>Cargando…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {events.length === 0 && !loading && <div style={S.empty}>Sin eventos.</div>}
+      <div style={S.list}>
+        {events.map((event) => <div key={event.id} style={S.card}>
+          <div style={S.cardTitle}>{event.action}</div>
+          <div style={S.cardMeta}>{event.entity_type} · {event.entity_id} · {event.created_at}</div>
+          {event.reason && <div style={{ fontSize: 12, color: "var(--text-2)" }}>{event.reason}</div>}
+        </div>)}
+      </div>
+    </div>
+  </section>;
+}
+
+const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "" };
+
+function SMTPConfigPanel({ activeWorkspace }) {
+  const [config, setConfig] = useState({ ...SMTP_DEFAULTS });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [testResult, setTestResult] = useState(null);
+
+  const load = async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const cfg = await apiGet(`/api/workspaces/${activeWorkspace.id}/admin/smtp-config`);
+      setConfig({
+        host: cfg.host || "",
+        port: cfg.port ?? 465,
+        use_ssl: cfg.use_ssl ?? true,
+        username: cfg.username || "",
+        password: cfg.password || "",
+        from_email: cfg.from_email || "",
+      });
+    } catch (err) {
+      // 404 is expected when no config has been saved yet.
+      if (!err.message.includes("404")) {
+        setError(err.message);
+      }
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [activeWorkspace]);
+
+  const update = (field, value) => {
+    setConfig((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const save = async () => {
+    if (!activeWorkspace) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    setTestResult(null);
+    try {
+      const saved = await apiPut(`/api/workspaces/${activeWorkspace.id}/admin/smtp-config`, {
+        ...config,
+        port: Number(config.port),
+      });
+      setConfig({
+        host: saved.host || "",
+        port: saved.port ?? 465,
+        use_ssl: saved.use_ssl ?? true,
+        username: saved.username || "",
+        password: saved.password || "",
+        from_email: saved.from_email || "",
+      });
+      setSuccess("Configuración SMTP guardada.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const test = async () => {
+    if (!activeWorkspace) return;
+    setTesting(true);
+    setError(null);
+    setSuccess(null);
+    setTestResult(null);
+    try {
+      const r = await apiPost(`/api/workspaces/${activeWorkspace.id}/admin/smtp-config/test`);
+      setTestResult(r);
+    } catch (err) {
+      setError(err.message);
+    }
+    setTesting(false);
+  };
+
+  return <section className="panel" aria-label="Configuración SMTP">
+    <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">SMTP</div></div></div>
+    <div style={S.panelBody}>
+      {loading && <div style={S.loading}>Cargando…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {success && <div style={S.success}>{success}</div>}
+      <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
+        <label style={S.label}>Host<input style={S.input} value={config.host} onChange={(e) => update("host", e.target.value)} placeholder="mail.ejemplo.com"/></label>
+        <label style={S.label}>Puerto<input type="number" style={S.input} value={config.port} onChange={(e) => update("port", e.target.value)} min={1} max={65535}/></label>
+        <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+          <Toggle checked={config.use_ssl} onChange={(checked) => update("use_ssl", checked)}/>
+          Usar SSL (puerto 465)
+        </div>
+        <label style={S.label}>Usuario<input style={S.input} value={config.username} onChange={(e) => update("username", e.target.value)}/></label>
+        <label style={S.label}>Contraseña<input type="password" style={S.input} value={config.password} onChange={(e) => update("password", e.target.value)} placeholder="No se imprime en logs"/></label>
+        <label style={S.label}>From email<input style={S.input} value={config.from_email} onChange={(e) => update("from_email", e.target.value)}/></label>
+        <div style={S.inlineGroup}>
+          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>
+          <button type="button" style={S.button} onClick={test} disabled={testing}>{testing ? "Probando…" : "Probar"}</button>
+        </div>
+        {testResult && <div className="status-tag approved" style={{ marginTop: 8, fontSize: 12 }}>Prueba enviada a {testResult.sent_to} · {testResult.status}</div>}
+      </div>
+    </div>
+  </section>;
+}
+
+function AuditView({ activeWorkspace }) {
+  const [tab, setTab] = useState("audit");
+
   if (!activeWorkspace) return <WorkspaceRequired icon="audit" title="Auditoría"/>;
 
   return <div className="classic" style={S.view}>
-    <div className="vhead"><div><div className="vtitle">Auditoría</div><div className="vsub">Editorial history · trazabilidad de decisiones</div></div></div>
-    <section className="panel" aria-label="Editorial history">
-      <div className="panel-header"><div><div className="panel-kicker">Admin</div><div className="panel-title">Editorial history ({events.length})</div></div></div>
-      <div style={S.panelBody}>
-        {loading && <div style={S.loading}>Cargando…</div>}
-        {error && <div style={S.error}>{error}</div>}
-        {events.length === 0 && !loading && <div style={S.empty}>Sin eventos.</div>}
-        <div style={S.list}>
-          {events.map((event) => <div key={event.id} style={S.card}>
-            <div style={S.cardTitle}>{event.action}</div>
-            <div style={S.cardMeta}>{event.entity_type} · {event.entity_id} · {event.created_at}</div>
-            {event.reason && <div style={{ fontSize: 12, color: "var(--text-2)" }}>{event.reason}</div>}
-          </div>)}
-        </div>
+    <div className="vhead">
+      <div><div className="vtitle">Auditoría</div><div className="vsub">Configuración del tenant y trazabilidad</div></div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {[
+          { id: "audit", label: "Auditoría" },
+          { id: "smtp", label: "SMTP" },
+        ].map((t) => (
+          <button key={t.id} type="button" style={tab === t.id ? S.buttonPrimary : S.button} onClick={() => setTab(t.id)}>{t.label}</button>
+        ))}
       </div>
-    </section>
+    </div>
+    {tab === "audit" && <AuditHistoryPanel activeWorkspace={activeWorkspace}/>}
+    {tab === "smtp" && <SMTPConfigPanel activeWorkspace={activeWorkspace}/>}
   </div>;
 }
 

@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -647,6 +647,19 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE workspace ADD COLUMN confidential INTEGER NOT NULL DEFAULT 0
         CHECK (confidential IN (0, 1));
     """,
+    18: """
+    CREATE TABLE IF NOT EXISTS workspace_smtp_config (
+        workspace_id TEXT PRIMARY KEY REFERENCES workspace(id) ON DELETE CASCADE,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        use_ssl INTEGER NOT NULL DEFAULT 1,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL,
+        from_email TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 }
 
 
@@ -1190,6 +1203,29 @@ class ProviderTestResult(BaseModel):
     latency_ms: int | None = None
     error: str | None = None
     models: list[str] | None = None
+
+
+class SMTPConfigRead(BaseModel):
+    host: str
+    port: int
+    use_ssl: bool
+    username: str
+    password: str
+    from_email: str
+
+
+class SMTPConfigWrite(BaseModel):
+    host: str = Field(min_length=1, max_length=500)
+    port: int = Field(ge=1, le=65535)
+    use_ssl: bool
+    username: str = Field(min_length=1, max_length=500)
+    password: str = Field(min_length=1, max_length=2000)
+    from_email: str = Field(min_length=1, max_length=500)
+
+
+class SMTPTestResponse(BaseModel):
+    sent_to: str
+    status: str
 
 
 # -----------------------------------------------------------------------------
