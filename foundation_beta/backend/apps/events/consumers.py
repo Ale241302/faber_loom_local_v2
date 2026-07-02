@@ -160,6 +160,13 @@ def _authenticate_sync(session_id: str) -> dict[str, Any] | None:
     active_hat = None
     if membership:
         active_hat = _resolve_active_hat(membership, None)
+        if active_hat:
+            from apps.rbac.models import Role
+
+            try:
+                membership._role_cache = Role.objects.get(id=active_hat)
+            except Role.DoesNotExist:
+                membership._role_cache = None
 
     user = _SessionUser(session_data)
     user.active_hat = active_hat or ""
