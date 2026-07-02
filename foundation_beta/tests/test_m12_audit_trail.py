@@ -22,14 +22,19 @@ class tenant_scope:
 
     def __init__(self, tenant_id):
         self.tenant_id = tenant_id
+        self._atomic = None
 
     def __enter__(self):
+        from django.db import transaction
+
+        self._atomic = transaction.atomic()
+        self._atomic.__enter__()
         set_db_tenant(self.tenant_id)
         return self
 
     def __exit__(self, exc_type, exc, tb):
         clear_db_tenant()
-        return False
+        return self._atomic.__exit__(exc_type, exc, tb)
 
 
 def _login(client: Client, user, tenant, password: str = "FaberLoom1234!") -> str:
@@ -64,11 +69,8 @@ def _set_tenant(tenant_id):
 
 
 def _audit_count(tenant_id):
-    _set_tenant(tenant_id)
-    try:
+    with tenant_scope(tenant_id):
         return AuditLog.objects.filter(tenant_id=tenant_id).count()
-    finally:
-        clear_db_tenant()
 
 
 @pytest.mark.django_db
@@ -183,8 +185,7 @@ def test_validate_chain_detects_rupture(tenant_a, owner_user):
     )
 
     # Inject a forged entry directly to simulate tampering.
-    _set_tenant(tenant_a.id)
-    try:
+    with tenant_scope(tenant_a.id):
         with connection.cursor() as cursor:
             cursor.execute("SELECT nextval('audit_seq')")
             (seq_no,) = cursor.fetchone()
@@ -211,8 +212,6 @@ def test_validate_chain_detects_rupture(tenant_a, owner_user):
                     "{}",
                 ],
             )
-    finally:
-        clear_db_tenant()
 
     report = validate_chain(str(tenant_a.id), f"{tenant_a.id}:default")
     assert report["valid"] is False

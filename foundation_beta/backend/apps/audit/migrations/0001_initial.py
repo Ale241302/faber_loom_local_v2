@@ -60,15 +60,21 @@ def apply_audit_ddl(apps, schema_editor):
 
         # App-role privilege hardening (defense in depth; triggers enforce append-only).
         cursor.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename = 'audit_log'"
+        )
+        owner_row = cursor.fetchone()
+        table_owner = owner_row[0] if owner_row else None
+
+        cursor.execute(
             "SELECT rolname FROM pg_roles WHERE rolname IN ('faberloom_app', 'faberloom_backend')"
         )
         for (role_name,) in cursor.fetchall():
-            cursor.execute(
-                f"GRANT INSERT, SELECT ON audit_log TO {role_name};"
-            )
-            cursor.execute(
-                f"REVOKE UPDATE, DELETE ON audit_log FROM {role_name};"
-            )
+            cursor.execute(f"GRANT INSERT, SELECT ON audit_log TO {role_name};")
+            # The table owner has implicit UPDATE/DELETE; revoking would make the
+            # append-only trigger unreachable. Only strip mutation privileges from
+            # non-owner application roles.
+            if role_name != table_owner:
+                cursor.execute(f"REVOKE UPDATE, DELETE ON audit_log FROM {role_name};")
 
 
 def revert_audit_ddl(apps, schema_editor):
