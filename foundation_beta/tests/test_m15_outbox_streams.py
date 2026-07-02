@@ -126,7 +126,7 @@ async def test_websocket_receives_event_after_relay(tenant_a, owner_user, owner_
     assert connected
 
     await sync_to_async(EventWriter.emit)(tenant_a.id, "draft.sent", {"draft_id": "d3"})
-    relay_outbox(_tenant_id=str(tenant_a.id))
+    await sync_to_async(relay_outbox)(_tenant_id=str(tenant_a.id))
 
     response = await communicator.receive_json_from(timeout=5)
     assert response["type"] == "draft.sent"
@@ -148,7 +148,7 @@ async def test_websocket_does_not_cross_tenant(
 
     # Publish an event in tenant_b.
     await sync_to_async(EventWriter.emit)(tenant_b.id, "draft.sent", {"draft_id": "d4"})
-    relay_outbox(_tenant_id=str(tenant_b.id))
+    await sync_to_async(relay_outbox)(_tenant_id=str(tenant_b.id))
 
     # No message should arrive; give it a short window.
     with pytest.raises(Exception):
