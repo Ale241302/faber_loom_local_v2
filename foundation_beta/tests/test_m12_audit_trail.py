@@ -198,9 +198,9 @@ def test_validate_chain_detects_rupture(tenant_a, owner_user):
                 INSERT INTO audit_log (
                     id, tenant_id, action_id, data_class, sha_chain_prev, sha_chain_curr,
                     seq_no, chain_id, actor_id, actor_role_at_decision, payload_json,
-                    human_gate_required
+                    human_gate_required, created_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now()
                 )
                 """,
                 [
