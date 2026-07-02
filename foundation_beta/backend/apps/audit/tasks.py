@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from celery import shared_task
+from django.db import transaction
 
 from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.tenants.models import Tenant
@@ -29,47 +30,47 @@ def _recompute_hash(entry: AuditLog) -> str:
 
 def validate_chain(tenant_id: str, chain_id: str) -> dict[str, Any]:
     """Validate the integrity of a single audit chain."""
-    set_db_tenant(tenant_id)
-    try:
+    with transaction.atomic():
+        set_db_tenant(tenant_id)
         entries = list(
             AuditLog.objects.filter(chain_id=chain_id).order_by("seq_no")
         )
-        breaks = []
-        previous_hash = "0" * 64
-        checked = 0
+    clear_db_tenant()
 
-        for entry in entries:
-            if entry.sha_chain_prev != previous_hash:
-                breaks.append(
-                    {
-                        "seq_no": entry.seq_no,
-                        "reason": "prev_hash_mismatch",
-                        "expected": previous_hash,
-                        "found": entry.sha_chain_prev,
-                    }
-                )
-            expected = _recompute_hash(entry)
-            if entry.sha_chain_curr != expected:
-                breaks.append(
-                    {
-                        "seq_no": entry.seq_no,
-                        "reason": "curr_hash_mismatch",
-                        "expected": expected,
-                        "found": entry.sha_chain_curr,
-                    }
-                )
-            previous_hash = entry.sha_chain_curr
-            checked += 1
+    breaks = []
+    previous_hash = "0" * 64
+    checked = 0
 
-        return {
-            "tenant_id": tenant_id,
-            "chain_id": chain_id,
-            "checked": checked,
-            "valid": len(breaks) == 0,
-            "breaks": breaks,
-        }
-    finally:
-        clear_db_tenant()
+    for entry in entries:
+        if entry.sha_chain_prev != previous_hash:
+            breaks.append(
+                {
+                    "seq_no": entry.seq_no,
+                    "reason": "prev_hash_mismatch",
+                    "expected": previous_hash,
+                    "found": entry.sha_chain_prev,
+                }
+            )
+        expected = _recompute_hash(entry)
+        if entry.sha_chain_curr != expected:
+            breaks.append(
+                {
+                    "seq_no": entry.seq_no,
+                    "reason": "curr_hash_mismatch",
+                    "expected": expected,
+                    "found": entry.sha_chain_curr,
+                }
+            )
+        previous_hash = entry.sha_chain_curr
+        checked += 1
+
+    return {
+        "tenant_id": tenant_id,
+        "chain_id": chain_id,
+        "checked": checked,
+        "valid": len(breaks) == 0,
+        "breaks": breaks,
+    }
 
 
 @shared_task
