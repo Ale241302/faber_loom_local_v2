@@ -9,9 +9,10 @@ from django.db import transaction
 
 from apps.audit.writer import AuditContext, AuditWriter
 from apps.events.emit import emit_event
-from apps.tenants.models import Tenant
 
-from .models import DataClassificationDefault, DataClass, DpaStatement, PolicyBlock
+from .models import DataClassificationDefault, DpaStatement, PolicyBlock
+
+from apps.tenants.models import TenantPlanFeatures
 
 
 DATA_CLASS_ORDER = {
@@ -138,8 +139,8 @@ class D9Gate:
     @classmethod
     def _ceiling(cls, tenant_id: str) -> str:
         try:
-            return Tenant.objects.get(id=tenant_id).plan_features.data_class_ceiling
-        except (Tenant.DoesNotExist, Tenant.plan_features.RelatedObjectDoesNotExist):
+            return TenantPlanFeatures.objects.get(tenant_id=tenant_id).data_class_ceiling
+        except TenantPlanFeatures.DoesNotExist:
             return "N1"
 
     @classmethod
