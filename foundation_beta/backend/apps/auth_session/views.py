@@ -23,6 +23,7 @@ from apps.auth_session.login_token import (
     delete_login_token,
     get_login_token,
 )
+from apps.audit.writer import AuditContext, AuditWriter
 from apps.events.emit import emit_event
 from apps.users.models import Membership, MembershipStatus
 
@@ -113,6 +114,15 @@ class LoginStepOneView(APIView):
                 emit_event(
                     tenant_id=tenant_id,
                     event_type="auth.login.success",
+                    payload={"user_id": str(user.id), "method": "password"},
+                )
+                AuditWriter.write(
+                    AuditContext(
+                        tenant_id=tenant_id,
+                        actor_id=user.id,
+                        actor_role_at_decision=active_hat,
+                    ),
+                    action_id="auth.login.success",
                     payload={"user_id": str(user.id), "method": "password"},
                 )
             response = Response({"requires_2fa": False, "session_id": session_id})
@@ -233,6 +243,15 @@ class LoginStepTwoView(APIView):
                 event_type="auth.login.success",
                 payload={"user_id": str(user.id), "method": "totp"},
             )
+            AuditWriter.write(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=user.id,
+                    actor_role_at_decision=active_hat,
+                ),
+                action_id="auth.login.success",
+                payload={"user_id": str(user.id), "method": "totp"},
+            )
 
         response = Response(
             {
@@ -288,6 +307,15 @@ class LogoutView(APIView):
                     event_type="session.revoked",
                     payload={"user_id": request.user.id, "session_id": session_id},
                 )
+                AuditWriter.write(
+                    AuditContext(
+                        tenant_id=tenant_id,
+                        actor_id=request.user.id,
+                        actor_role_at_decision=request.active_hat or "",
+                    ),
+                    action_id="auth.logout",
+                    payload={"session_id": session_id},
+                )
         response = Response({"detail": "Logged out."})
         response.delete_cookie("session_id")
         return response
@@ -307,6 +335,15 @@ class LogoutAllView(APIView):
             event_type="session.revoked",
             payload={"user_id": request.user.id, "scope": "all", "removed": removed},
         )
+        AuditWriter.write(
+            AuditContext(
+                tenant_id=tenant_id,
+                actor_id=request.user.id,
+                actor_role_at_decision=request.active_hat or "",
+            ),
+            action_id="auth.logout_all",
+            payload={"removed": removed},
+        )
         response = Response({"detail": "All sessions revoked.", "removed": removed})
         response.delete_cookie("session_id")
         return response
@@ -325,5 +362,14 @@ class RevokeSessionView(APIView):
             tenant_id=tenant_id,
             event_type="session.revoked",
             payload={"revoked_by": request.user.id, "session_id": session_id},
+        )
+        AuditWriter.write(
+            AuditContext(
+                tenant_id=tenant_id,
+                actor_id=request.user.id,
+                actor_role_at_decision=request.active_hat or "",
+            ),
+            action_id="auth.session.revoked",
+            payload={"revoked_session_id": session_id},
         )
         return Response({"detail": "Session revoked."})

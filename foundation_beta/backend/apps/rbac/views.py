@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.auth_session.session import revoke_all_user_sessions
+from apps.audit.writer import AuditContext, AuditWriter
 from apps.events.emit import emit_event
 from apps.rbac.drf_permissions import HasPermission, IsActiveMember
 from apps.rbac.permissions import set_active_hat
@@ -120,6 +121,18 @@ class MembershipCreateView(APIView):
                     "expires_at": (timezone.now() + timedelta(days=ttl_days)).isoformat(),
                 },
             )
+            AuditWriter.write(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=request.user.id,
+                    actor_role_at_decision=request.active_hat or "",
+                ),
+                action_id="users.invite",
+                payload={
+                    "invited_user_id": str(user.id),
+                    "roles": roles,
+                },
+            )
 
         return Response(_membership_to_dict(membership), status=status.HTTP_201_CREATED)
 
@@ -174,6 +187,20 @@ class MembershipDetailView(APIView):
                     "changed_by": request.user.id,
                 },
             )
+            AuditWriter.write(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=request.user.id,
+                    actor_role_at_decision=request.active_hat or "",
+                ),
+                action_id="users.role_changed",
+                payload={
+                    "membership_id": str(membership.id),
+                    "user_id": str(membership.user_id),
+                    "previous_roles": previous_roles,
+                    "new_roles": new_roles,
+                },
+            )
 
         return Response(_membership_to_dict(membership))
 
@@ -221,6 +248,18 @@ class RevokeMembershipView(APIView):
                 payload={
                     "user_id": str(membership.user_id),
                     "revoked_by": request.user.id,
+                },
+            )
+            AuditWriter.write(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=request.user.id,
+                    actor_role_at_decision=request.active_hat or "",
+                ),
+                action_id="users.revoked",
+                payload={
+                    "membership_id": str(membership.id),
+                    "user_id": str(membership.user_id),
                 },
             )
 

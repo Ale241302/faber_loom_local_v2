@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.auth_session",
     "apps.events",
     "apps.rbac",
+    "apps.audit",
 ]
 
 MIDDLEWARE = [
@@ -150,6 +151,10 @@ CHANNEL_LAYERS = {
 # M15 Outbox Streams
 EVENT_STREAM_TTL_SECONDS = int(os.environ.get("EVENT_STREAM_TTL_SECONDS", "86400"))
 OUTBOX_RETENTION_DAYS = int(os.environ.get("OUTBOX_RETENTION_DAYS", "7"))
+
+# M12 Audit Trail
+AUDIT_EXPORT_FORMAT = os.environ.get("AUDIT_EXPORT_FORMAT", "json,csv")
+AUDIT_VALIDATION_HOUR = int(os.environ.get("AUDIT_VALIDATION_HOUR", "2"))
 
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/1")
