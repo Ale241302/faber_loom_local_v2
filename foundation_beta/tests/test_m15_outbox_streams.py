@@ -1,6 +1,7 @@
 """M15 Outbox Streams tests."""
 from __future__ import annotations
 
+import asyncio
 import json
 import urllib.parse
 import uuid
@@ -151,7 +152,7 @@ async def test_websocket_does_not_cross_tenant(
     await sync_to_async(relay_outbox, thread_sensitive=False)(_tenant_id=str(tenant_b.id))
 
     # No message should arrive; give it a short window.
-    with pytest.raises(Exception):
+    with pytest.raises(asyncio.TimeoutError):
         await communicator.receive_json_from(timeout=0.5)
     await communicator.disconnect()
 
