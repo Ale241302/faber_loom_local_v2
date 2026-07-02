@@ -6,6 +6,7 @@ import urllib.parse
 from datetime import timedelta
 from typing import Any
 
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
 from django.utils import timezone
@@ -20,61 +21,41 @@ class EventsConsumer(AsyncWebsocketConsumer):
     """WebSocket fanout for tenant-scoped events with permission filtering."""
 
     async def connect(self):
-        self.tenant_id = None
-        self.user = None
-        self.membership = None
-        self.active_hat = None
-        self.stream_key = None
-
         session_id = self._cookie_session_id()
         if not session_id:
             await self.close(code=4001)
             return
 
-        redis = get_redis_client()
-        tenant_id_raw = redis.get(f"{SESSION_INDEX_PREFIX}{session_id}")
-        if not tenant_id_raw:
+        auth = await _authenticate_async(session_id)
+        if auth is None:
             await self.close(code=4001)
             return
 
-        self.tenant_id = (
-            tenant_id_raw.decode()
-            if isinstance(tenant_id_raw, bytes)
-            else tenant_id_raw
-        )
-        session_data = get_session(session_id, self.tenant_id)
-        if not session_data:
-            await self.close(code=4001)
-            return
-
-        self.user = _SessionUser(session_data)
+        self.tenant_id = auth["tenant_id"]
+        self.user = auth["user"]
+        self.membership = auth["membership"]
+        self.active_hat = auth["active_hat"]
         self.stream_key = tenant_key(self.tenant_id, "events")
-
-        # Load membership and active hat synchronously (Channels runs sync code in thread).
-        from asgiref.sync import async_to_sync
-
-        await self._load_membership()
 
         since = self._since_seq()
         await self.channel_layer.group_add(self._group_name(), self.channel_name)
         await self.accept()
 
-        # If the client is too far behind (>24h) or does not provide a cursor,
-        # ask for a full sync.
-        if not self._cursor_valid(since):
+        # If the client is too far behind, ask for a full sync.
+        cursor_valid = await _cursor_valid_async(self.stream_key, since)
+        if not cursor_valid:
             await self.send(
                 json.dumps({"type": "sync_required", "reason": "cursor_too_old"})
             )
             return
 
-        # Replay missed events from Redis Stream since the provided seq_no.
-        missed = self._events_since(since)
+        missed = await _events_since_async(self.tenant_id, self.stream_key, since)
         for event in missed:
             if self._can_see(event):
                 await self.send(json.dumps(event))
 
     async def disconnect(self, close_code):
-        if self.tenant_id:
+        if getattr(self, "tenant_id", None):
             await self.channel_layer.group_discard(
                 self._group_name(), self.channel_name
             )
@@ -103,35 +84,6 @@ class EventsConsumer(AsyncWebsocketConsumer):
                 return value
         return None
 
-    async def _load_membership(self):
-        from asgiref.sync import sync_to_async
-
-        try:
-            membership = await sync_to_async(Membership.objects.get)(
-                user_id=self.user.id, tenant_id=self.tenant_id
-            )
-        except Membership.DoesNotExist:
-            membership = None
-
-        self.membership = membership
-        if membership:
-            roles = membership.roles or []
-            requested = self._header_active_hat()
-            if requested and requested in roles:
-                self.active_hat = requested
-                membership.active_hat = requested
-            elif membership.active_hat and membership.active_hat in roles:
-                self.active_hat = membership.active_hat
-            else:
-                self.active_hat = roles[0] if roles else None
-            self.user.active_hat = self.active_hat
-
-    def _header_active_hat(self) -> str | None:
-        headers = dict(self.scope.get("headers", []))
-        header_name = settings.ACTIVE_HAT_HEADER.encode()
-        value = headers.get(header_name, b"").decode()
-        return value or None
-
     def _since_seq(self) -> int | None:
         query = self.scope.get("query_string", b"").decode()
         params = urllib.parse.parse_qs(query)
@@ -143,51 +95,12 @@ class EventsConsumer(AsyncWebsocketConsumer):
         except ValueError:
             return None
 
-    def _cursor_valid(self, since: int | None) -> bool:
-        if since is None:
-            return True  # Fresh connection; no replay needed.
-        redis = get_redis_client()
-        oldest = redis.xrange(self.stream_key, count=1)
-        if not oldest:
-            # Stream is empty or trimmed; any non-fresh cursor is stale.
-            return False
-        # If the requested seq_no is older than the oldest event in the stream,
-        # there is a gap and the client needs a full sync.
-        first_seq = int(oldest[0][1].get(b"seq_no", 0))
-        return since >= first_seq
-
-    def _events_since(self, since: int | None) -> list[dict[str, Any]]:
-        if since is None:
-            return []
-        redis = get_redis_client()
-        # Read from seq_no exclusive.
-        entries = redis.xrange(self.stream_key, min=f"({since}-0", max="+")
-        events = []
-        for _entry_id, fields in entries:
-            data = {k.decode() if isinstance(k, bytes) else k: v for k, v in fields.items()}
-            try:
-                payload = json.loads(data.get("payload", "{}"))
-            except json.JSONDecodeError:
-                payload = {}
-            events.append(
-                {
-                    "event_id": data.get("event_id"),
-                    "type": data.get("type"),
-                    "tenant_id": self.tenant_id,
-                    "payload": payload,
-                    "seq_no": int(data.get("seq_no", 0)),
-                    "timestamp": timezone.now().isoformat(),
-                }
-            )
-        return events
-
     def _can_see(self, event: dict[str, Any]) -> bool:
         if event.get("tenant_id") != self.tenant_id:
             return False
-        surface, _, action = (event.get("type") or "").partition(".")
+        surface, _, _ = (event.get("type") or "").partition(".")
         if not surface:
             return True
-        # Map generic event types to a permission surface; default to workloom:view.
         surface_map = {
             "auth": "config",
             "user": "users",
@@ -210,3 +123,95 @@ class _SessionUser:
         self.is_authenticated = True
         self.is_anonymous = False
         self.is_active = True
+
+
+def _resolve_active_hat(membership: Membership, requested: str | None) -> str | None:
+    roles = membership.roles or []
+    if not roles:
+        return None
+    if requested and requested in roles:
+        return requested
+    if membership.active_hat and membership.active_hat in roles:
+        return membership.active_hat
+    return roles[0]
+
+
+def _authenticate_sync(session_id: str) -> dict[str, Any] | None:
+    redis = get_redis_client()
+    tenant_id_raw = redis.get(f"{SESSION_INDEX_PREFIX}{session_id}")
+    if not tenant_id_raw:
+        return None
+    tenant_id = (
+        tenant_id_raw.decode()
+        if isinstance(tenant_id_raw, bytes)
+        else tenant_id_raw
+    )
+    session_data = get_session(session_id, tenant_id)
+    if not session_data:
+        return None
+
+    try:
+        membership = Membership.objects.get(
+            user_id=session_data["user_id"], tenant_id=tenant_id
+        )
+    except Membership.DoesNotExist:
+        membership = None
+
+    active_hat = None
+    if membership:
+        active_hat = _resolve_active_hat(membership, None)
+
+    user = _SessionUser(session_data)
+    user.active_hat = active_hat or ""
+    return {
+        "tenant_id": tenant_id,
+        "user": user,
+        "membership": membership,
+        "active_hat": active_hat,
+    }
+
+
+def _cursor_valid_sync(stream_key: str, since: int | None) -> bool:
+    if since is None:
+        return True
+    redis = get_redis_client()
+    oldest = redis.xrange(stream_key, count=1)
+    if not oldest:
+        return False
+    first_seq = int(oldest[0][1].get(b"seq_no", 0))
+    return since >= first_seq
+
+
+def _events_since_sync(
+    tenant_id: str, stream_key: str, since: int | None
+) -> list[dict[str, Any]]:
+    if since is None:
+        return []
+    redis = get_redis_client()
+    entries = redis.xrange(stream_key, min=f"({since}-0", max="+")
+    events = []
+    for _entry_id, fields in entries:
+        data = {
+            k.decode() if isinstance(k, bytes) else k: v
+            for k, v in fields.items()
+        }
+        try:
+            payload = json.loads(data.get("payload", "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+        events.append(
+            {
+                "event_id": data.get("event_id"),
+                "type": data.get("type"),
+                "tenant_id": tenant_id,
+                "payload": payload,
+                "seq_no": int(data.get("seq_no", 0)),
+                "timestamp": timezone.now().isoformat(),
+            }
+        )
+    return events
+
+
+_authenticate_async = database_sync_to_async(_authenticate_sync)
+_cursor_valid_async = database_sync_to_async(_cursor_valid_sync)
+_events_since_async = database_sync_to_async(_events_since_sync)
