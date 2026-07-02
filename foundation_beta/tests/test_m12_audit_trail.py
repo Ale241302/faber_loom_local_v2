@@ -33,8 +33,10 @@ class tenant_scope:
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        # Roll back first so clear_db_tenant never runs inside an aborted transaction.
+        success = self._atomic.__exit__(exc_type, exc, tb)
         clear_db_tenant()
-        return self._atomic.__exit__(exc_type, exc, tb)
+        return success
 
 
 def _login(client: Client, user, tenant, password: str = "FaberLoom1234!") -> str:
