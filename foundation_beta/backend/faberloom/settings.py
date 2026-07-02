@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.rbac",
     "apps.audit",
     "apps.policy",
+    "apps.bootstrap",
 ]
 
 MIDDLEWARE = [
