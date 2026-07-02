@@ -47,7 +47,7 @@ M16 Tenant Isolation
 |---:|---|---|---|
 | 1 | M16 Tenant Isolation ✅ | S1A | Todos los tracks |
 | 2 | M08 Auth Session ✅ | S1A | M09, M18, M07 |
-| 3 | M09 RBAC | S1A | M07, M13, M12 (permisos) |
+| 3 | M09 RBAC ✅ | S1A | M07, M13, M12 (permisos) |
 | 4 | M15 Outbox Streams | S1B | M13, M19, consumidores |
 | 5 | M12 Audit Trail | S1B | M11, M13, M14, M17 |
 | 6 | M11 D9 Policy Gate | S1B | Ejecución M10, M13 outbound, M07 activation |
@@ -109,13 +109,13 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Revocación remota de sesiones (owner/admin) y logout-all
 - [ ] Electron partition por tenant + keytar para secrets (frontend desktop E2+)
 
-### M09 RBAC
-- [ ] Tabla `Role` con 5 roles canónicos seedeados
-- [ ] Tabla `Membership` (user_id, tenant_id, roles[], status, active_hat)
-- [ ] Permission resolver server-side
-- [ ] UI muestra/oculta según rol
-- [ ] Selector de "hat" en desktop
-- [ ] Audit de cambios de rol y denegaciones
+### M09 RBAC ✅ SPINE gate verde
+- [x] Tabla `Role` con 5 roles canónicos seedeados
+- [x] Tabla `Membership` (user_id, tenant_id, roles[], status, active_hat)
+- [x] Permission resolver server-side (`HasPermission`, `require_permission`)
+- [ ] UI muestra/oculta según rol (frontend web E2+)
+- [x] Selector de "hat" vía header `X-Active-Hat` validado
+- [x] Eventos outbox: `user.invited`, `user.role_changed`, `user.revoked`, `permission.denied`
 
 ### M15 Outbox Streams
 - [ ] Tabla `outbox` transactional
