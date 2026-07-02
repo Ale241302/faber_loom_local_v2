@@ -14,7 +14,7 @@ class TenantTask(Task):
     """Base Celery task that binds a tenant session and clears it afterwards."""
 
     def __call__(self, *args, **kwargs):
-        tenant_id = kwargs.pop("_tenant_id", None)
+        tenant_id = kwargs.get("_tenant_id")
         if tenant_id is None:
             raise ValueError("TenantTask missing _tenant_id")
 
