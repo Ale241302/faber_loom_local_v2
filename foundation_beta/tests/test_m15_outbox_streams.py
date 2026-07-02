@@ -6,6 +6,7 @@ import urllib.parse
 import uuid
 
 import pytest
+from asgiref.sync import sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.db import transaction
 from django.test import Client
@@ -53,7 +54,7 @@ def test_event_writer_is_atomic_with_business_transaction(tenant_a):
 @pytest.mark.django_db
 def test_relay_publishes_pending_events_to_redis_stream(tenant_a, owner_user, owner_membership):
     event_id = EventWriter.emit(tenant_a.id, "draft.generated", {"draft_id": "d1"})
-    result = relay_outbox(str(tenant_a.id))
+    result = relay_outbox(_tenant_id=str(tenant_a.id))
     assert result["published"] == 1
 
     outbox = Outbox.objects.get(event_id=event_id)
@@ -70,8 +71,8 @@ def test_relay_publishes_pending_events_to_redis_stream(tenant_a, owner_user, ow
 @pytest.mark.django_db
 def test_duplicate_relay_does_not_duplicate_stream_entries(tenant_a, owner_user, owner_membership):
     EventWriter.emit(tenant_a.id, "draft.approved", {"draft_id": "d2"})
-    relay_outbox(str(tenant_a.id))
-    relay_outbox(str(tenant_a.id))
+    relay_outbox(_tenant_id=str(tenant_a.id))
+    relay_outbox(_tenant_id=str(tenant_a.id))
     redis = get_redis_client()
     entries = redis.xrange(tenant_key(tenant_a.id, "events"))
     assert len(entries) == 1
@@ -80,7 +81,7 @@ def test_duplicate_relay_does_not_duplicate_stream_entries(tenant_a, owner_user,
 @pytest.mark.django_db
 def test_polling_fallback_returns_events(tenant_a, owner_user, owner_membership):
     event_id = EventWriter.emit(tenant_a.id, "feed.item.received", {"item_id": "i1"})
-    relay_outbox(str(tenant_a.id))
+    relay_outbox(_tenant_id=str(tenant_a.id))
 
     session_id = _session_cookie(tenant_a, owner_user, ["owner"])
     client = Client()
@@ -96,7 +97,7 @@ def test_polling_fallback_is_isolated_by_tenant(
     tenant_a, tenant_b, owner_user, owner_membership
 ):
     EventWriter.emit(tenant_b.id, "feed.item.received", {"item_id": "i2"})
-    relay_outbox(str(tenant_b.id))
+    relay_outbox(_tenant_id=str(tenant_b.id))
 
     session_id = _session_cookie(tenant_a, owner_user, ["owner"])
     client = Client()
@@ -124,8 +125,8 @@ async def test_websocket_receives_event_after_relay(tenant_a, owner_user, owner_
     connected, _ = await communicator.connect()
     assert connected
 
-    EventWriter.emit(tenant_a.id, "draft.sent", {"draft_id": "d3"})
-    relay_outbox(str(tenant_a.id))
+    await sync_to_async(EventWriter.emit)(tenant_a.id, "draft.sent", {"draft_id": "d3"})
+    relay_outbox(_tenant_id=str(tenant_a.id))
 
     response = await communicator.receive_json_from(timeout=5)
     assert response["type"] == "draft.sent"
@@ -146,8 +147,8 @@ async def test_websocket_does_not_cross_tenant(
     assert connected
 
     # Publish an event in tenant_b.
-    EventWriter.emit(tenant_b.id, "draft.sent", {"draft_id": "d4"})
-    relay_outbox(str(tenant_b.id))
+    await sync_to_async(EventWriter.emit)(tenant_b.id, "draft.sent", {"draft_id": "d4"})
+    relay_outbox(_tenant_id=str(tenant_b.id))
 
     # No message should arrive; give it a short window.
     with pytest.raises(Exception):
