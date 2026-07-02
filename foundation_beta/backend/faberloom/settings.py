@@ -13,6 +13,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -20,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "channels",
     "apps.core",
     "apps.tenants",
     "apps.users",
@@ -60,6 +62,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "faberloom.wsgi.application"
+ASGI_APPLICATION = "faberloom.asgi.application"
 
 DATABASES = {
     "default": {
@@ -133,6 +136,20 @@ TOTP_LOCKOUT_SECONDS = int(os.environ.get("TOTP_LOCKOUT_SECONDS", "900"))
 # RBAC
 ACTIVE_HAT_HEADER = "HTTP_X_ACTIVE_HAT"
 INVITATION_TTL_DAYS = int(os.environ.get("INVITATION_TTL_DAYS", "7"))
+
+# Channels / WebSocket
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.environ.get("REDIS_URL", "redis://localhost:6379/0")],
+        },
+    },
+}
+
+# M15 Outbox Streams
+EVENT_STREAM_TTL_SECONDS = int(os.environ.get("EVENT_STREAM_TTL_SECONDS", "86400"))
+OUTBOX_RETENTION_DAYS = int(os.environ.get("OUTBOX_RETENTION_DAYS", "7"))
 
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/1")
