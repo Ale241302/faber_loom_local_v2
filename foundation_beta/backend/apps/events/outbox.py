@@ -4,8 +4,9 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from django.db import connection, transaction
+from django.db import connection
 
+from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.events.models import EventLog, Outbox
 
 
@@ -23,25 +24,29 @@ class EventWriter:
         if event_id is None:
             event_id = f"evt_{uuid.uuid4().hex}"
 
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT nextval('global_event_seq')")
-            (seq_no,) = cursor.fetchone()
-
         tenant_id_str = str(tenant_id)
-        Outbox.objects.create(
-            tenant_id=tenant_id_str,
-            event_id=event_id,
-            event_type=event_type,
-            payload_json=payload,
-            seq_no=seq_no,
-        )
-        EventLog.objects.create(
-            tenant_id=tenant_id_str,
-            event_id=event_id,
-            event_type=event_type,
-            payload_json=payload,
-            seq_no=seq_no,
-        )
+        set_db_tenant(tenant_id_str)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT nextval('global_event_seq')")
+                (seq_no,) = cursor.fetchone()
+
+            Outbox.objects.create(
+                tenant_id=tenant_id_str,
+                event_id=event_id,
+                event_type=event_type,
+                payload_json=payload,
+                seq_no=seq_no,
+            )
+            EventLog.objects.create(
+                tenant_id=tenant_id_str,
+                event_id=event_id,
+                event_type=event_type,
+                payload_json=payload,
+                seq_no=seq_no,
+            )
+        finally:
+            clear_db_tenant()
         return event_id
 
 
