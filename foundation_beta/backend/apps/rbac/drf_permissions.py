@@ -4,6 +4,7 @@ from __future__ import annotations
 from rest_framework import permissions
 
 from apps.rbac.permissions import emit_permission_denied, resolve_permission
+from apps.users.models import MembershipStatus
 
 
 class HasPermission(permissions.BasePermission):
@@ -28,4 +29,4 @@ class IsActiveMember(permissions.BasePermission):
 
     def has_permission(self, request, view):
         membership = getattr(request, "membership", None)
-        return bool(membership and membership.status == membership.Status.ACTIVE)
+        return bool(membership and membership.status == MembershipStatus.ACTIVE)
