@@ -111,7 +111,7 @@ def test_invitation_expires_in_7_days(client: Client, platform_admin, setup_tena
         event = Outbox.objects.filter(event_type="user.invited").latest("created_at")
         expires = event.payload_json.get("expires_at")
         assert expires is not None
-        assert expires.startswith((membership.invited_at + timedelta(days=6)).isoformat()[:10])
+        assert expires.startswith((membership.invited_at + timedelta(days=7)).isoformat()[:10])
     finally:
         clear_db_tenant()
 
@@ -189,12 +189,19 @@ def test_activation_blocked_without_dpa(
             }
         _complete_step(client, setup_tenant.id, step, payload)
 
+    # Run sandbox (N1 does not require DPA) so the only missing required step is DPA.
+    resp = client.post(
+        reverse("bootstrap-sandbox", kwargs={"tenant_id": setup_tenant.id}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+
     resp = client.post(
         reverse("bootstrap-activate", kwargs={"tenant_id": setup_tenant.id}),
         content_type="application/json",
     )
     assert resp.status_code == 400
-    assert "DPA" in resp.json()["detail"]
+    assert "dpa_signed" in resp.json().get("missing", [])
 
 
 @pytest.mark.django_db
@@ -285,12 +292,10 @@ def test_only_owner_and_operator_are_active_roles_after_go_live(
     assert resp.status_code == 201
     set_db_tenant(setup_tenant.id)
     try:
-        roles = set(
-            Membership.objects.filter(
-                tenant_id=setup_tenant.id, status__in=[MembershipStatus.ACTIVE, MembershipStatus.INVITED]
-            ).values_list("roles", flat=True)
-        )
-        flat = {r for sub in roles for r in sub}
+        roles_qs = Membership.objects.filter(
+            tenant_id=setup_tenant.id, status__in=[MembershipStatus.ACTIVE, MembershipStatus.INVITED]
+        ).values_list("roles", flat=True)
+        flat = {r for sub in roles_qs for r in sub}
         assert flat == {"owner", "operator"}
     finally:
         clear_db_tenant()
