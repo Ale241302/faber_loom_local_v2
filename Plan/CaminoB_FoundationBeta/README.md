@@ -48,7 +48,7 @@ M16 Tenant Isolation
 | 1 | M16 Tenant Isolation ✅ | S1A | Todos los tracks |
 | 2 | M08 Auth Session ✅ | S1A | M09, M18, M07 |
 | 3 | M09 RBAC ✅ | S1A | M07, M13, M12 (permisos) |
-| 4 | M15 Outbox Streams | S1B | M13, M19, consumidores |
+| 4 | M15 Outbox Streams ✅ | S1B | M13, M19, consumidores |
 | 5 | M12 Audit Trail | S1B | M11, M13, M14, M17 |
 | 6 | M11 D9 Policy Gate | S1B | Ejecución M10, M13 outbound, M07 activation |
 | 7 | M07 Bootstrap Wizard | S10 | Go-live del tenant beta |
@@ -117,13 +117,14 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Selector de "hat" vía header `X-Active-Hat` validado
 - [x] Eventos outbox: `user.invited`, `user.role_changed`, `user.revoked`, `permission.denied`
 
-### M15 Outbox Streams
-- [ ] Tabla `outbox` transactional
-- [ ] Event envelope canónico (`event_id`, `tenant_id`, `type`, `payload`, `timestamp`)
-- [ ] Relay Celery drena outbox → Redis Streams
-- [ ] WebSocket fanout por tenant + permisos
-- [ ] Reconexión con `?since=last_event_id`
-- [ ] Dedupe por `event_id`
+### M15 Outbox Streams ✅ SPINE gate verde
+- [x] Tablas `outbox` y `event_log` + secuencia global
+- [x] Event envelope canónico (`event_id`, `tenant_id`, `type`, `payload`, `seq_no`, `timestamp`)
+- [x] `EventWriter.emit()` transaccional
+- [x] Relay Celery drena outbox → Redis Stream `tenant:{id}:events`
+- [x] WebSocket fanout por tenant (`ws/events/`) + polling fallback (`/api/events`)
+- [x] Reconexión con `?since=<seq>` + `sync_required` si gap
+- [x] Dedupe por `event_id` y purga de publicados
 
 ### M12 Audit Trail
 - [ ] Tabla `audit_log` con 18 campos canónicos
