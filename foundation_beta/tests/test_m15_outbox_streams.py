@@ -151,9 +151,8 @@ async def test_websocket_does_not_cross_tenant(
     await sync_to_async(EventWriter.emit)(tenant_b.id, "draft.sent", {"draft_id": "d4"})
     await sync_to_async(relay_outbox, thread_sensitive=False)(_tenant_id=str(tenant_b.id))
 
-    # No message should arrive; give it a short window.
-    with pytest.raises(asyncio.TimeoutError):
-        await communicator.receive_json_from(timeout=0.5)
+    # No message should arrive.
+    assert await communicator.receive_nothing(timeout=0.5)
     await communicator.disconnect()
 
 
