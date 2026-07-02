@@ -9,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.events.emit import emit_event
 from apps.rbac.models import PermissionLevel
-from apps.users.models import Membership
+from apps.users.models import Membership, MembershipStatus
 
 
 SURFACE_MAP = {
@@ -43,7 +43,7 @@ def _required_level(surface: str, action: str) -> str:
 
 def resolve_permission(membership: Membership | None, surface: str, action: str) -> bool:
     """Return True if membership's active role grants surface:action."""
-    if not membership or membership.status != Membership.Status.ACTIVE:
+    if not membership or membership.status != MembershipStatus.ACTIVE:
         return False
 
     active_hat = _validated_active_hat(membership)
