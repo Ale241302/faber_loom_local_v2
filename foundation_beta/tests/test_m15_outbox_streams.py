@@ -108,7 +108,7 @@ def test_polling_fallback_is_isolated_by_tenant(
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_websocket_rejects_anonymous(tenant_a):
     communicator = WebsocketCommunicator(application, "ws/events/")
     connected, _ = await communicator.connect()
@@ -117,7 +117,7 @@ async def test_websocket_rejects_anonymous(tenant_a):
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_websocket_receives_event_after_relay(tenant_a, owner_user, owner_membership):
     session_id = _session_cookie(tenant_a, owner_user, ["owner"])
     headers = [(b"cookie", f"session_id={session_id}".encode())]
@@ -135,7 +135,7 @@ async def test_websocket_receives_event_after_relay(tenant_a, owner_user, owner_
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_websocket_does_not_cross_tenant(
     tenant_a, tenant_b, owner_user, owner_membership
 ):
@@ -157,7 +157,7 @@ async def test_websocket_does_not_cross_tenant(
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_websocket_sync_required_for_old_cursor(tenant_a, owner_user, owner_membership):
     # No events published yet; any non-fresh cursor is considered stale.
     session_id = _session_cookie(tenant_a, owner_user, ["owner"])
