@@ -132,11 +132,12 @@ def test_update_audit_log_is_rejected(tenant_a, owner_user):
     )
 
     with pytest.raises(Exception, match="append-only"):
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE audit_log SET action_id = %s WHERE id = %s",
-                ["tampered", str(entry.id)],
-            )
+        with tenant_scope(tenant_a.id):
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE audit_log SET action_id = %s WHERE id = %s",
+                    ["tampered", str(entry.id)],
+                )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -151,11 +152,12 @@ def test_delete_audit_log_is_rejected(tenant_a, owner_user):
     )
 
     with pytest.raises(Exception, match="append-only"):
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "DELETE FROM audit_log WHERE id = %s",
-                [str(entry.id)],
-            )
+        with tenant_scope(tenant_a.id):
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM audit_log WHERE id = %s",
+                    [str(entry.id)],
+                )
 
 
 @pytest.mark.django_db
@@ -195,9 +197,10 @@ def test_validate_chain_detects_rupture(tenant_a, owner_user):
                 """
                 INSERT INTO audit_log (
                     id, tenant_id, action_id, data_class, sha_chain_prev, sha_chain_curr,
-                    seq_no, chain_id, actor_id, actor_role_at_decision, payload_json
+                    seq_no, chain_id, actor_id, actor_role_at_decision, payload_json,
+                    human_gate_required
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 [
@@ -212,6 +215,7 @@ def test_validate_chain_detects_rupture(tenant_a, owner_user):
                     str(owner_user.id),
                     "owner",
                     "{}",
+                    False,
                 ],
             )
 
