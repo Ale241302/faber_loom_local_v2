@@ -6,7 +6,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.auth_session import session as session_store
-from apps.events.models import OutboxEvent
+from apps.events.models import Outbox
 from apps.rbac.models import Role
 from apps.users.models import Membership, MembershipStatus, User
 
@@ -78,7 +78,7 @@ def test_owner_can_invite_operator(client: Client, tenant_a, owner_user, owner_m
     data = resp.json()
     assert data["roles"] == ["operator"]
     assert data["status"] == "invited"
-    assert OutboxEvent.objects.filter(event_type="user.invited").exists()
+    assert Outbox.objects.filter(event_type="user.invited").exists()
 
 
 @pytest.mark.django_db
@@ -129,7 +129,7 @@ def test_revoke_membership_closes_sessions(
     )
     assert resp.status_code == 200
     assert session_store.get_session(operator_session, tenant_a.id) is None
-    assert OutboxEvent.objects.filter(event_type="user.revoked").exists()
+    assert Outbox.objects.filter(event_type="user.revoked").exists()
 
 
 @pytest.mark.django_db
@@ -145,7 +145,7 @@ def test_role_change_emits_event(
     assert resp.status_code == 200, resp.json()
     operator_membership.refresh_from_db()
     assert operator_membership.roles == ["viewer"]
-    assert OutboxEvent.objects.filter(event_type="user.role_changed").exists()
+    assert Outbox.objects.filter(event_type="user.role_changed").exists()
 
 
 @pytest.mark.django_db
