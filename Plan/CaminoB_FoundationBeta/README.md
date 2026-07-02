@@ -50,7 +50,7 @@ M16 Tenant Isolation
 | 3 | M09 RBAC ✅ | S1A | M07, M13, M12 (permisos) |
 | 4 | M15 Outbox Streams ✅ | S1B | M13, M19, consumidores |
 | 5 | M12 Audit Trail ✅ | S1B | M11, M13, M14, M17 |
-| 6 | M11 D9 Policy Gate | S1B | Ejecución M10, M13 outbound, M07 activation |
+| 6 | M11 D9 Policy Gate ✅ | S1B | Ejecución M10, M13 outbound, M07 activation |
 | 7 | M07 Bootstrap Wizard | S10 | Go-live del tenant beta |
 
 > **Regla de oro:** ningún track operativo arranca hasta que M16 pase sus 5 tests cross-tenant.
@@ -137,14 +137,18 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Export per-tenant JSON/CSV con validation report
 - [x] Tests M12 pasan en VPS (`pytest -q --create-db` → 11 passed)
 
-### M11 D9 Policy Gate
-- [ ] `ActionContext` + `PolicyDecision`
-- [ ] Ceiling por plan/tenant
-- [ ] DPA state por tenant
-- [ ] Gate pre-skill + pre-egress
-- [ ] `effective_classification = max(declared, source_default, retrieved_chunks, pre_egress_detected)`
-- [ ] Respuesta `PlanUpgradeRequired` canonizada
-- [ ] Audit de cada bloqueo/paso
+### M11 D9 Policy Gate ✅ SPINE gate verde
+- [x] `ActionContext` + `PolicyDecision`
+- [x] Modelos `DpaStatement`, `DataClassificationDefault`, `PolicyBlock` con RLS
+- [x] Ceiling por plan/tenant (`TenantPlanFeatures.data_class_ceiling`)
+- [x] DPA state por tenant; firma solo Owner
+- [x] Gate pre-skill (`evaluate`) + pre-egress (`pre_egress`) con heurística de PII
+- [x] `effective_classification = max(declared, source_default, retrieved_chunks, pre_egress_detected)`
+- [x] Respuesta `PlanUpgradeRequired` canonizada; fail-closed
+- [x] Endpoints `/api/policy/dpa`, `/api/policy/dpa/sign`, `/api/policy/evaluate`, `/api/policy/blocks`
+- [x] Eventos `policy.gate.passed`, `policy.gate.blocked`, `policy.classification_mismatch`
+- [x] Audit entry por cada decisión (M12)
+- [x] Tests M11 pasan en VPS (`pytest -q --create-db` → 9 passed)
 
 ### M07 Bootstrap Wizard
 - [ ] Tenant creado en estado `setup` por platform admin
