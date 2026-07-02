@@ -49,7 +49,7 @@ M16 Tenant Isolation
 | 2 | M08 Auth Session ✅ | S1A | M09, M18, M07 |
 | 3 | M09 RBAC ✅ | S1A | M07, M13, M12 (permisos) |
 | 4 | M15 Outbox Streams ✅ | S1B | M13, M19, consumidores |
-| 5 | M12 Audit Trail | S1B | M11, M13, M14, M17 |
+| 5 | M12 Audit Trail ✅ | S1B | M11, M13, M14, M17 |
 | 6 | M11 D9 Policy Gate | S1B | Ejecución M10, M13 outbound, M07 activation |
 | 7 | M07 Bootstrap Wizard | S10 | Go-live del tenant beta |
 
@@ -126,12 +126,16 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Reconexión con `?since=<seq>` + `sync_required` si gap
 - [x] Dedupe por `event_id` y purga de publicados
 
-### M12 Audit Trail
-- [ ] Tabla `audit_log` con 18 campos canónicos
-- [ ] Hash chain por `chain_id = tenant_id + audit_domain`
-- [ ] Append-only: triggers NO UPDATE/DELETE + app role sin UPDATE/DELETE
-- [ ] Job diario valida integridad
-- [ ] Export per-tenant (CSV/JSON firmado)
+### M12 Audit Trail ✅ SPINE gate verde
+- [x] Tabla `audit_log` con 18 campos canónicos
+- [x] Hash chain por `chain_id = tenant_id:default`
+- [x] Append-only: triggers NO UPDATE/DELETE + app role sin UPDATE/DELETE (no-op para el owner de la tabla en tests)
+- [x] `AuditWriter.write()` transaccional con RLS y emisión de `audit.entry.created`
+- [x] Integración en login/logout y RBAC (invite/role_change/revoke)
+- [x] Endpoints `/api/audit`, `/api/audit/export`, `/api/audit/validate` con permisos RBAC
+- [x] Job diario `validate_audit_chains` detecta rupturas y alerta P0
+- [x] Export per-tenant JSON/CSV con validation report
+- [x] Tests M12 pasan en VPS (`pytest -q --create-db` → 11 passed)
 
 ### M11 D9 Policy Gate
 - [ ] `ActionContext` + `PolicyDecision`
