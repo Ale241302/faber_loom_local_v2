@@ -73,6 +73,7 @@ class MembershipStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     SUSPENDED = "suspended", "Suspended"
     REVOKED = "revoked", "Revoked"
+    EXPIRED = "expired", "Expired"
 
 
 class Membership(models.Model):

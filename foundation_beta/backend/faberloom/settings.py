@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.auth_session",
     "apps.events",
+    "apps.rbac",
 ]
 
 MIDDLEWARE = [
@@ -36,6 +37,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.auth_session.middleware.SessionMiddleware",
+    "apps.rbac.middleware.RBACMiddleware",
     "apps.core.middleware.TenantMiddleware",
 ]
 
@@ -127,6 +129,10 @@ TOTP_ISSUER = os.environ.get("TOTP_ISSUER", "FaberLoom")
 TOTP_ENCRYPTION_KEY = os.environ.get("TOTP_ENCRYPTION_KEY", "")
 TOTP_ATTEMPTS_LIMIT = int(os.environ.get("TOTP_ATTEMPTS_LIMIT", "3"))
 TOTP_LOCKOUT_SECONDS = int(os.environ.get("TOTP_LOCKOUT_SECONDS", "900"))
+
+# RBAC
+ACTIVE_HAT_HEADER = "HTTP_X_ACTIVE_HAT"
+INVITATION_TTL_DAYS = int(os.environ.get("INVITATION_TTL_DAYS", "7"))
 
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/1")
