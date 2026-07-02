@@ -17,13 +17,13 @@ Este documento es el plan maestro para ejecutar el **Camino B: Foundation Beta v
 El trabajo se organiza en un **SPINE serial** de siete módulos funcionales cuyos contratos deben quedar congelados antes de abrir tracks paralelos:
 
 ```text
-M16 Tenant Isolation
-  → M08 Auth Session
-      → M09 RBAC
-  → M15 Outbox Streams
-  → M12 Audit Trail
-      → M11 D9 Policy Gate
-      → M07 Bootstrap Wizard
+M16 Tenant Isolation ✅
+  → M08 Auth Session ✅
+      → M09 RBAC ✅
+  → M15 Outbox Streams ✅
+  → M12 Audit Trail ✅
+      → M11 D9 Policy Gate ✅
+      → M07 Bootstrap Wizard ✅
 ```
 
 ## 2. Stack objetivo
@@ -51,7 +51,7 @@ M16 Tenant Isolation
 | 4 | M15 Outbox Streams ✅ | S1B | M13, M19, consumidores |
 | 5 | M12 Audit Trail ✅ | S1B | M11, M13, M14, M17 |
 | 6 | M11 D9 Policy Gate ✅ | S1B | Ejecución M10, M13 outbound, M07 activation |
-| 7 | M07 Bootstrap Wizard | S10 | Go-live del tenant beta |
+| 7 | M07 Bootstrap Wizard ✅ | S10 | Go-live del tenant beta |
 
 > **Regla de oro:** ningún track operativo arranca hasta que M16 pase sus 5 tests cross-tenant.
 
@@ -150,13 +150,18 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - [x] Audit entry por cada decisión (M12)
 - [x] Tests M11 pasan en VPS (`pytest -q --create-db` → 9 passed)
 
-### M07 Bootstrap Wizard
-- [ ] Tenant creado en estado `setup` por platform admin
-- [ ] Wizard 10 pasos (datos, Owner+2FA, mailbox, canales, KB, Voice Profile, DPA, seed shadow, sandbox, go-live)
-- [ ] Seed de agentes system en `shadow`
-- [ ] Invitación Owner/Operator
-- [ ] DPA firma in-wizard
-- [ ] Sandbox test obligatorio antes de `active`
+### M07 Bootstrap Wizard ✅ SPINE gate verde
+- [x] Tenant creado en estado `setup` por platform admin (endpoint existente `POST /api/tenants`)
+- [x] Wizard backend con pasos: datos, Owner+2FA, mailbox, KB seed, Voice Profile, DPA, seed agents, sandbox, go-live
+- [x] Modelos `TenantBootstrapProgress`, `EmailBinding`, `VoiceProfile`, `SystemAgent` con RLS
+- [x] Seed de agentes system (`@router`, `@cotizador`) en estado `shadow`
+- [x] Invitación Owner vía `/api/tenants/{id}/invite-owner` (TTL 7 días)
+- [x] Firma DPA in-wizard (paso `dpa_signed`)
+- [x] Sandbox test obligatorio con D9 gate + draft interno sin egress
+- [x] Activación `/api/tenants/{id}/activate` fail-closed: requiere todos los pasos + DPA + sandbox OK
+- [x] Eventos `tenant.activated`, `user.invited`, `user.2fa_enabled`, `mailbox.connected`, `document.uploaded`
+- [x] Audit M12 en cada paso y activación
+- [x] Tests M07 pasan en VPS (`pytest -q --create-db` → 8 passed)
 
 ## 7. Riesgos P0 transversales
 
