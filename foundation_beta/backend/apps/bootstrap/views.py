@@ -71,10 +71,7 @@ class InviteOwnerView(APIView):
             with transaction.atomic():
                 user, _ = User.objects.get_or_create(
                     email=email,
-                    defaults={
-                        "display_name": email.split("@")[0],
-                        "password_hash": "",  # placeholder; owner sets on first login
-                    },
+                    defaults={"display_name": email.split("@")[0]},
                 )
                 if Membership.objects.filter(user=user, tenant_id=tenant_id).exists():
                     return Response(
@@ -209,6 +206,8 @@ class WizardStepView(APIView):
                     # Sandbox is executed via its own endpoint; this step just records success.
                     pass
 
+                # Re-set tenant because step handlers may emit events that clear DB tenant context.
+                set_db_tenant(tenant_id)
                 _mark_step(progress, step)
 
                 AuditWriter.write(
@@ -281,6 +280,9 @@ class SandboxTestView(APIView):
                     actor_role=getattr(request, "active_hat", ""),
                     action=action,
                 )
+
+                # Ensure tenant context is active for progress writes.
+                set_db_tenant(tenant_id)
 
                 if not decision.allowed:
                     progress = _get_or_create_progress(tenant_id)

@@ -194,6 +194,9 @@ class D9Gate:
     ) -> None:
         tenant_id = action.tenant_id
         try:
+            from apps.core.tenant_context import current_tenant_id, set_db_tenant
+
+            previous_tenant = current_tenant_id()
             with transaction.atomic():
                 from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 
@@ -239,6 +242,8 @@ class D9Gate:
                     )
                 finally:
                     clear_db_tenant()
+            if previous_tenant:
+                set_db_tenant(previous_tenant)
         except Exception:
             # Audit/event emission must not break the gate decision itself.
             pass
