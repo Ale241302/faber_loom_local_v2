@@ -96,21 +96,9 @@ class EventsConsumer(AsyncWebsocketConsumer):
             return None
 
     def _can_see(self, event: dict[str, Any]) -> bool:
-        if event.get("tenant_id") != self.tenant_id:
-            return False
-        surface, _, _ = (event.get("type") or "").partition(".")
-        if not surface:
-            return True
-        surface_map = {
-            "auth": "config",
-            "user": "users",
-            "permission": "users",
-            "draft": "workloom",
-            "task": "workloom",
-            "feed": "workloom",
-        }
-        mapped_surface = surface_map.get(surface, surface)
-        return resolve_permission(self.membership, mapped_surface, "view")
+        # E1: any active member of the tenant receives all tenant events.
+        # Fine-grained permission filtering is enforced on REST endpoints by M09.
+        return event.get("tenant_id") == self.tenant_id and self.membership is not None
 
 
 class _SessionUser:
