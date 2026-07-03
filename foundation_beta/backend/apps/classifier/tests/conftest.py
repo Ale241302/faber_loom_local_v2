@@ -78,11 +78,17 @@ def plan_features(db, tenant):
 
 @pytest.fixture
 def dpa_signed(db, tenant, user):
-    return DpaStatement.objects.create(
-        tenant=tenant,
-        status=DpaStatus.SIGNED,
-        signed_by=user,
-    )
+    from apps.core.tenant_context import set_db_tenant, clear_db_tenant
+
+    set_db_tenant(tenant.id)
+    try:
+        return DpaStatement.objects.create(
+            tenant=tenant,
+            status=DpaStatus.SIGNED,
+            signed_by=user,
+        )
+    finally:
+        clear_db_tenant()
 
 
 @pytest.fixture

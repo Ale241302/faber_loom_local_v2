@@ -163,7 +163,11 @@ def test_l1_low_confidence_goes_to_human_review(tenant_a, owner_user, classifier
 @pytest.mark.django_db
 def test_l1_high_confidence_creates_task(tenant_a, owner_user, classifier_skill, rfq_feed_item):
     _plan_features(tenant_a, "N4")
-    DpaStatement.objects.create(tenant=tenant_a, status=DpaStatement.Status.SIGNED, version="v1")
+    set_db_tenant(tenant_a.id)
+    try:
+        DpaStatement.objects.create(tenant=tenant_a, status=DpaStatement.Status.SIGNED, version="v1")
+    finally:
+        clear_db_tenant()
     high_confidence_result = _make_classification_result(rfq_feed_item, classifier_skill, 0.92)
 
     with patch("apps.classifier.engine.L1Classifier.classify", return_value=high_confidence_result):
@@ -227,7 +231,11 @@ def test_manual_classify_endpoint_creates_feed_item(
     client, tenant_a, owner_user, owner_membership, classifier_skill
 ):
     _plan_features(tenant_a, "N4")
-    DpaStatement.objects.create(tenant=tenant_a, status=DpaStatement.Status.SIGNED, version="v1")
+    set_db_tenant(tenant_a.id)
+    try:
+        DpaStatement.objects.create(tenant=tenant_a, status=DpaStatement.Status.SIGNED, version="v1")
+    finally:
+        clear_db_tenant()
     high_confidence_result = _make_classification_result(
         FeedItem(tenant=tenant_a), classifier_skill, 0.92
     )
