@@ -71,19 +71,19 @@ def test_edited_decision_writes_diff(tenant, user, draft):
 
 
 def test_promotion_requires_validations(tenant, curator):
-    gold = GoldSample.objects.create(
-        tenant=tenant,
-        agent_id="@cotizador",
-        input_json={},
-        output_json={},
-        status=GoldSample.Status.CANDIDATE,
-    )
-
-    with pytest.raises(PromotionRejected):
-        GoldSampleService.promote(gold, curator, "curator")
-
     set_db_tenant(tenant.id)
     try:
+        gold = GoldSample.objects.create(
+            tenant=tenant,
+            agent_id="@cotizador",
+            input_json={},
+            output_json={},
+            status=GoldSample.Status.CANDIDATE,
+        )
+
+        with pytest.raises(PromotionRejected):
+            GoldSampleService.promote(gold, curator, "curator")
+
         gold.refresh_from_db()
         assert gold.status == GoldSample.Status.CANDIDATE
     finally:
