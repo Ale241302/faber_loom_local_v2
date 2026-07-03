@@ -17,6 +17,7 @@ from apps.classifier.models import (
     Tier0Rule,
 )
 from apps.classifier.schemas import ActionContext
+from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.events.emit import emit_event
 
 
@@ -67,7 +68,23 @@ class ClassifierService:
 
         classification_result = feed_item.classification_results.latest("created_at")
         ctx = ActionContext.from_dict(classification_result.action_context)
+        tenant_id = str(feed_item.tenant_id)
 
+        set_db_tenant(tenant_id)
+        try:
+            return cls._confirm_pending(feed_item, classification_result, ctx, actor_id, actor_role)
+        finally:
+            clear_db_tenant()
+
+    @classmethod
+    def _confirm_pending(
+        cls,
+        feed_item: FeedItem,
+        classification_result: ClassificationResult,
+        ctx: ActionContext,
+        actor_id: str,
+        actor_role: str,
+    ) -> dict[str, Any]:
         with transaction.atomic():
             from apps.tasks.models import Task
 

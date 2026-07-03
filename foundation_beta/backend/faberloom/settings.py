@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     "apps.bootstrap",
     "apps.tasks",
     "apps.classifier",
+    "apps.outcomes",
+    "apps.drafts",
 ]
 
 MIDDLEWARE = [
@@ -188,6 +190,15 @@ LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-faberloom-local")
 
 # Letta
 LETTA_URL = os.environ.get("LETTA_URL", "http://localhost:8283")
+
+# M13 Draft HITL
+DRAFT_TTL_HOURS = int(os.environ.get("DRAFT_TTL_HOURS", "48"))
+OSCILLATION_LIMIT = int(os.environ.get("OSCILLATION_LIMIT", "10"))
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@faberloom.ai")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+WHATSAPP_BACKEND = os.environ.get("WHATSAPP_BACKEND", "stub")
 
 # Logging
 LOGGING = {

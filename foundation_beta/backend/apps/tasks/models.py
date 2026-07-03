@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from apps.core.models import TenantScopedModel
@@ -32,6 +33,12 @@ class Task(TenantScopedModel):
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
         TIMEOUT = "timeout", "Timeout"
+
+    class ReviewStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        EDIT_LIGHT = "edit_light", "Edit light"
+        REJECTED = "rejected", "Rejected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     agent_id = models.CharField(max_length=255)
@@ -67,6 +74,25 @@ class Task(TenantScopedModel):
         on_delete=models.SET_NULL,
         db_column="parent_task_id",
     )
+
+    # HITL review fields (M13 Draft HITL)
+    review_status = models.CharField(
+        max_length=16,
+        choices=ReviewStatus.choices,
+        null=True,
+        blank=True,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        db_column="reviewed_by_id",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True, default="")
+    outputs = models.JSONField(default=dict)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

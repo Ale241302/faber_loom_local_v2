@@ -27,6 +27,16 @@ class ActionEngine:
 
     @classmethod
     def process(cls, feed_item, actor_id: str, actor_role: str) -> dict[str, Any]:
+        tenant_id = str(feed_item.tenant_id)
+        from apps.core.tenant_context import set_db_tenant, clear_db_tenant
+        set_db_tenant(tenant_id)
+        try:
+            return cls._process(feed_item, actor_id, actor_role)
+        finally:
+            clear_db_tenant()
+
+    @classmethod
+    def _process(cls, feed_item, actor_id: str, actor_role: str) -> dict[str, Any]:
         with transaction.atomic():
             tenant_id = str(feed_item.tenant_id)
             skill = ClassifierSkill.objects.get_active(tenant_id)
