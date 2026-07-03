@@ -75,10 +75,10 @@ def test_draft_expires_without_action(tenant, draft):
 @pytest.mark.django_db
 def test_d9_pre_egress_blocks_before_send(tenant, task, user):
     # Sensitive data (SSN pattern) triggers N4 classification mismatch in D9 pre-egress.
-    task.payload["subject"] = "Cotización 123-45-6789"
-    task.save(update_fields=["payload"])
     set_db_tenant(tenant.id)
     try:
+        task.payload["subject"] = "Cotización 123-45-6789"
+        task.save(update_fields=["payload"])
         draft = DraftService.generate(task)
         DraftService.approve(draft, user, "operator")
     finally:
