@@ -85,6 +85,12 @@ if os.environ.get("DATABASE_URL"):
 
     DATABASES["default"] = dj_database_url.parse(os.environ.get("DATABASE_URL"))
 
+# Allow tests to run as a non-superuser so RLS policies are actually enforced.
+if os.environ.get("TESTING", "False").lower() == "true" and os.environ.get("TEST_DATABASE_URL"):
+    import dj_database_url
+
+    DATABASES["default"] = dj_database_url.parse(os.environ.get("TEST_DATABASE_URL"))
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
