@@ -10,6 +10,7 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunSQL(
             sql="""
+                CREATE EXTENSION IF NOT EXISTS vector;
                 CREATE TABLE IF NOT EXISTS kb_embedding (
                     id UUID NOT NULL,
                     tenant_id UUID NOT NULL,

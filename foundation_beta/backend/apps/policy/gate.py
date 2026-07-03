@@ -179,7 +179,7 @@ class D9Gate:
             allowed=True,
             blocked_reason=None,
             effective_classification=effective,
-            requires_human_gate=effective in ("N2", "N3", "N4"),
+            requires_human_gate=effective in ("N3", "N4"),
         )
 
     @classmethod

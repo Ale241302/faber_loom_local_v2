@@ -23,6 +23,8 @@ from apps.policy.models import DpaStatement
 from apps.tenants.models import Tenant
 from apps.users.models import Membership, MembershipStatus
 
+from apps.classifier.models import ClassifierSkill
+
 from .models import EmailBinding, SystemAgent, TenantBootstrapProgress, VoiceProfile
 
 User = get_user_model()
@@ -199,6 +201,23 @@ class WizardStepView(APIView):
                             "origin": "system",
                             "skill_md": "Genera cotización / draft a partir del RFQ.",
                             "status": SystemAgent.Status.SHADOW,
+                        },
+                    )
+                    ClassifierSkill.objects.get_or_create(
+                        tenant_id=tenant_id,
+                        name="classify_rfq",
+                        defaults={
+                            "origin": "system",
+                            "prompt_template": (
+                                "Clasifica el siguiente inbound en task_type, data_class, "
+                                "skill_id y confidence. Payload: {payload}"
+                            ),
+                            "output_schema": {
+                                "required": ["task_type", "data_class", "skill_id", "confidence"]
+                            },
+                            "threshold": "0.85",
+                            "model_id": "anthropic/claude-3-5-haiku-20241022",
+                            "status": ClassifierSkill.Status.ACTIVE,
                         },
                     )
 

@@ -31,6 +31,8 @@ INSTALLED_APPS = [
     "apps.audit",
     "apps.policy",
     "apps.bootstrap",
+    "apps.tasks",
+    "apps.classifier",
 ]
 
 MIDDLEWARE = [

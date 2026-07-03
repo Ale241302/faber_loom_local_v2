@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/", include("apps.events.urls")),
     path("api/", include("apps.audit.urls")),
     path("api/", include("apps.policy.urls")),
+    path("api/", include("apps.classifier.urls")),
 ]

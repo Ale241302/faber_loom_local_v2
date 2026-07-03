@@ -1,0 +1,2 @@
+# Dev-only dependencies for Foundation Beta tests.
+fakeredis>=2.36.0
