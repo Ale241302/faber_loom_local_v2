@@ -22,12 +22,10 @@ class OutcomeService:
         task: "Task | None" = None,
         diff: dict[str, Any] | None = None,
     ) -> OutcomeEntry:
-        entry = OutcomeEntry.objects.create(
+        return OutcomeEntry.objects.create(
             tenant_id=tenant_id,
             draft=draft,
             task=task,
             action=action,
             diff=diff or {},
         )
-        print(f"[OutcomeService] recorded {entry.id} action={entry.action} tenant={entry.tenant_id}")
-        return entry

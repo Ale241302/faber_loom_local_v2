@@ -18,6 +18,7 @@ from apps.classifier.l1 import L1Classifier
 from apps.classifier.schemas import ActionContext
 from apps.classifier.services import ClassifierService
 from apps.classifier.tier0 import Tier0Classifier
+from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.tasks.models import Task
 
 
@@ -83,18 +84,22 @@ class TestActionEngine:
             normalized_payload={"type": "invoice", "amount": 1000},
         )
 
-        result = ActionEngine.process(
-            feed_item=item,
-            actor_id="user-1",
-            actor_role="admin",
-        )
+        set_db_tenant(tenant.id)
+        try:
+            result = ActionEngine.process(
+                feed_item=item,
+                actor_id="user-1",
+                actor_role="admin",
+            )
 
-        item.refresh_from_db()
-        assert item.status == FeedItemStatus.ROUTED_TO_TASK
-        assert "task_id" in result
-        task = Task.objects.get(id=result["task_id"])
-        assert task.agent_id == "agent-invoice"
-        assert task.priority == Task.Priority.NORMAL
+            item.refresh_from_db()
+            assert item.status == FeedItemStatus.ROUTED_TO_TASK
+            assert "task_id" in result
+            task = Task.objects.get(id=result["task_id"])
+            assert task.agent_id == "agent-invoice"
+            assert task.priority == Task.Priority.NORMAL
+        finally:
+            clear_db_tenant()
 
     def test_d9_blocks_n3_without_dpa(self, tenant, classifier_skill):
         """If tier0 yields N3 and DPA is missing, the item is sent to manual review."""
@@ -225,15 +230,19 @@ class TestClassifierService:
             status=ClassificationResultStatus.PENDING_HUMAN_REVIEW,
         )
 
-        result = ClassifierService.confirm_pending(
-            feed_item=item,
-            actor_id="user-1",
-            actor_role="admin",
-        )
+        set_db_tenant(tenant.id)
+        try:
+            result = ClassifierService.confirm_pending(
+                feed_item=item,
+                actor_id="user-1",
+                actor_role="admin",
+            )
 
-        item.refresh_from_db()
-        assert item.status == FeedItemStatus.ROUTED_TO_TASK
-        assert Task.objects.filter(id=result["task_id"]).exists()
+            item.refresh_from_db()
+            assert item.status == FeedItemStatus.ROUTED_TO_TASK
+            assert Task.objects.filter(id=result["task_id"]).exists()
+        finally:
+            clear_db_tenant()
 
     def test_reclassify_overrides_and_runs_engine(self, tenant, classifier_skill, plan_features, dpa_signed):
         item = FeedItem.objects.create(

@@ -135,12 +135,12 @@ def test_tier0_exact_match_creates_task(tenant_a, owner_user, classifier_skill, 
             },
         )
         result = ActionEngine.process(rfq_feed_item, str(owner_user.id), "owner")
+
+        assert result["status"] == FeedItemStatus.ROUTED_TO_TASK
+        assert Task.objects.filter(tenant_id=tenant_a.id).count() == 1
+        assert Outbox.objects.filter(event_type="task.created").exists()
     finally:
         clear_db_tenant()
-
-    assert result["status"] == FeedItemStatus.ROUTED_TO_TASK
-    assert Task.objects.filter(tenant_id=tenant_a.id).count() == 1
-    assert Outbox.objects.filter(event_type="task.created").exists()
 
 
 @pytest.mark.django_db
@@ -152,12 +152,12 @@ def test_l1_low_confidence_goes_to_human_review(tenant_a, owner_user, classifier
         set_db_tenant(tenant_a.id)
         try:
             result = ActionEngine.process(rfq_feed_item, str(owner_user.id), "owner")
+
+            assert result["status"] == FeedItemStatus.PENDING_HUMAN_REVIEW
+            assert Task.objects.filter(tenant_id=tenant_a.id).count() == 0
+            assert Outbox.objects.filter(event_type="feed.item.dispatched").exists()
         finally:
             clear_db_tenant()
-
-    assert result["status"] == FeedItemStatus.PENDING_HUMAN_REVIEW
-    assert Task.objects.filter(tenant_id=tenant_a.id).count() == 0
-    assert Outbox.objects.filter(event_type="feed.item.dispatched").exists()
 
 
 @pytest.mark.django_db
@@ -174,12 +174,12 @@ def test_l1_high_confidence_creates_task(tenant_a, owner_user, classifier_skill,
         set_db_tenant(tenant_a.id)
         try:
             result = ActionEngine.process(rfq_feed_item, str(owner_user.id), "owner")
+
+            assert result["status"] == FeedItemStatus.ROUTED_TO_TASK
+            assert Task.objects.filter(tenant_id=tenant_a.id).count() == 1
+            assert Outbox.objects.filter(event_type="task.created").exists()
         finally:
             clear_db_tenant()
-
-    assert result["status"] == FeedItemStatus.ROUTED_TO_TASK
-    assert Task.objects.filter(tenant_id=tenant_a.id).count() == 1
-    assert Outbox.objects.filter(event_type="task.created").exists()
 
 
 @pytest.mark.django_db
@@ -191,12 +191,12 @@ def test_n3n4_without_dpa_blocked(tenant_a, owner_user, classifier_skill, rfq_fe
         set_db_tenant(tenant_a.id)
         try:
             result = ActionEngine.process(rfq_feed_item, str(owner_user.id), "owner")
+
+            assert result["status"] == FeedItemStatus.MANUAL_REVIEW
+            assert "blocked_reason" in result
+            assert Task.objects.filter(tenant_id=tenant_a.id).count() == 0
         finally:
             clear_db_tenant()
-
-    assert result["status"] == FeedItemStatus.MANUAL_REVIEW
-    assert "blocked_reason" in result
-    assert Task.objects.filter(tenant_id=tenant_a.id).count() == 0
 
 
 @pytest.mark.django_db
@@ -207,13 +207,13 @@ def test_l1_llm_error_retries_and_fallbacks(tenant_a, owner_user, classifier_ski
         set_db_tenant(tenant_a.id)
         try:
             result = ActionEngine.process(rfq_feed_item, str(owner_user.id), "owner")
+
+            assert result["status"] == FeedItemStatus.MANUAL_REVIEW
+            assert ClassificationResult.objects.filter(
+                tenant_id=tenant_a.id, status=ClassificationResultStatus.FAILED
+            ).exists()
         finally:
             clear_db_tenant()
-
-    assert result["status"] == FeedItemStatus.MANUAL_REVIEW
-    assert ClassificationResult.objects.filter(
-        tenant_id=tenant_a.id, status=ClassificationResultStatus.FAILED
-    ).exists()
 
 
 @pytest.mark.django_db
