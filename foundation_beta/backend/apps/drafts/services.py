@@ -15,6 +15,8 @@ from apps.drafts.generators import DraftGenerator
 from apps.drafts.models import Channel, Draft, DraftStatus, EditClassification
 from apps.drafts.oscillation import record_approval
 from apps.events.emit import emit_event
+from apps.learning.models import OutcomeLedgerEntry
+from apps.learning.writer import LedgerWriter
 from apps.outcomes.models import OutcomeEntry
 from apps.outcomes.service import OutcomeService
 from apps.policy.gate import ActionContext as PolicyActionContext
@@ -41,6 +43,15 @@ class DraftService:
             draft.save(update_fields=["status", "approver", "updated_at"])
             cls._update_task_review(draft.task, Task.ReviewStatus.ACCEPTED, user)
             record_approval(tenant_id, str(user.id), draft.task.agent_id, edited=False)
+            LedgerWriter.record_decision(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=user.id,
+                    actor_role_at_decision=actor_role,
+                ),
+                draft=draft,
+                decision=OutcomeLedgerEntry.Decision.APPROVED,
+            )
             cls._emit_and_audit(draft, "draft.approved", user, actor_role)
             cls._maybe_send(draft, actor_role)
             return draft
@@ -84,6 +95,16 @@ class DraftService:
                 task=draft.task,
                 diff={"edit_classification": classification, "edit_reason": reason},
             )
+            LedgerWriter.record_decision(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=user.id,
+                    actor_role_at_decision=actor_role,
+                ),
+                draft=draft,
+                decision=OutcomeLedgerEntry.Decision.EDITED,
+                diff={"edit_classification": classification, "edit_reason": reason},
+            )
             cls._emit_and_audit(draft, "draft.edited", user, actor_role)
             cls._maybe_send(draft, actor_role)
             return draft
@@ -105,6 +126,16 @@ class DraftService:
                 action=OutcomeEntry.Action.REJECTED,
                 draft=draft,
                 task=draft.task,
+            )
+            LedgerWriter.record_decision(
+                AuditContext(
+                    tenant_id=tenant_id,
+                    actor_id=user.id,
+                    actor_role_at_decision=actor_role,
+                ),
+                draft=draft,
+                decision=OutcomeLedgerEntry.Decision.REJECTED,
+                reason=reason,
             )
             cls._emit_and_audit(draft, "draft.rejected", user, actor_role)
             return draft

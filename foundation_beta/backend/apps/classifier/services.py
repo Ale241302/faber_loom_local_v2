@@ -19,6 +19,8 @@ from apps.classifier.models import (
 from apps.classifier.schemas import ActionContext
 from apps.core.tenant_context import clear_db_tenant, set_db_tenant
 from apps.events.emit import emit_event
+from apps.learning.models import OutcomeLedgerEntry
+from apps.learning.writer import LedgerWriter
 
 
 class ClassifierService:
@@ -176,6 +178,18 @@ class ClassifierService:
                     "classification_result_id": str(classification_result.id),
                     "reason": reason,
                 },
+            )
+
+            LedgerWriter.record_decision(
+                AuditContext(
+                    tenant_id=str(feed_item.tenant_id),
+                    actor_id=actor_id,
+                    actor_role_at_decision=actor_role,
+                ),
+                decision=OutcomeLedgerEntry.Decision.RECLASSIFIED,
+                classification_result=classification_result,
+                diff=action_context,
+                reason=reason,
             )
 
             return ActionEngine.process(feed_item, actor_id, actor_role)

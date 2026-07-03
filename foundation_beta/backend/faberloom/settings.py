@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.classifier",
     "apps.outcomes",
     "apps.drafts",
+    "apps.learning",
 ]
 
 MIDDLEWARE = [
@@ -199,6 +200,13 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@faberloom.ai"
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
 WHATSAPP_BACKEND = os.environ.get("WHATSAPP_BACKEND", "stub")
+
+# M14 Outcome Ledger
+THERMOMETER_COLD_MAX = int(os.environ.get("THERMOMETER_COLD_MAX", "2"))
+THERMOMETER_WARM_MAX = int(os.environ.get("THERMOMETER_WARM_MAX", "5"))
+GOLD_SECOND_APPROVER_ROLES = os.environ.get(
+    "GOLD_SECOND_APPROVER_ROLES", "Supervisor,Admin,Owner"
+)
 
 # Logging
 LOGGING = {
