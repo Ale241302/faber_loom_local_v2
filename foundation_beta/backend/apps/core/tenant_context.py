@@ -1,37 +1,43 @@
-"""Tenant context utilities backed by a ContextVar and PostgreSQL SET LOCAL."""
+"""Tenant context utilities backed by a ContextVar stack and PostgreSQL SET."""
 from __future__ import annotations
 
 from contextvars import ContextVar
 from uuid import UUID
 
-tenant_ctx: ContextVar[UUID | None] = ContextVar("tenant_id", default=None)
+# Stack of tenant ids for the current execution context. The top of the stack
+# is the active tenant id (or None when empty).
+tenant_ctx: ContextVar[list[UUID]] = ContextVar("tenant_id", default=[])
 
 
 def set_db_tenant(tenant_id: UUID) -> None:
-    """Set the tenant id for the current DB connection (session-level).
-
-    Session-level SET is used deliberately: service code frequently wraps
-    operations in transaction.atomic(), and SET LOCAL would be reverted when
-    those savepoints are released, breaking row-level security for the caller.
-    Callers are responsible for clearing the tenant with clear_db_tenant().
-    """
+    """Push tenant_id onto the stack and set it on the current DB connection."""
     from django.db import connection
+
+    stack = tenant_ctx.get()[:]
+    stack.append(tenant_id)
+    tenant_ctx.set(stack)
 
     with connection.cursor() as cursor:
         cursor.execute("SET app.tenant_id = %s", [str(tenant_id)])
-    tenant_ctx.set(tenant_id)
 
 
 def clear_db_tenant() -> None:
-    """Clear tenant state for the current DB connection."""
+    """Pop the active tenant id and restore the previous one (if any)."""
     from django.db import connection
 
+    stack = tenant_ctx.get()[:]
+    if stack:
+        stack.pop()
+    tenant_ctx.set(stack)
+
     with connection.cursor() as cursor:
-        # RESET works inside or outside a transaction, unlike DISCARD ALL.
-        cursor.execute("RESET app.tenant_id")
-    tenant_ctx.set(None)
+        if stack:
+            cursor.execute("SET app.tenant_id = %s", [str(stack[-1])])
+        else:
+            cursor.execute("RESET app.tenant_id")
 
 
 def current_tenant_id() -> UUID | None:
-    """Return the tenant id from the current execution context."""
-    return tenant_ctx.get()
+    """Return the active tenant id from the current execution context."""
+    stack = tenant_ctx.get()
+    return stack[-1] if stack else None
