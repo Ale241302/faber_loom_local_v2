@@ -8,22 +8,17 @@ tenant_ctx: ContextVar[UUID | None] = ContextVar("tenant_id", default=None)
 
 
 def set_db_tenant(tenant_id: UUID) -> None:
-    """Set the tenant id for the current DB connection.
+    """Set the tenant id for the current DB connection (session-level).
 
-    Use SET LOCAL when already inside a transaction so the value is rolled back
-    with the transaction. Otherwise use a session-level SET so it survives
-    subsequent autocommit transactions (e.g. Django views/service code that
-    opens its own transaction.atomic blocks).
+    Session-level SET is used deliberately: service code frequently wraps
+    operations in transaction.atomic(), and SET LOCAL would be reverted when
+    those savepoints are released, breaking row-level security for the caller.
+    Callers are responsible for clearing the tenant with clear_db_tenant().
     """
     from django.db import connection
 
-    sql = (
-        "SET LOCAL app.tenant_id = %s"
-        if connection.in_atomic_block
-        else "SET app.tenant_id = %s"
-    )
     with connection.cursor() as cursor:
-        cursor.execute(sql, [str(tenant_id)])
+        cursor.execute("SET app.tenant_id = %s", [str(tenant_id)])
     tenant_ctx.set(tenant_id)
 
 
