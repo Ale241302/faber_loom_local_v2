@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,10 +25,11 @@ class MemoryConflictGuard:
     """
 
     DEFAULT_THRESHOLD = 0.5
+    _WORD_RE = re.compile(r"[a-z0-9]+")
 
     @classmethod
     def _tokens(cls, text: str) -> set[str]:
-        return set(text.lower().split())
+        return set(cls._WORD_RE.findall(text.lower()))
 
     @classmethod
     def check(
