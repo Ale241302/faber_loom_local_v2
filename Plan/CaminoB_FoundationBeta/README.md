@@ -198,6 +198,39 @@ M16 ──┬── M08 ──┬── M09 ──┬── M07
 - `Plan/CaminoB_FoundationBeta/M12_AUDIT_TRAIL_PLAN.md`
 - `Plan/CaminoB_FoundationBeta/M11_D9_POLICY_GATE_PLAN.md`
 - `Plan/CaminoB_FoundationBeta/M07_BOOTSTRAP_WIZARD_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M10_L1_CLASSIFIER_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M13_DRAFT_HITL_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M14_OUTCOME_LEDGER_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M17_MEMORY_LETTA_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M18_ELECTRON_AUTH_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M19_OFFLINE_SYNC_PLAN.md`
+- `Plan/CaminoB_FoundationBeta/M20_AUTO_UPDATE_PLAN.md`
+
+## 10. Track operativo post-SPINE
+
+Con el SPINE verde, el track operativo prioritario es:
+
+```text
+M10 L1 Classifier
+  → M13 Draft HITL
+      → M14 Outcome Ledger
+      → M17 Memory Letta (transversal)
+```
+
+- **M10** desbloquea la creación de `Task` y el routing de inbound.
+- **M13** depende del modelo `Task` de M10 y consume `D9Gate.pre_egress` para todo egress.
+- **M14** consume las decisiones de M13 (y re-clasificaciones de M10).
+- **M17** es transversal: los agentes leen memoria durante la ejecución, pero su gestión de persistent puede ir en paralelo.
+
+En paralelo, una vez exista el setup de Electron, corren los módulos desktop-only:
+
+```text
+M18 Electron Auth
+  → M19 Offline Sync
+  → M20 Auto Update
+```
+
+Los planes detallados de estos siete módulos se encuentran en los archivos listados arriba.
 
 ---
 *Generado por Fugu (arquitecto senior) — 2026-07-01.  Estado: plan de implementación, sin código.*

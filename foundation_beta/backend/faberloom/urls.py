@@ -14,4 +14,7 @@ urlpatterns = [
     path("api/", include("apps.classifier.urls")),
     path("api/", include("apps.drafts.urls")),
     path("api/", include("apps.learning.urls")),
+    path("api/", include("apps.memory.urls")),
+    path("api/", include("apps.sync.urls")),
+    path("api/", include("apps.updates.urls")),
 ]

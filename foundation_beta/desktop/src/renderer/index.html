@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+  <title>FaberLoom Desktop</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main id="app">
+    <section id="login-panel">
+      <h1>FaberLoom Desktop</h1>
+      <form id="login-form">
+        <label>
+          Tenant ID
+          <input id="tenant-id" type="text" placeholder="uuid del tenant" required />
+        </label>
+        <label>
+          Email
+          <input id="email" type="email" placeholder="usuario@example.com" required />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" required />
+        </label>
+        <button type="submit">Iniciar sesión</button>
+      </form>
+      <form id="totp-form" class="hidden">
+        <label>
+          Código TOTP
+          <input id="totp" type="text" inputmode="numeric" autocomplete="one-time-code" required />
+        </label>
+        <button type="submit">Verificar</button>
+      </form>
+      <pre id="status"></pre>
+    </section>
+
+    <section id="dashboard" class="hidden">
+      <header class="top-bar">
+        <h2>Mesa de control</h2>
+        <span id="sync-badge" class="badge">offline</span>
+      </header>
+
+      <div id="update-banner" class="update-banner hidden">
+        <span id="update-message"></span>
+        <button id="restart-update" class="hidden">Reiniciar e instalar</button>
+      </div>
+
+      <pre id="me"></pre>
+      <button id="approve" class="sensitive" disabled>Aprobar</button>
+      <button id="edit" class="sensitive" disabled>Editar</button>
+      <button id="send" class="sensitive" disabled>Enviar</button>
+      <button id="logout">Cerrar sesión</button>
+    </section>
+  </main>
+
+  <div id="blocked-overlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Actualización requerida</h2>
+      <p>Tu versión de escritorio ya no es compatible.</p>
+      <p>Current: <span id="blocked-current"></span> — Mínima soportada: <span id="blocked-min"></span></p>
+      <button id="blocked-restart">Reiniciar e instalar</button>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

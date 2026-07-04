@@ -36,6 +36,9 @@ INSTALLED_APPS = [
     "apps.outcomes",
     "apps.drafts",
     "apps.learning",
+    "apps.memory",
+    "apps.sync",
+    "apps.updates",
 ]
 
 MIDDLEWARE = [
@@ -189,7 +192,8 @@ MINIO_SECURE = os.environ.get("MINIO_SECURE", "False").lower() == "true"
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://localhost:4000")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-faberloom-local")
 
-# Letta
+# Letta / Memory
+MEMORY_BACKEND = os.environ.get("MEMORY_BACKEND", "letta")
 LETTA_URL = os.environ.get("LETTA_URL", "http://localhost:8283")
 
 # M13 Draft HITL
