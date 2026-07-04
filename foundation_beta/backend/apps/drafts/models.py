@@ -37,6 +37,8 @@ class Channel(models.TextChoices):
 class Draft(TenantScopedModel):
     """A human-gated draft output waiting for approval."""
 
+    Channel = Channel
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     task = models.ForeignKey(
         "tasks.Task",

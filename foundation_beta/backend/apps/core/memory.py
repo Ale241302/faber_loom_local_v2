@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-SAFE_KIND_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+SAFE_KIND_RE = re.compile(r"^[a-zA-Z0-9_\-@]+$")
 
 
 def letta_namespace(
