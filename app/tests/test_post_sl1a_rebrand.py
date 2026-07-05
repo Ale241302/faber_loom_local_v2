@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
@@ -43,7 +42,6 @@ def test_fastapi_title_is_faberloom() -> None:
 
 def test_legacy_spaceloom_data_dir_is_migrated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(os, "name", "nt")
 
     old = tmp_path / "SpaceLoom"
     old_db = old / "spaceloom.sqlite3"
@@ -64,7 +62,6 @@ def test_legacy_spaceloom_data_dir_is_migrated(tmp_path: Path, monkeypatch: pyte
 
 def test_legacy_migration_skips_when_faberloom_already_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(os, "name", "nt")
 
     new = tmp_path / "FaberLoom"
     new_db = new / "faberloom.sqlite3"
@@ -86,7 +83,6 @@ def test_legacy_migration_skips_when_faberloom_already_exists(tmp_path: Path, mo
 
 def test_migrated_sqlite_database_loads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(os, "name", "nt")
 
     old = tmp_path / "SpaceLoom"
     old_db = old / "spaceloom.sqlite3"
@@ -112,7 +108,6 @@ def test_migrated_sqlite_database_loads(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_legacy_config_dir_is_migrated_via_config_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(os, "name", "nt")
 
     old = tmp_path / "SpaceLoom"
     old.mkdir(parents=True)

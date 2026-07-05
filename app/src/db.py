@@ -40,6 +40,17 @@ APP_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = APP_DIR / "data"
 
 
+def _user_data_base() -> Path:
+    """Return the base user data directory, honoring explicit overrides first."""
+
+    env = os.environ.get("FABERLOOM_DATA_DIR") or os.environ.get("LOCALAPPDATA")
+    if env:
+        return Path(env)
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return Path.home() / ".local" / "share"
+
+
 def _migrate_legacy_data_dir() -> None:
     """One-time migration: SpaceLoom -> FaberLoom user data directory.
 
@@ -48,10 +59,7 @@ def _migrate_legacy_data_dir() -> None:
     existing dogfood user data intact after the rebrand.
     """
 
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    else:
-        base = Path.home() / ".local" / "share"
+    base = _user_data_base()
     old = base / "SpaceLoom"
     new = base / "FaberLoom"
     if old.exists() and not new.exists():
@@ -66,11 +74,7 @@ def _default_user_data_dir() -> Path:
     """Return the OS-appropriate user data directory for FaberLoom."""
 
     _migrate_legacy_data_dir()
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    else:
-        base = Path.home() / ".local" / "share"
-    return base / "FaberLoom"
+    return _user_data_base() / "FaberLoom"
 
 
 DEFAULT_DB_PATH = _default_user_data_dir() / "faberloom.sqlite3"
