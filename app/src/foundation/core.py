@@ -37,6 +37,8 @@ from typing import Any, Callable, Iterator
 
 from fastapi import Depends, HTTPException, Request, status
 
+from ..auth import get_current_user
+
 # ---------------------------------------------------------------------------
 # Rutas de base de datos
 # ---------------------------------------------------------------------------
@@ -165,11 +167,22 @@ def register_seed(fn: Callable[[sqlite3.Connection], None]) -> None:
         _SEED_HOOKS.append(fn)
 
 
+_BUSY_TIMEOUT_MS = int(os.getenv("FABERLOOM_FND_BUSY_TIMEOUT_MS", "20000"))
+
+
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(get_foundation_db_path())
+    # Long timeout for production concurrency; busy_timeout gives SQLite time to
+    # acquire locks instead of raising "database is locked" immediately.
+    conn = sqlite3.connect(get_foundation_db_path(), timeout=20.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # Only switch to WAL once. Re-running PRAGMA journal_mode under concurrency
+    # can itself contend for the lock and is unnecessary once WAL is active.
+    current_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    if current_mode != "wal":
+        conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
@@ -486,24 +499,93 @@ def load_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     return row
 
 
+def _jwt_context(request: Request, conn: sqlite3.Connection) -> SessionContext | None:
+    """Fallback: cuando el frontend envía el JWT principal de FaberLoom,
+    permite usar Foundation sin login propio. Se busca (o se crea) un usuario
+    Foundation con el mismo email y se le asigna el rol owner para que las
+    opciones de Tenant funcionen transparentemente.
+    """
+    auth = request.headers.get("Authorization", "")
+    # Foundation session tokens se procesan por _session_token; no duplicar aquí.
+    if not auth.startswith("Bearer ") or auth.startswith("Bearer fnds_"):
+        return None
+    try:
+        jwt_user = get_current_user(request)
+    except HTTPException:
+        return None
+    email = (jwt_user.get("sub") or "").strip().lower()
+    if not email or email == "local":
+        return None
+
+    tenant = get_active_tenant(conn)
+    if tenant is None:
+        return None
+    tenant_id = tenant["id"]
+
+    user = conn.execute(
+        "SELECT * FROM fnd_users WHERE tenant_id = ? AND email = ?",
+        (tenant_id, email),
+    ).fetchone()
+    if user is None:
+        # Auto-provision shadow user as owner so the integrated Tenant menu works.
+        user_id = new_id("usr")
+        conn.execute(
+            """INSERT INTO fnd_users
+               (id, tenant_id, email, display_name, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, tenant_id, email, email.split("@")[0], "active", utcnow()),
+        )
+        role = conn.execute(
+            "SELECT id FROM fnd_roles WHERE tenant_id = ? AND name = ?",
+            (tenant_id, "owner"),
+        ).fetchone()
+        if role:
+            conn.execute(
+                """INSERT OR IGNORE INTO fnd_user_roles
+                   (tenant_id, user_id, role_id, assigned_at)
+                   VALUES (?, ?, ?, ?)""",
+                (tenant_id, user_id, role["id"], utcnow()),
+            )
+        user = conn.execute("SELECT * FROM fnd_users WHERE id = ?", (user_id,)).fetchone()
+    elif user["status"] != "active":
+        return None
+
+    # Synthetic session row for SessionContext. It is not persisted so logout is a no-op.
+    synthetic_session = {
+        "id": f"jwt_{email}",
+        "tenant_id": tenant_id,
+        "user_id": user["id"],
+        "stage": "full",
+        "expires_at": "9999-12-31T23:59:59+00:00",
+    }
+    return SessionContext(conn, synthetic_session, user)
+
+
 def require_session(
     request: Request, conn: sqlite3.Connection = Depends(get_conn)
 ) -> SessionContext:
     token = _session_token(request)
-    if not token:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Foundation session required")
-    session = load_session(conn, token)
-    if session is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session")
-    if session["stage"] != "full":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "2FA pending")
-    user = conn.execute("SELECT * FROM fnd_users WHERE id = ?", (session["user_id"],)).fetchone()
-    if user is None or user["status"] != "active":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
-    conn.execute(
-        "UPDATE fnd_sessions SET last_seen_at = ? WHERE id = ?", (utcnow(), token)
-    )
-    return SessionContext(conn, session, user)
+    if token:
+        session = load_session(conn, token)
+        if session is not None:
+            if session["stage"] != "full":
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "2FA pending")
+            user = conn.execute(
+                "SELECT * FROM fnd_users WHERE id = ?", (session["user_id"],)
+            ).fetchone()
+            if user is None or user["status"] != "active":
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+            conn.execute(
+                "UPDATE fnd_sessions SET last_seen_at = ? WHERE id = ?", (utcnow(), token)
+            )
+            return SessionContext(conn, session, user)
+
+    # Fallback al JWT principal de la app. Si no hay JWT válido, 401.
+    ctx = _jwt_context(request, conn)
+    if ctx is not None:
+        return ctx
+
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Foundation session required")
 
 
 def require_permission(permission: str) -> Callable[..., SessionContext]:

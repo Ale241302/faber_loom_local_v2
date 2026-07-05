@@ -27,6 +27,7 @@
     const [busy, setBusy] = useState(false);
     const [tenantForm, setTenantForm] = useState({ name: "", slug: "" });
     const [ownerForm, setOwnerForm] = useState({ email: "", display_name: "", password: "" });
+    const [ownerSession, setOwnerSession] = useState(null);
 
     const refresh = useCallback(async () => {
       try { setState(await api.get("/bootstrap/state")); setError(null); }
@@ -50,11 +51,24 @@
     });
     const createOwner = () => run(async () => {
       const resp = await api.post("/bootstrap/owner", ownerForm);
-      if (resp && resp.session) F.setSession(resp.session);
+      if (resp && resp.session) {
+        F.setSession(resp.session);
+        setOwnerSession(resp.session);
+      }
       await refresh();
     });
     const activate = () => run(async () => {
-      await api.post("/bootstrap/activate");
+      // Usamos la sesión creada en el owner para activar, no el JWT principal,
+      // porque el endpoint requiere bootstrap.manage y el owner sí lo tiene.
+      const res = await fetch("/api/foundation/bootstrap/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Fnd-Session": ownerSession || F.getSession() || "" },
+      });
+      if (!res.ok) {
+        let detail = res.statusText;
+        try { const data = await res.json(); detail = data.detail || JSON.stringify(data); } catch (e) {}
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
       onDone();
     });
 
@@ -447,10 +461,18 @@
               ) },
               { key: "totp_enabled", label: "2FA", render: (r) => (r.totp_enabled ? "Sí" : "No") },
               { key: "actions", label: "", render: (r) => (
-                <button type="button" style={buttonStyle}
-                  onClick={() => setEditing({ id: r.id, email: r.email, display_name: r.display_name, status: r.status, password: "", roles: r.roles || [] })}>
-                  Editar
-                </button>
+                <span style={{ display: "flex", gap: 6 }}>
+                  <button type="button" style={buttonStyle}
+                    onClick={() => setEditing({ id: r.id, email: r.email, display_name: r.display_name, status: r.status, password: "", roles: r.roles || [] })}>
+                    Editar
+                  </button>
+                  {me && me.id !== r.id && (
+                    <button type="button" style={buttonDangerStyle} disabled={busy}
+                      onClick={() => deleteUser(r)}>
+                      Borrar
+                    </button>
+                  )}
+                </span>
               ) },
             ]}
             rows={users || []}
@@ -697,8 +719,11 @@
     const doExport = async () => {
       setBusy(true); setError(null);
       try {
+        const appToken = localStorage.getItem("faberloom_token");
         const res = await fetch("/api/foundation/audit/export", {
-          headers: { "X-Fnd-Session": F.getSession() || "" },
+          headers: appToken
+            ? { "Authorization": `Bearer ${appToken}` }
+            : { "X-Fnd-Session": F.getSession() || "" },
         });
         if (!res.ok) throw new Error("Export falló: HTTP " + res.status);
         const blob = await res.blob();
@@ -1028,10 +1053,42 @@
     );
   }
 
+  /* ═══════════════ M05 · Configuración de correo (IMAP/SMTP/Firma) ═══════════════ */
+
+  function MailPanelWrapper({ activeWorkspace, Panel, title }) {
+    if (!activeWorkspace) {
+      const W = window.WorkspaceRequired;
+      if (W) return <W icon="mail" title={title} />;
+      return <div style={{ padding: 24, color: "var(--text-muted)" }}>Selecciona un workspace activo para configurar {title}.</div>;
+    }
+    return <Panel activeWorkspace={activeWorkspace} />;
+  }
+
+  function FndIMAPView({ activeWorkspace }) {
+    const Panel = (window.FaberLoomMailPanels || {}).IMAPConfigPanel;
+    if (!Panel) return <div style={{ padding: 24, color: "var(--text-muted)" }}>Panel IMAP no cargado.</div>;
+    return <MailPanelWrapper activeWorkspace={activeWorkspace} Panel={Panel} title="IMAP" />;
+  }
+
+  function FndSMTPView({ activeWorkspace }) {
+    const Panel = (window.FaberLoomMailPanels || {}).SMTPConfigPanel;
+    if (!Panel) return <div style={{ padding: 24, color: "var(--text-muted)" }}>Panel SMTP no cargado.</div>;
+    return <MailPanelWrapper activeWorkspace={activeWorkspace} Panel={Panel} title="SMTP" />;
+  }
+
+  function FndSignatureView({ activeWorkspace }) {
+    const Panel = (window.FaberLoomMailPanels || {}).EmailSignaturePanel;
+    if (!Panel) return <div style={{ padding: 24, color: "var(--text-muted)" }}>Panel de firma no cargado.</div>;
+    return <MailPanelWrapper activeWorkspace={activeWorkspace} Panel={Panel} title="Firma de correo" />;
+  }
+
   /* ═══════════════ Registro de vistas ═══════════════ */
 
   F.register({ id: "m07-bootstrap", label: "Bootstrap", group: "Plataforma", order: 7, hidden: true, component: BootstrapWizard });
   F.register({ id: "m08-login", label: "Login", group: "Plataforma", order: 8, hidden: true, component: LoginView });
+  F.register({ id: "m05-imap", label: "IMAP", group: "Plataforma", order: 5, component: FndIMAPView });
+  F.register({ id: "m05-smtp", label: "SMTP", group: "Plataforma", order: 5, component: FndSMTPView });
+  F.register({ id: "m05-signature", label: "Firma", group: "Plataforma", order: 5, component: FndSignatureView });
   F.register({ id: "m16-tenant", label: "Tenant", group: "Plataforma", order: 7, permission: "tenants.read", component: TenantView });
   F.register({ id: "m08-sessions", label: "Sesiones y 2FA", group: "Plataforma", order: 8, component: SessionsView });
   F.register({ id: "m09-rbac", label: "Roles y permisos", group: "Plataforma", order: 9, permission: "users.manage", component: RbacView });

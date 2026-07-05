@@ -2509,7 +2509,7 @@ def get_workspace_smtp_config(
 ) -> dict[str, Any] | None:
     """Return the workspace SMTP configuration row or None.
 
-    The password is decrypted with the master key before being returned.
+    The password is never returned in plain text; only a has_password flag.
     """
 
     workspace_id = ctx.require_scoped_workspace()
@@ -2525,7 +2525,8 @@ def get_workspace_smtp_config(
     if row is None:
         return None
     data = row_to_dict(row)
-    data["password"] = decrypt_value(data.get("password"))
+    data["has_password"] = bool(data.get("password"))
+    data["password"] = ""
     return data
 
 
@@ -2542,13 +2543,25 @@ def set_workspace_smtp_config(
     """Upsert the per-user workspace SMTP configuration.
 
     The password is encrypted with the master key before persistence.
+    If ``password`` is empty, the existing encrypted password is kept.
     """
 
     workspace_id = ctx.require_scoped_workspace()
     user_id = ctx.user_id or "local"
     now = utc_now()
-    encrypted_password = encrypt_value(password)
+
     with transaction(conn):
+        existing_row = conn.execute(
+            "SELECT password FROM workspace_smtp_config WHERE workspace_id = ? AND user_id = ?",
+            (workspace_id, user_id),
+        ).fetchone()
+        existing_encrypted = existing_row["password"] if existing_row else None
+
+        if password:
+            encrypted_password = encrypt_value(password)
+        else:
+            encrypted_password = existing_encrypted
+
         conn.execute(
             """
             INSERT INTO workspace_smtp_config (
@@ -2561,7 +2574,7 @@ def set_workspace_smtp_config(
                 port = excluded.port,
                 use_ssl = excluded.use_ssl,
                 username = excluded.username,
-                password = excluded.password,
+                password = COALESCE(excluded.password, workspace_smtp_config.password),
                 from_email = excluded.from_email,
                 updated_at = excluded.updated_at
             """,
@@ -2676,7 +2689,10 @@ def list_email_accounts(
     ctx: Context,
     conn: sqlite3.Connection,
 ) -> list[dict[str, Any]]:
-    """Return all email accounts for the current workspace."""
+    """Return all email accounts for the current workspace.
+
+    The password is never returned in plain text; only a has_password flag.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     rows = conn.execute(
@@ -2691,7 +2707,8 @@ def list_email_accounts(
     result = []
     for row in rows:
         data = row_to_dict(row)
-        data["password"] = decrypt_value(data.get("password"))
+        data["has_password"] = bool(data.get("password"))
+        data["password"] = ""
         result.append(data)
     return result
 
@@ -2701,7 +2718,10 @@ def get_email_account(
     conn: sqlite3.Connection,
     account_id: str,
 ) -> dict[str, Any] | None:
-    """Return a single email account if it belongs to the current workspace."""
+    """Return a single email account if it belongs to the current workspace.
+
+    The password is never returned in plain text; only a has_password flag.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
@@ -2715,7 +2735,8 @@ def get_email_account(
     if row is None:
         return None
     data = row_to_dict(row)
-    data["password"] = decrypt_value(data.get("password"))
+    data["has_password"] = bool(data.get("password"))
+    data["password"] = ""
     return data
 
 
@@ -2759,13 +2780,25 @@ def update_email_account(
     read_only: int,
     is_default: int,
 ) -> dict[str, Any] | None:
-    """Update an existing email account. Password is encrypted on write."""
+    """Update an existing email account. Password is encrypted on write.
+
+    If ``password`` is empty, the existing encrypted password is kept.
+    """
 
     workspace_id = ctx.require_scoped_workspace()
     now = utc_now()
-    encrypted_password = encrypt_value(password)
 
     with transaction(conn):
+        existing_row = conn.execute(
+            "SELECT password FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            (account_id, workspace_id, ctx.tenant_id),
+        ).fetchone()
+        if existing_row is None:
+            return None
+        existing_encrypted = existing_row["password"]
+
+        encrypted_password = encrypt_value(password) if password else existing_encrypted
+
         if is_default:
             conn.execute(
                 "UPDATE email_account SET is_default = 0 WHERE workspace_id = ?",

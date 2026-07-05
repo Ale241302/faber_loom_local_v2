@@ -2660,7 +2660,7 @@ def api_update_smtp_config(
         port=updated["port"],
         use_ssl=bool(updated["use_ssl"]),
         username=updated["username"],
-        password=updated["password"],
+        has_password=bool(updated.get("has_password")),
         from_email=updated["from_email"],
     )
 

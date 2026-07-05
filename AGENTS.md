@@ -70,24 +70,18 @@ cd app && python -m uvicorn src.main:app --reload
 <claude-mem-context>
 # Memory Context
 
-# [faber_loom_local_vv2] recent context, 2026-07-03 11:08am GMT-5
+# [faber_loom_local_vv2] recent context, 2026-07-05 2:29pm GMT-5
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (25,383t read) | 2,364,707t work | 99% savings
+Stats: 50 obs (26,326t read) | 2,590,644t work | 99% savings
 
-### Jun 25, 2026
-946 11:15p 🔵 SpaceLoom Codebase Structure Mapped: Implementation Already Spans SL0–SL5
 ### Jun 26, 2026
-963 3:37p ⚖️ Plan técnico revisado: CRUD de skills/routines + importador faberloom/ en SpaceLoom
-964 3:38p 🔵 Estructura confirmada del proyecto SpaceLoom en faber_loom_local_vv2
-965 " 🔵 API de routines en api.py: endpoints existentes y gaps confirmados
+965 3:38p 🔵 API de routines en api.py: endpoints existentes y gaps confirmados
 966 " 🔵 db.py: funciones de routine existentes y ausencia de update_routine
 967 " 🔵 models.py: RoutineCreate definido, RoutineUpdate ausente, esquema DB confirmado
-968 " 🔵 skills.py: parser de SKILL.md reutilizable para faberloom_catalog.py
-969 " 🔵 build.py: pipeline PyInstaller existente sin soporte para assets faberloom/
 970 3:40p 🔵 faberloom/ naming conventions revelan tipos de documentos más allá de skills/agents/templates
 971 " 🔵 app.jsx RoutinesView: helpers API existentes, funcionalidad CRUD ausente
 972 " 🔵 api_create_routine llama compile_skill_md antes de guardar — riesgo de bloqueo para imports faberloom
@@ -131,6 +125,11 @@ Stats: 50 obs (25,383t read) | 2,364,707t work | 99% savings
 1166 " 🔵 Test Suite is Milestone-Aligned: 25 Test Files Covering SL0→SL5 Plus P0 Security
 1167 " 🔵 Database Schema at v20 with All Contract-First Latent Fields Implemented
 1168 " 🔵 Extensive docs/ Knowledge Base: 80+ Spec, Policy, Schema, and Design Documents
+1169 11:08a ⚖️ M21 Investigador Web Skill + Tool-Calling Gate — Architecture Brief
+1170 11:09a 🔵 skills.py execute_skill() Has No Real Tool Execution — Only LLM Completion
+1171 " 🔵 api.py Confirmation Token Gate and Context Architecture Confirmed
+1172 11:10a 🔵 _execute_skill_run() Is the M21 Extension Point — Full Synchronous Flow Mapped
+1173 " 🔵 SQLite Schema Baseline for M21 — Migration v2 routine/routine_run Tables Confirmed
 
-Access 2365k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 2591k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

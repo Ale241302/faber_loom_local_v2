@@ -1271,7 +1271,7 @@ class SMTPConfigRead(BaseModel):
     port: int
     use_ssl: bool
     username: str
-    password: str
+    has_password: bool
     from_email: str
 
 
@@ -1280,7 +1280,7 @@ class SMTPConfigWrite(BaseModel):
     port: int = Field(ge=1, le=65535)
     use_ssl: bool
     username: str = Field(min_length=1, max_length=500)
-    password: str = Field(min_length=1, max_length=2000)
+    password: str = Field(default="", max_length=2000)  # empty = keep existing
     from_email: str = Field(min_length=1, max_length=500)
 
 
@@ -1325,8 +1325,40 @@ class EmailAccountCreate(BaseModel):
         return stripped
 
 
-class EmailAccountWrite(EmailAccountCreate):
-    pass
+class EmailAccountWrite(BaseModel):
+    label: str = Field(default="", max_length=200)
+    provider: str = Field(default="imap", max_length=50)
+    host: str = Field(min_length=1, max_length=500)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=500)
+    password: str = Field(default="", max_length=2000)  # empty = keep existing
+    folders_json: str = Field(default='["INBOX"]', max_length=2000)
+    auth_type: str = Field(default="password", max_length=20)
+    read_only: int = Field(default=1, ge=0, le=1)
+    is_default: int = Field(default=0, ge=0, le=1)
+
+    @field_validator("auth_type")
+    @classmethod
+    def auth_type_must_be_supported(cls, value: str) -> str:
+        if value not in {"password", "oauth"}:
+            raise ValueError("auth_type must be 'password' or 'oauth'")
+        return value
+
+    @field_validator("folders_json")
+    @classmethod
+    def folders_json_must_be_array(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            return "[]"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"folders_json must be valid JSON: {exc}") from exc
+        if not isinstance(parsed, list):
+            raise ValueError("folders_json must be a JSON array")
+        if not all(isinstance(item, str) and item.strip() for item in parsed):
+            raise ValueError("folders_json must contain only non-empty strings")
+        return stripped
 
 
 class EmailAccountRead(BaseModel):
@@ -1341,7 +1373,7 @@ class EmailAccountRead(BaseModel):
     host: str
     port: int
     username: str
-    password: str
+    has_password: bool
     folders_json: str
     auth_type: str
     read_only: int

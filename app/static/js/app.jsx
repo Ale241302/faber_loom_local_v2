@@ -194,14 +194,16 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout, features }) {
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
   const loadCounts = useCallback(async () => {
     if (!activeWorkspace) { setCounts({}); return; }
     const results = await Promise.allSettled([
       apiGet(`/api/workspaces/${activeWorkspace.id}/chats`),
-      apiGet(`/api/workspaces/${activeWorkspace.id}/mail`),
+      features?.email_connector_enabled
+        ? apiGet(`/api/workspaces/${activeWorkspace.id}/mail`)
+        : Promise.resolve([]),
       apiGet(`/api/workspaces/${activeWorkspace.id}/workloom`),
       apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
       apiGet(`/api/workspaces/${activeWorkspace.id}/kb/sources`),
@@ -223,7 +225,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
       kb: Array.isArray(kb) ? kb.length : 0,
       gold: Array.isArray(gold) ? gold.length : 0,
     });
-  }, [activeWorkspace]);
+  }, [activeWorkspace, features]);
 
   useEffect(() => {
     loadCounts();
@@ -249,7 +251,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     kb: "kb-acc", "hitl-signals": "kb-acc",
     gold: "gold-acc",
     skills: "caps-acc", agents: "caps-acc",
-    routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc"
+    routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc",
+    foundation: "tenant-acc",
   }[nav];
 
   return <aside className={cx("rail", hidden && "hidden")}>
@@ -312,13 +315,9 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
+            <RailItem label="Tenant" icon="database" active={nav === "foundation"} onClick={() => { setNav("foundation"); setFoundationView("m16-tenant"); }} />
           </> }
         ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
-        <Accordion items={[
-          { id: "foundation-acc", title: "Foundation Beta", children: <>
-            <RailItem label="Foundation (M07–M20)" icon="shield" active={nav === "foundation"} onClick={() => setNav("foundation")} />
-          </> }
-        ]} defaultOpen={activeAccordionId === "foundation-acc" ? ["foundation-acc"] : []} />
       </>}
     </div>
     <div className="userfoot" onClick={onLogout} title="Cerrar sesión">
@@ -2217,7 +2216,7 @@ function IMAPConfigPanel({ activeWorkspace }) {
           Solo lectura
         </div>
         <div style={S.inlineGroup}>
-          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving}>{saving ? "Guardando…" : (editing ? "Actualizar" : "Agregar")}</button>
+          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving || (!editing && !form.password)}>{saving ? "Guardando…" : (editing ? "Actualizar" : "Agregar")}</button>
           {editing && <button type="button" style={S.button} onClick={reset}>Cancelar</button>}
         </div>
       </div>
@@ -2393,32 +2392,17 @@ function EmailSignaturePanel({ activeWorkspace }) {
   </section>;
 }
 
+window.FaberLoomMailPanels = { IMAPConfigPanel, SMTPConfigPanel, EmailSignaturePanel };
+window.WorkspaceRequired = WorkspaceRequired;
+
 function AuditView({ activeWorkspace, features }) {
-  const [tab, setTab] = useState("audit");
-  const emailEnabled = features?.email_connector_enabled === true;
-
   if (!activeWorkspace) return <WorkspaceRequired icon="audit" title="Auditoría"/>;
-
-  const tabs = [
-    { id: "audit", label: "Auditoría" },
-    { id: "imap", label: "IMAP" },
-    { id: "smtp", label: "SMTP" },
-    { id: "signature", label: "Firma" },
-  ];
 
   return <div className="classic" style={S.view}>
     <div className="vhead">
       <div><div className="vtitle">Auditoría</div><div className="vsub">Configuración del tenant y trazabilidad</div></div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {tabs.map((t) => (
-          <button key={t.id} type="button" style={tab === t.id ? S.buttonPrimary : S.button} onClick={() => setTab(t.id)}>{t.label}</button>
-        ))}
-      </div>
     </div>
-    {tab === "audit" && <AuditHistoryPanel activeWorkspace={activeWorkspace}/>}
-    {tab === "imap" && <IMAPConfigPanel activeWorkspace={activeWorkspace}/>}
-    {tab === "smtp" && <SMTPConfigPanel activeWorkspace={activeWorkspace}/>}
-    {tab === "signature" && <EmailSignaturePanel activeWorkspace={activeWorkspace}/>}
+    <AuditHistoryPanel activeWorkspace={activeWorkspace}/>
   </div>;
 }
 
@@ -2550,7 +2534,7 @@ function MailView({ activeWorkspace }) {
   </div>;
 }
 
-function Canvas({ nav, activeWorkspace, status, features }) {
+function Canvas({ nav, activeWorkspace, status, features, foundationView }) {
   return <main className="canvas">
     <ContextStrip activeWorkspace={activeWorkspace}/>
     {status === "error" && <div className="workspace-warning"><Icon/>No se pudo cargar /api/workspaces. El shell sigue disponible para revisar la interfaz.</div>}
@@ -2567,7 +2551,7 @@ function Canvas({ nav, activeWorkspace, status, features }) {
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
      : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
-     : nav === "foundation" && window.FoundationSection ? <window.FoundationSection/>
+     : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }
@@ -2715,6 +2699,7 @@ function App({ user, onLogout }) {
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [budget, setBudget] = useState(null);
   const [features, setFeatures] = useState({ email_connector_enabled: false });
+  const [foundationView, setFoundationView] = useState("m16-tenant");
 
   useEffect(() => { applyTheme(theme); }, [theme]);
 
@@ -2776,8 +2761,8 @@ function App({ user, onLogout }) {
     <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
-      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features}/>
-      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features}/>
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
+      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>
     <ToastContainer toasts={toasts} onDismiss={dismissToast}/>

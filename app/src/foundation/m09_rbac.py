@@ -410,6 +410,39 @@ def patch_user(
     return _user_to_dict(conn, ctx.tenant_id, _get_user(conn, ctx.tenant_id, user_id))
 
 
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: str,
+    ctx: SessionContext = Depends(require_permission("users.manage")),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    user = _get_user(conn, ctx.tenant_id, user_id)
+
+    if user_id == ctx.user_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No podés eliminar tu propio usuario")
+
+    is_owner = "owner" in user_role_names(conn, ctx.tenant_id, user_id)
+    if is_owner and "owner" not in ctx.roles:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo un owner puede eliminar a un owner")
+
+    owners = _active_owner_ids(conn, ctx.tenant_id)
+    if user_id in owners and owners == {user_id}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Debe quedar al menos 1 owner activo en el tenant")
+
+    email = user["email"]
+    conn.execute("DELETE FROM fnd_user_roles WHERE tenant_id = ? AND user_id = ?",
+                 (ctx.tenant_id, user_id))
+    conn.execute("DELETE FROM fnd_sessions WHERE tenant_id = ? AND user_id = ?",
+                 (ctx.tenant_id, user_id))
+    conn.execute("DELETE FROM fnd_users WHERE id = ? AND tenant_id = ?",
+                 (user_id, ctx.tenant_id))
+
+    ctx.audit("rbac.user.deleted", resource_type="user", resource_id=user_id,
+              payload={"email": email, "was_owner": is_owner})
+    ctx.emit("rbac", "user.deleted", {"user_id": user_id, "email": email})
+    return {"detail": "Usuario eliminado"}
+
+
 @router.post("/users/{user_id}/roles")
 def set_user_roles(
     user_id: str,

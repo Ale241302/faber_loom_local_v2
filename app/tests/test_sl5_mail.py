@@ -104,8 +104,9 @@ def test_put_and_get_smtp_config(client: TestClient) -> None:
     assert data["port"] == config["port"]
     assert data["use_ssl"] is True
     assert data["username"] == config["username"]
-    # The spike returns the password to the admin form; it must never be logged.
-    assert data["password"] == config["password"]
+    # The password must never be returned to the frontend.
+    assert "password" not in data
+    assert data["has_password"] is True
     assert data["from_email"] == config["from_email"]
 
     response = client.get(f"/api/workspaces/{workspace_id}/admin/smtp-config")
