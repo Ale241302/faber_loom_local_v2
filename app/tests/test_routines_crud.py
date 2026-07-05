@@ -3,10 +3,35 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _seed_faberloom_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide a deterministic catalog so catalog/import tests work everywhere."""
+
+    catalog = tmp_path / "faberloom_catalog"
+    catalog.mkdir()
+    (catalog / "SKILL.md").write_text(
+        "---\n"
+        "name: Test Skill\n"
+        "version: 1.0.0\n"
+        "description: A test skill for the catalog\n"
+        "persona: You are a helpful test assistant.\n"
+        "tools: []\n"
+        "schema_output: {}\n"
+        "triggers: []\n"
+        "---\n\n"
+        "Test body.\n",
+        encoding="utf-8",
+    )
+    from app.src import faberloom_catalog
+
+    monkeypatch.setattr(faberloom_catalog, "_catalog_dir", lambda: catalog)
 
 
 @pytest.fixture()
