@@ -314,6 +314,11 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
           </> }
         ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
+        <Accordion items={[
+          { id: "foundation-acc", title: "Foundation Beta", children: <>
+            <RailItem label="Foundation (M07–M20)" icon="shield" active={nav === "foundation"} onClick={() => setNav("foundation")} />
+          </> }
+        ]} defaultOpen={activeAccordionId === "foundation-acc" ? ["foundation-acc"] : []} />
       </>}
     </div>
     <div className="userfoot" onClick={onLogout} title="Cerrar sesión">
@@ -2562,6 +2567,7 @@ function Canvas({ nav, activeWorkspace, status, features }) {
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
      : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
+     : nav === "foundation" && window.FoundationSection ? <window.FoundationSection/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }

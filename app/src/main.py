@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
+from .foundation import foundation_router, init_foundation_db
 from .db import db_session, initialize_database
 from .features import is_email_connector_enabled
 from .models import FeaturesRead
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     with db_session() as conn:
         initialize_database(conn)
         seed_demo_workspace(conn)
+    init_foundation_db()
     yield
 
 
@@ -113,6 +115,9 @@ def create_app() -> FastAPI:
     app.add_middleware(LocalhostCSRFMiddleware)
     app.include_router(public_router)
     app.include_router(auth_router, prefix="/api")
+    # Foundation Beta (M07-M20): gestiona su propia auth por sesión (M08),
+    # por eso no lleva la dependencia JWT global.
+    app.include_router(foundation_router, prefix="/api")
     app.include_router(api_router, dependencies=[Depends(get_current_user)])
 
     @app.exception_handler(PermissionError)

@@ -60,9 +60,6 @@ Desktop.ini
 
 # Local runtime / temporary
 .tmp/
-foundation_beta/.postgres16/
-foundation_beta/.postgres16_data/
-foundation_beta/.postgres_data/
 
 # Agent harness runtime artifacts
 harness/loop_config.json
