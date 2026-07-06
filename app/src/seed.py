@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from .ambient import seed_ambient_config
 from .audit import audit_writer
 from .context import Context, system_context
 from .db import create_workspace, get_workspace_by_slug, transaction
@@ -83,6 +84,10 @@ TEL-DEMO-001,Oxford premium,12.50,USD,240,2026-06-01,2026-09-30
 TEL-DEMO-002,Lino natural,18.00,USD,120,2026-06-01,2026-09-30
 TEL-DEMO-003,Gabardina stretch,15.75,USD,85,2026-06-01,2026-09-30
 """
+    # E2-5: seed ambient config and detectors
+    with transaction(conn):
+        seed_ambient_config(conn, workspace_ctx.tenant_id)
+
     with transaction(conn):
         ingest_kb_source(
             workspace_ctx,

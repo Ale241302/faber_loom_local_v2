@@ -5,7 +5,7 @@ status: DRAFT
 visibility: [INTERNAL]
 domain: FaberLoom (docs/faberloom/)
 type: PLB
-stamp: DRAFT -- 2026-07-06 -- plan de build Etapa 2; v1.6: herencia E1 (Sec.8) — todos los gaps/parciales/pendientes de Etapa 1 cerrados por decision
+stamp: DRAFT -- 2026-07-06 -- plan de build Etapa 2; v1.7: especificacion del ciclo ambiental (Sec.1.7.1-1.7.5) con limites, dark-launch, deduplicacion, backoff, metricas y auditoria por ciclo
 aprobador: CEO
 aplica_a: [FaberLoom, MWT]
 relacionado: PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md - SPEC_SPACELOOM_ETAPA1_v1.md - ENT_FB_RFQ_REPLAY_SET_v1.md - SPEC_FB_ROUTING_PRESETS_v1.md - SCH_FB_SKILL_MANIFEST_v2.md - EVAL_PLAN_SPACELOOM_FUGU_ULTRA.md - EVAL_PLAN_SPACELOOM_KIMI.md
@@ -109,6 +109,69 @@ a **proactiva acotada** — un ciclo de revision continuo sobre todo el sitio:
   volverse orquestador pesado"): frecuencia maxima de ciclo, budget cap propio del ciclo
   ambiental, tools allowlist de solo-lectura + creacion de items, kill switch por
   workspace.
+
+#### 1.7.1 Ciclo ambiental: activacion, ventana y presupuesto
+El scheduler de gobierno dispara el ciclo; la entidad **no** tiene su propio cron ni puede
+auto-activarse. Defaults operativos (configurables por admin, nunca por debajo de los
+limites duros):
+
+| Parametro | Default | Minimo permitido | Razon |
+|---|---|---|---|
+| Frecuencia global | 30 min | 15 min | Evita costo ruido en tenants pequenos |
+| Frecuencia por workspace | 1 h | 30 min | Un workspace no puede ser revisado constantemente |
+| Ventana activa | 06:00-22:00 America/Bogota | 08:00-18:00 | Fuera de ventana solo eventos criticos |
+| Budget ciclo ambiental | 5% del budget diario del router | 1% | Tope duro de costo autonomo |
+| Max propuestas por ciclo | 10 por workspace | 3 | Evita inundar WorkLoom |
+
+Fuera de la ventana activa el ciclo se ejecuta solo ante eventos criticos: rutina fallida,
+budget del workspace agotado al >90%, o stale_data_block con fuentes marcadas como bloqueantes.
+
+#### 1.7.2 Dark-launch y deduplicacion
+**Dark-launch**: durante las primeras 2 semanas de E2-5 (o hasta decision del curador), el
+ciclo corre en modo observacion: ejecuta detectores, genera propuestas internas y audita
+ruido/utilidad, pero **no crea items visibles en WorkLoom**. Esto permite calibrar
+sensibilidad sin contaminar la cola real.
+
+**Deduplicacion**: cada detector genera una clave estable `hash(detector|target_id|bucket_temporal)`.
+Antes de crear un item WorkLoom se consulta si ya existe una propuesta abierta o reciente
+(< 24 h) para esa clave. Si existe, se anexa evidencia al existente en lugar de crear un duplicado.
+
+#### 1.7.3 Backoff y circuit breakers
+- **Backoff por error**: si un detector falla (API, DB, parser), el siguiente intento espera
+  `2^n * 60 s` hasta un maximo de 4 h. Tres fallos consecutivos del mismo detector lo marcan
+  `disabled` hasta revision manual.
+- **Circuit breaker de utilidad**: si la razon `aceptadas / creadas` es < 20% durante 3 ciclos
+  consecutivos, el ciclo ambiental se auto-pausa y alerta al admin. Solo se reanuda tras
+  ajuste de detectores o reset explicito.
+- **Circuit breaker de costo**: si un ciclo consume mas del 150% de su budget asignado,
+  los detectores restantes se saltan y se registra `cost_overrun`.
+
+#### 1.7.4 Metricas de ruido y utilidad
+Cada ciclo escribe un registro `ambient_cycle` con:
+
+| Metrica | Definicion | Umbral de alarma |
+|---|---|---|
+| propuestas_creadas | Items creados en WorkLoom | > max por ciclo |
+| propuestas_aceptadas | Items movidos a "en progreso" o "hecho" | utilidad objetivo >= 25% |
+| propuestas_ignoradas | Vistos sin accion | ruido si > 60% |
+| costo_usd | Costo LLM/API del ciclo | > budget asignado |
+| latencia_ms | Tiempo total del ciclo | > 5 min |
+| detector_fallos | Fallos por detector | >= 3 consecutivos |
+
+Dashboard minimo: serie temporal de utilidad/ruido por semana, costo acumulado vs budget,
+y kill-switch activos.
+
+#### 1.7.5 Auditoria por ciclo y kill switch
+Cada ciclo genera un `audit_log` inmutable con:
+- `cycle_id`, `started_at`, `ended_at`, `tenant_id`, `workspace_ids` revisados.
+- Detectores ejecutados y resultados (solo metadatos; evidencia completa en `evidence_json`).
+- Propuestas creadas con IDs de WorkLoom.
+- Costo del ciclo y estado del budget.
+- Estado del kill switch (`enabled`/`disabled` por workspace).
+
+**Kill switch**: por workspace y global. Un admin puede desactivar el ciclo ambiental para
+un workspace sin afectar a otros. El kill switch se verifica antes de cada detector y se
+registra en audit. Al activarlo, las propuestas pendientes se marcan `cancelled_by_kill_switch`.
 
 ### 1.8 Archivos y almacenamiento (ingesta universal + MinIO)
 - **Subida universal en el chat**: imagenes, audio, video, PDF, Excel, Word, Access,
@@ -495,3 +558,8 @@ Changelog:
   en E2-0; H9 licencia FSL 1.1 adoptada; H10 sunset del spike sin objeto (muere el
   stack Django, no el spike). E2-0 ampliado con lote de higiene. Regla: re-decidir
   reemplaza, nunca reabre.
+- v1.7 (2026-07-06): Sec.1.7 expandida con subsecciones 1.7.1-1.7.5: ciclo ambiental
+  (activacion, ventana, presupuesto), dark-launch, deduplicacion, backoff/circuit
+  breakers, metricas de ruido/utilidad y auditoria por ciclo + kill switch. Mantiene
+  los limites duros (solo-lectura + creacion de items, 0 irreversibles) y deja los
+  defaults como configuracion de admin.

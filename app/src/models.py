@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -928,6 +928,185 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE usage_record ADD COLUMN capability TEXT;
     CREATE INDEX IF NOT EXISTS idx_usage_record_chain
         ON usage_record(workspace_id, tenant_id, chain_id, step_index);
+    """,
+    28: """
+    -- E2-5: entidad viva / ciclo ambiental propositivo acotado.
+    CREATE TABLE IF NOT EXISTS ambient_config (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        global_enabled INTEGER NOT NULL DEFAULT 1 CHECK (global_enabled IN (0, 1)),
+        cycle_window_start TEXT NOT NULL DEFAULT '06:00',
+        cycle_window_end TEXT NOT NULL DEFAULT '22:00',
+        cycle_window_tz TEXT NOT NULL DEFAULT 'America/Bogota',
+        global_frequency_min INTEGER NOT NULL DEFAULT 30 CHECK (global_frequency_min >= 15),
+        per_workspace_frequency_min INTEGER NOT NULL DEFAULT 60 CHECK (per_workspace_frequency_min >= 30),
+        budget_pct_of_router_daily REAL NOT NULL DEFAULT 5.0 CHECK (budget_pct_of_router_daily >= 1.0),
+        max_proposals_per_cycle INTEGER NOT NULL DEFAULT 10 CHECK (max_proposals_per_cycle >= 3),
+        dark_launch_days INTEGER NOT NULL DEFAULT 14,
+        utility_threshold_pct INTEGER NOT NULL DEFAULT 20,
+        cost_overrun_pct INTEGER NOT NULL DEFAULT 150,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_ambient_config_tenant
+        ON ambient_config(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS ambient_workspace_config (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        detector_allowlist_json TEXT NOT NULL DEFAULT '[]',
+        excluded_detector_slugs_json TEXT NOT NULL DEFAULT '[]',
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_ambient_workspace_config_tenant
+        ON ambient_workspace_config(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS ambient_detector (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        input_scope_json TEXT NOT NULL DEFAULT '[]',
+        output_type TEXT NOT NULL DEFAULT 'workloom_item',
+        severity_default TEXT NOT NULL DEFAULT 'medium'
+            CHECK (severity_default IN ('low', 'medium', 'high', 'critical')),
+        cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
+        max_frequency_min INTEGER NOT NULL DEFAULT 60,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(tenant_id, slug)
+    );
+
+    CREATE TABLE IF NOT EXISTS ambient_cycle (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT,
+        status TEXT NOT NULL DEFAULT 'running'
+            CHECK (status IN ('running', 'completed', 'paused', 'killed', 'cost_overrun', 'utility_breaker')),
+        trigger TEXT NOT NULL DEFAULT 'scheduled'
+            CHECK (trigger IN ('scheduled', 'critical_event', 'manual', 'retry')),
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        detectors_run INTEGER NOT NULL DEFAULT 0,
+        detectors_failed INTEGER NOT NULL DEFAULT 0,
+        proposals_created INTEGER NOT NULL DEFAULT 0,
+        proposals_visible INTEGER NOT NULL DEFAULT 0,
+        proposals_dark INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        budget_usd REAL NOT NULL DEFAULT 0.0,
+        utility_score_pct INTEGER,
+        kill_switch_state_json TEXT NOT NULL DEFAULT '{}',
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS ix_ambient_cycle_tenant
+        ON ambient_cycle(tenant_id);
+    CREATE INDEX IF NOT EXISTS ix_ambient_cycle_workspace
+        ON ambient_cycle(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS ix_ambient_cycle_status
+        ON ambient_cycle(status);
+    CREATE INDEX IF NOT EXISTS ix_ambient_cycle_started
+        ON ambient_cycle(started_at);
+
+    CREATE TABLE IF NOT EXISTS ambient_detector_run (
+        id TEXT PRIMARY KEY,
+        cycle_id TEXT NOT NULL REFERENCES ambient_cycle(id) ON DELETE CASCADE,
+        detector_slug TEXT NOT NULL,
+        workspace_id TEXT,
+        tenant_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ok'
+            CHECK (status IN ('ok', 'failed', 'skipped_kill', 'skipped_disabled', 'skipped_budget')),
+        proposals_count INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        latency_ms INTEGER,
+        error_message TEXT,
+        backoff_until TEXT,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_ambient_detector_run_cycle
+        ON ambient_detector_run(cycle_id);
+    CREATE INDEX IF NOT EXISTS ix_ambient_detector_run_detector
+        ON ambient_detector_run(detector_slug, tenant_id);
+
+    CREATE TABLE IF NOT EXISTS ambient_proposal (
+        id TEXT PRIMARY KEY,
+        cycle_id TEXT NOT NULL REFERENCES ambient_cycle(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        detector_slug TEXT NOT NULL,
+        target_type TEXT,
+        target_id TEXT,
+        dedup_key TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'medium'
+            CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+        title TEXT NOT NULL,
+        description TEXT,
+        suggested_action TEXT,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        state TEXT NOT NULL DEFAULT 'dark'
+            CHECK (state IN ('dark', 'visible', 'merged', 'rejected', 'cancelled_by_kill')),
+        workloom_item_id TEXT,
+        accepted_at TEXT,
+        occurrence_count INTEGER NOT NULL DEFAULT 1,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 28,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_ambient_proposal_cycle
+        ON ambient_proposal(cycle_id);
+    CREATE INDEX IF NOT EXISTS ix_ambient_proposal_dedup
+        ON ambient_proposal(dedup_key, workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS ix_ambient_proposal_state
+        ON ambient_proposal(state);
+    CREATE INDEX IF NOT EXISTS ix_ambient_proposal_target
+        ON ambient_proposal(target_type, target_id);
     """,
 }
 

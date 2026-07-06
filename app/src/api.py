@@ -192,6 +192,26 @@ from .router.engine import NoAllowedModel
 from .router.models import CompletionRequest
 from .seal import compute_workspace_hmac
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
+from .ambient import (
+    ambient_metrics,
+    get_ambient_config,
+    get_ambient_workspace_config,
+    set_kill_switch,
+    trigger_ambient_cycle,
+    update_ambient_config,
+    update_ambient_workspace_config,
+)
+from .ambient_models import (
+    AmbientConfigRead,
+    AmbientConfigUpdate,
+    AmbientKillSwitchRequest,
+    AmbientMetricsRead,
+    AmbientTriggerRequest,
+    AmbientTriggerResponse,
+    AmbientWorkspaceConfigRead,
+    AmbientWorkspaceConfigUpdate,
+    AmbientCycleRead,
+)
 
 
 class RoutineRunEditRequest(BaseModel):
@@ -3996,3 +4016,166 @@ def api_import_faberloom_routines(
             )
 
     return [RoutineRead(**row) for row in imported]
+
+
+# -----------------------------------------------------------------------------
+# E2-5: Ambient cycle admin endpoints
+# -----------------------------------------------------------------------------
+
+
+def _require_admin_role(request: Request) -> None:
+    ctx = context_from_request(request)
+    role = ctx.actor_role_at_decision
+    if role not in ("admin", "curador", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or curador role required",
+        )
+
+
+@router.get("/admin/ambient/config", response_model=AmbientConfigRead)
+def api_get_ambient_config(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> AmbientConfigRead:
+    _require_admin_role(request)
+    ctx = context_from_request(request)
+    config = get_ambient_config(conn, ctx.tenant_id)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ambient config not found")
+    return AmbientConfigRead(**config)
+
+
+@router.patch("/admin/ambient/config", response_model=AmbientConfigRead)
+def api_update_ambient_config(
+    request: Request,
+    payload: AmbientConfigUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> AmbientConfigRead:
+    _require_admin_role(request)
+    ctx = context_from_request(request)
+    updates = payload.model_dump(exclude_unset=True)
+    with transaction(conn):
+        config = update_ambient_config(conn, ctx.tenant_id, updates)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ambient config not found")
+    return AmbientConfigRead(**config)
+
+
+@router.get("/admin/ambient/workspaces/{workspace_id}/config", response_model=AmbientWorkspaceConfigRead)
+def api_get_ambient_workspace_config(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AmbientWorkspaceConfigRead:
+    _require_admin_role(request)
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    config = get_ambient_workspace_config(conn, ctx.tenant_id, workspace_id)
+    if config is None:
+        # Return implicit defaults
+        config = {
+            "id": "",
+            "workspace_id": workspace_id,
+            "tenant_id": ctx.tenant_id,
+            "enabled": True,
+            "detector_allowlist": [],
+            "excluded_detector_slugs": [],
+        }
+    return AmbientWorkspaceConfigRead(**config)
+
+
+@router.patch("/admin/ambient/workspaces/{workspace_id}/config", response_model=AmbientWorkspaceConfigRead)
+def api_update_ambient_workspace_config(
+    workspace_id: str,
+    request: Request,
+    payload: AmbientWorkspaceConfigUpdate,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AmbientWorkspaceConfigRead:
+    _require_admin_role(request)
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    updates = payload.model_dump(exclude_unset=True)
+    with transaction(conn):
+        config = update_ambient_workspace_config(conn, ctx.tenant_id, workspace_id, updates)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace config not found")
+    return AmbientWorkspaceConfigRead(**config)
+
+
+@router.post("/admin/ambient/kill")
+def api_ambient_kill_global(
+    request: Request,
+    payload: AmbientKillSwitchRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    _require_admin_role(request)
+    ctx = context_from_request(request)
+    with transaction(conn):
+        return set_kill_switch(conn, ctx.tenant_id, payload.enabled)
+
+
+@router.post("/admin/ambient/workspaces/{workspace_id}/kill")
+def api_ambient_kill_workspace(
+    workspace_id: str,
+    request: Request,
+    payload: AmbientKillSwitchRequest,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    _require_admin_role(request)
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    with transaction(conn):
+        return set_kill_switch(conn, ctx.tenant_id, payload.enabled, workspace_id=workspace_id)
+
+
+@router.get("/admin/ambient/metrics", response_model=AmbientMetricsRead)
+def api_ambient_metrics(
+    request: Request,
+    workspace_id: str | None = None,
+    days: int = 7,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> AmbientMetricsRead:
+    _require_admin_role(request)
+    ctx = context_from_request(request)
+    if workspace_id:
+        # Validate workspace belongs to tenant
+        ws = conn.execute(
+            "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
+            (workspace_id, ctx.tenant_id),
+        ).fetchone()
+        if ws is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    metrics = ambient_metrics(conn, ctx.tenant_id, workspace_id, days)
+    return AmbientMetricsRead(**metrics)
+
+
+@router.post("/admin/ambient/trigger", response_model=AmbientTriggerResponse, status_code=status.HTTP_201_CREATED)
+def api_ambient_trigger(
+    request: Request,
+    payload: AmbientTriggerRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> AmbientTriggerResponse:
+    _require_admin_role(request)
+    ctx = context_from_request(request)
+    workspace_id = payload.workspace_id
+    if workspace_id:
+        ws = conn.execute(
+            "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
+            (workspace_id, ctx.tenant_id),
+        ).fetchone()
+        if ws is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        with transaction(conn):
+            result = trigger_ambient_cycle(conn, ctx.tenant_id, workspace_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return AmbientTriggerResponse(
+        cycle_id=result["id"],
+        status=result["status"],
+        proposals_created=result["proposals_created"],
+    )

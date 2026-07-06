@@ -16,6 +16,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from urllib.parse import urlparse
 
+from .ambient import start_ambient_scheduler, stop_ambient_scheduler
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .foundation import foundation_router, init_foundation_db
@@ -55,7 +56,11 @@ async def lifespan(app: FastAPI):
         seed_canary_workspace(conn)
     init_foundation_db()
     load_trusted_update_keys()
-    yield
+    start_ambient_scheduler()
+    try:
+        yield
+    finally:
+        stop_ambient_scheduler()
 
 
 def _trusted_hosts() -> set[str | None]:
