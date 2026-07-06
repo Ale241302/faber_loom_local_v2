@@ -273,7 +273,7 @@ def test_routine_run_is_sealed(client: TestClient) -> None:
     other_workspace = _create_workspace(client, "Routine Run Other")
 
     with connect() as conn:
-        ctx = Context(workspace_id=workspace["id"])
+        ctx = Context(workspace_id=workspace["id"], tenant_id="default")
         routine = create_routine(ctx, conn, name="Test routine")
         routine_id = routine["id"]
         run = create_routine_run(
@@ -302,7 +302,7 @@ def test_routine_run_is_sealed(client: TestClient) -> None:
         )
         conn.commit()
 
-        other_ctx = Context(workspace_id=other_workspace["id"])
+        other_ctx = Context(workspace_id=other_workspace["id"], tenant_id="default")
         with pytest.raises(PermissionError):
             get_routine_run(other_ctx, conn, run["id"])
 

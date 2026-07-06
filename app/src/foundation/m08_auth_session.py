@@ -18,7 +18,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from .core import (
@@ -71,6 +71,15 @@ class CodeBody(BaseModel):
 
 def _now_dt() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _fnd_cookie_settings(request: Request) -> dict[str, Any]:
+    return {
+        "httponly": True,
+        "secure": request.url.scheme == "https",
+        "samesite": "strict",
+        "path": "/api/foundation",
+    }
 
 
 def create_session(
@@ -182,6 +191,7 @@ def _raise_committed(conn: sqlite3.Connection, exc: HTTPException) -> None:
 def login(
     body: LoginBody,
     request: Request,
+    response: Response,
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict[str, Any]:
     tenant = get_active_tenant(conn)
@@ -218,12 +228,14 @@ def login(
 
     if user["totp_enabled"]:
         token = create_session(conn, tenant_id, user["id"], stage="totp", request=request)
+        response.set_cookie(key="fnd_session", value=token, **_fnd_cookie_settings(request))
         audit_log(conn, tenant_id, "auth.login.2fa_pending", actor_id=user["id"],
                   actor_email=email, resource_type="session", resource_id=token[:16],
                   payload={"method": "password"})
         return {"requires_2fa": True, "session": token}
 
     token = create_session(conn, tenant_id, user["id"], stage="full", request=request)
+    response.set_cookie(key="fnd_session", value=token, **_fnd_cookie_settings(request))
     audit_log(conn, tenant_id, "auth.login.success", actor_id=user["id"],
               actor_email=email, resource_type="session", resource_id=token[:16],
               payload={"method": "password"})
@@ -236,6 +248,8 @@ def login(
 @router.post("/2fa/verify")
 def totp_verify(
     body: TotpVerifyBody,
+    request: Request,
+    response: Response,
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict[str, Any]:
     session = load_session(conn, body.session)
@@ -258,6 +272,7 @@ def totp_verify(
 
     _clear_failures(conn, user["id"])
     conn.execute("UPDATE fnd_sessions SET stage = 'full' WHERE id = ?", (session["id"],))
+    response.set_cookie(key="fnd_session", value=session["id"], **_fnd_cookie_settings(request))
     audit_log(conn, tenant_id, "auth.login.success", actor_id=user["id"],
               actor_email=user["email"], resource_type="session",
               resource_id=session["id"][:16], payload={"method": "totp"})

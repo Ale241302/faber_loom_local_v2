@@ -43,7 +43,7 @@ def list_gold_candidates(
     sql = f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
     """
     if routine_id is not None:
         sql += " AND routine_id = ?"
@@ -72,7 +72,7 @@ def list_approved_gold_candidates_for_routine(
         f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE workspace_id = ? AND tenant_id IS ? AND routine_id = ? AND approved = 1
+        WHERE workspace_id = ? AND tenant_id = ? AND routine_id = ? AND approved = 1
         ORDER BY use_count ASC, created_at DESC
         LIMIT ?
         """,
@@ -109,7 +109,7 @@ def promote_gold_candidate(
         """
         UPDATE gold_candidate
         SET learned_output_json = ?, approved = 1, approved_by = ?, updated_at = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (
             json.dumps(learned_output_json, ensure_ascii=False, sort_keys=True),
@@ -127,7 +127,7 @@ def promote_gold_candidate(
         f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (candidate_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -153,7 +153,7 @@ def apply_gold_to_routine(
             f"""
             SELECT {GOLD_CANDIDATE_COLUMNS}
             FROM gold_candidate
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (candidate_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -201,7 +201,7 @@ def apply_gold_to_routine(
             """
             UPDATE gold_candidate
             SET used = 1, use_count = use_count + 1, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (now, candidate_id, workspace_id, ctx.tenant_id),
         )
@@ -214,7 +214,7 @@ def apply_gold_to_routine(
             f"""
             SELECT {GOLD_CANDIDATE_COLUMNS}
             FROM gold_candidate
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (candidate_id, workspace_id, ctx.tenant_id),
         ).fetchone()

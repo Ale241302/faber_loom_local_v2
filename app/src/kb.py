@@ -113,7 +113,7 @@ def _workspace_seals(
         return {}
     placeholders = ",".join("?" for _ in scope)
     rows = conn.execute(
-        f"SELECT id, seal_id FROM workspace WHERE id IN ({placeholders}) AND tenant_id IS ?",
+        f"SELECT id, seal_id FROM workspace WHERE id IN ({placeholders}) AND tenant_id = ?",
         (*scope, ctx.tenant_id),
     ).fetchall()
     return {row["id"]: row["seal_id"] for row in rows if row["seal_id"]}
@@ -440,7 +440,7 @@ def ingest_kb_source(
                file_name, mime_type, file_size, parser_version, approved_by,
                workspace_hmac, created_at
         FROM kb_source
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (source_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -458,7 +458,7 @@ def list_kb_sources(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, An
                file_name, mime_type, file_size, parser_version, approved_by,
                workspace_hmac, created_at
         FROM kb_source
-        WHERE workspace_id IN ({placeholders}) AND tenant_id IS ?
+        WHERE workspace_id IN ({placeholders}) AND tenant_id = ?
         ORDER BY created_at DESC
         """,
         (*scope, ctx.tenant_id),
@@ -484,7 +484,7 @@ def get_kb_source(
                file_name, mime_type, file_size, parser_version, approved_by,
                workspace_hmac, created_at
         FROM kb_source
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
         """,
         (source_id, *scope, ctx.tenant_id),
     ).fetchone()
@@ -502,7 +502,7 @@ def delete_kb_source(ctx: Context, conn: sqlite3.Connection, source_id: str) -> 
     workspace_id = ctx.require_scoped_workspace()
     with transaction(conn):
         cursor = conn.execute(
-            "DELETE FROM kb_source WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            "DELETE FROM kb_source WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             (source_id, workspace_id, ctx.tenant_id),
         )
     return cursor.rowcount > 0
@@ -539,8 +539,8 @@ def search_kb_chunks(
         WHERE kb_chunk_fts MATCH ?
           AND c.workspace_id IN ({placeholders})
           AND s.workspace_id IN ({placeholders})
-          AND c.tenant_id IS ?
-          AND s.tenant_id IS ?
+          AND c.tenant_id = ?
+          AND s.tenant_id = ?
         ORDER BY rank
         LIMIT ?
         """,
@@ -573,7 +573,7 @@ def search_kb_facts(
                tenant_id, created_at
         FROM kb_fact
         WHERE workspace_id IN ({placeholders})
-          AND tenant_id IS ?
+          AND tenant_id = ?
           AND (entity_key LIKE ? OR field_value LIKE ?)
         ORDER BY created_at DESC
         LIMIT ?
@@ -601,7 +601,7 @@ def get_kb_fact_by_id(
                source_version, extraction_method, source_sheet, workspace_hmac,
                tenant_id, created_at
         FROM kb_fact
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
         """,
         (fact_id, *scope, ctx.tenant_id),
     ).fetchone()
@@ -625,7 +625,7 @@ def get_kb_chunk_by_id(
         SELECT id, workspace_id, source_id, chunk_index, content_text,
                source_locator, source_version, tenant_id, created_at
         FROM kb_chunk
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id IS ?
+        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
         """,
         (chunk_id, *scope, ctx.tenant_id),
     ).fetchone()
@@ -652,7 +652,7 @@ def find_kb_fact(
                tenant_id, created_at
         FROM kb_fact
         WHERE workspace_id IN ({placeholders})
-          AND tenant_id IS ?
+          AND tenant_id = ?
           AND source_id = ? AND field_name = ? AND field_value = ?
         ORDER BY created_at DESC
         LIMIT 1
@@ -683,7 +683,7 @@ def get_kb_facts_by_source(
                source_version, extraction_method, source_sheet, workspace_hmac,
                tenant_id, created_at
         FROM kb_fact
-        WHERE workspace_id IN ({placeholders}) AND tenant_id IS ? AND source_id = ?
+        WHERE workspace_id IN ({placeholders}) AND tenant_id = ? AND source_id = ?
         ORDER BY entity_key, field_name
         """,
         (*scope, ctx.tenant_id, source_id),
@@ -797,7 +797,7 @@ def insert_draft(
     row = conn.execute(
         """
         SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (draft_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -812,7 +812,7 @@ def get_draft(
     row = conn.execute(
         """
         SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (draft_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -833,7 +833,7 @@ def list_drafts(
     workspace_id = ctx.require_scoped_workspace()
     sql = """
         SELECT * FROM draft
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
     """
     params: list[Any] = [workspace_id, ctx.tenant_id]
     if status is not None:
@@ -866,7 +866,7 @@ def update_draft(
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -925,14 +925,14 @@ def update_draft(
         params.extend([draft_id, workspace_id, ctx.tenant_id])
 
         conn.execute(
-            f"UPDATE draft SET {', '.join(updates)} WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            f"UPDATE draft SET {', '.join(updates)} WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             params,
         )
 
     row = conn.execute(
         """
         SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (draft_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -956,7 +956,7 @@ def approve_draft(
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -994,7 +994,7 @@ def approve_draft(
             UPDATE draft
             SET status = 'approved', approved_by = ?, approved_at = ?, updated_at = ?,
                 workspace_hmac = ?, urgency = ?, reason = ?, original_body_md = ?, edit_pct = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (
                 ctx.resolved_actor_id(),
@@ -1014,7 +1014,7 @@ def approve_draft(
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -1036,7 +1036,7 @@ def reject_draft(
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -1061,14 +1061,14 @@ def reject_draft(
             """
             UPDATE draft
             SET status = 'rejected', updated_at = ?, workspace_hmac = ?, reason = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (utc_now(), hmac, reason, draft_id, workspace_id, ctx.tenant_id),
         )
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -1090,7 +1090,7 @@ def export_draft(
         row = conn.execute(
             """
             SELECT * FROM draft
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, workspace_id, ctx.tenant_id),
         ).fetchone()
@@ -1123,7 +1123,7 @@ def export_draft(
             """
             UPDATE draft
             SET status = 'exported', exported_at = ?, updated_at = ?, workspace_hmac = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (utc_now(), utc_now(), hmac, draft_id, workspace_id, ctx.tenant_id),
         )
@@ -1131,7 +1131,7 @@ def export_draft(
     row = conn.execute(
         """
         SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (draft_id, workspace_id, ctx.tenant_id),
     ).fetchone()

@@ -6,11 +6,10 @@ master key is read from FABERLOOM_MASTER_KEY or stored in .master_key in the sam
 directory. Environment variables always take precedence over stored values so
 users can BYOK without persisting secrets to disk.
 
-From schema v19 the store also supports per-user configuration. Global settings
-live at the root of the encrypted document; each authenticated user has a slice
-under ``users[<email>]``. The global slice is used as a fallback when a user has
-no persisted configuration, and the first write for a user copies the global
-configuration so that later edits do not affect other users.
+From schema v19 the store supports per-user configuration. From the tenant
+hardening pass it also scopes those users under ``tenants[<tenant_id>]``.
+Provider entries that live outside a user slice act as the tenant-wide default
+and are copied into a user's slice on first write so later edits stay isolated.
 """
 
 from __future__ import annotations
@@ -21,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
+
+from ..context import DEFAULT_TENANT_ID, Context
 
 
 def get_config_dir() -> Path:
@@ -131,6 +132,10 @@ def _is_global_user_id(user_id: str | None) -> bool:
     return user_id is None or user_id == "local"
 
 
+def _resolve_tenant_id(tenant_id: str | None) -> str:
+    return tenant_id if tenant_id else DEFAULT_TENANT_ID
+
+
 class ProviderConfigStore:
     """Encrypted JSON store for provider runtime configuration."""
 
@@ -150,11 +155,18 @@ class ProviderConfigStore:
         try:
             encrypted = self._path.read_bytes()
             decrypted = self._fernet.decrypt(encrypted)
-            return json.loads(decrypted.decode("utf-8"))
+            data = json.loads(decrypted.decode("utf-8"))
         except Exception:
             # A corrupted or un-decryptable store is treated as empty. The user
             # can reconfigure providers through the UI.
             return {}
+
+        if isinstance(data, dict) and "tenants" not in data:
+            # Migrate legacy stores that kept per-user slices (and optional
+            # global entries) at the document root into the default tenant.
+            if data:
+                data = {"tenants": {_resolve_tenant_id(None): data}}
+        return data if isinstance(data, dict) else {}
 
     def save(self, data: dict[str, Any]) -> None:
         """Encrypt and persist the provider configuration dictionary."""
@@ -163,55 +175,85 @@ class ProviderConfigStore:
         encrypted = self._fernet.encrypt(payload)
         self._path.write_bytes(encrypted)
 
-    def _user_root(self, data: dict[str, Any], user_id: str | None) -> dict[str, Any]:
-        """Return the configuration slice for ``user_id``.
+    def _tenant_root(self, data: dict[str, Any], tenant_id: str | None) -> dict[str, Any]:
+        """Return the configuration slice for ``tenant_id``."""
 
-        For the global/local identity this is the document root. For real users
-        the slice is taken from ``data["users"][user_id]``; if the user has no
-        slice yet the global configuration is returned so existing deployments
-        keep working.
+        tenants = data.setdefault("tenants", {})
+        if not isinstance(tenants, dict):
+            tenants = {}
+            data["tenants"] = tenants
+        return tenants.setdefault(_resolve_tenant_id(tenant_id), {})
+
+    def _user_root(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the configuration slice for ``user_id`` inside ``tenant_id``.
+
+        For the global/local identity this is the tenant root. For real users
+        the slice is taken from ``data["tenants"][tenant_id]["users"][user_id]``;
+        if the user has no slice yet the tenant-wide configuration is returned
+        so existing deployments keep working.
         """
 
+        root = self._tenant_root(data, tenant_id)
         if _is_global_user_id(user_id):
-            return data
-        users = data.setdefault("users", {})
-        return users.get(user_id, data) if isinstance(users, dict) else data
-
-    def _ensure_user_copy(
-        self, data: dict[str, Any], user_id: str | None
-    ) -> dict[str, Any]:
-        """Return a mutable per-user config slice, seeding it from global if needed."""
-
-        if _is_global_user_id(user_id):
-            return data
-        users = data.setdefault("users", {})
+            return root
+        users = root.setdefault("users", {})
         if not isinstance(users, dict):
             users = {}
-            data["users"] = users
+            root["users"] = users
+        return users.get(user_id, root) if isinstance(users, dict) else root
+
+    def _ensure_user_copy(
+        self,
+        data: dict[str, Any],
+        user_id: str | None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a mutable per-user config slice, seeding it from tenant defaults."""
+
+        root = self._tenant_root(data, tenant_id)
+        if _is_global_user_id(user_id):
+            return root
+        users = root.setdefault("users", {})
+        if not isinstance(users, dict):
+            users = {}
+            root["users"] = users
         if user_id not in users:
-            # Seed the user's slice from global provider entries so that later
-            # edits are isolated from the shared configuration.
+            # Seed the user's slice from tenant-wide provider entries so that
+            # later edits are isolated from the shared configuration.
             users[user_id] = {
-                slug: dict(config) for slug, config in data.items() if slug != "users"
+                slug: dict(config)
+                for slug, config in root.items()
+                if slug != "users"
             }
         return users[user_id]
 
-    def get(self, slug: str, user_id: str | None = None) -> dict[str, Any]:
+    def get(
+        self,
+        slug: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Return the stored configuration for a single provider."""
 
         data = self.load()
-        return self._user_root(data, user_id).get(slug, {})
+        return self._user_root(data, user_id, tenant_id).get(slug, {})
 
     def set(
         self,
         slug: str,
         values: dict[str, Any],
         user_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         """Merge new values into a provider entry and persist."""
 
         data = self.load()
-        root = self._ensure_user_copy(data, user_id)
+        root = self._ensure_user_copy(data, user_id, tenant_id)
         current = root.get(slug, {})
         for key, value in values.items():
             if value is None:
@@ -221,25 +263,72 @@ class ProviderConfigStore:
         root[slug] = current
         self.save(data)
 
-    def delete_key(self, slug: str, user_id: str | None = None) -> None:
+    def delete_key(
+        self,
+        slug: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
         """Remove only the API key for a provider."""
 
         data = self.load()
-        root = self._ensure_user_copy(data, user_id)
+        root = self._ensure_user_copy(data, user_id, tenant_id)
         if slug in root:
             root[slug].pop("api_key", None)
             self.save(data)
 
-    def delete(self, slug: str, user_id: str | None = None) -> None:
+    def delete(
+        self,
+        slug: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
         """Remove an entire provider entry."""
 
         data = self.load()
-        root = self._ensure_user_copy(data, user_id)
+        root = self._ensure_user_copy(data, user_id, tenant_id)
         root.pop(slug, None)
         self.save(data)
 
-    def all(self, user_id: str | None = None) -> dict[str, Any]:
+    def all(
+        self,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
         """Return the provider configuration dictionary for ``user_id``."""
 
         data = self.load()
-        return dict(self._user_root(data, user_id))
+        root = self._user_root(data, user_id, tenant_id)
+        return {k: v for k, v in root.items() if k != "users"}
+
+
+def get_user_provider_config(ctx: Context, slug: str) -> dict[str, Any]:
+    """Return the stored configuration for ``slug`` in the caller's tenant."""
+
+    return ProviderConfigStore().get(slug, ctx.user_id, ctx.tenant_id)
+
+
+def set_user_provider_config(
+    ctx: Context, slug: str, values: dict[str, Any]
+) -> None:
+    """Merge provider values in the caller's tenant/user slice."""
+
+    ProviderConfigStore().set(slug, values, ctx.user_id, ctx.tenant_id)
+
+
+def delete_user_provider_config(ctx: Context, slug: str) -> None:
+    """Remove an entire provider entry in the caller's tenant/user slice."""
+
+    ProviderConfigStore().delete(slug, ctx.user_id, ctx.tenant_id)
+
+
+def delete_user_provider_key(ctx: Context, slug: str) -> None:
+    """Remove only the API key for a provider in the caller's tenant/user slice."""
+
+    ProviderConfigStore().delete_key(slug, ctx.user_id, ctx.tenant_id)
+
+
+def list_user_provider_configs(ctx: Context) -> dict[str, Any]:
+    """Return the provider configuration dictionary for the caller."""
+
+    return ProviderConfigStore().all(ctx.user_id, ctx.tenant_id)

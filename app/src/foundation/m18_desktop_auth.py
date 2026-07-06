@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from .core import (
@@ -129,7 +129,7 @@ class DeviceRegisterIn(BaseModel):
 
 class DeviceLoginIn(BaseModel):
     device_id: str = Field(min_length=1, max_length=64)
-    device_secret: str = Field(min_length=1, max_length=256)
+    device_secret: str | None = Field(default=None, max_length=256)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,10 @@ class DeviceLoginIn(BaseModel):
 
 @router.post("/device/register")
 def register_device(
-    body: DeviceRegisterIn, ctx: SessionContext = Depends(require_session)
+    body: DeviceRegisterIn,
+    request: Request,
+    response: Response,
+    ctx: SessionContext = Depends(require_session),
 ) -> dict[str, Any]:
     """Registra este dispositivo y liga la sesión actual a él.
 
@@ -171,15 +174,28 @@ def register_device(
         payload={"name": body.name.strip(), "platform": body.platform.strip()},
     )
     ctx.emit("desktop", "device.registered", {"device_id": device_id, "user_id": ctx.user_id})
+    response.set_cookie(
+        key="faberloom_fnd_device",
+        value=device_secret,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path="/api/foundation/desktop/auth",
+    )
     return {
         "device_id": device_id,
         "device_secret": device_secret,
-        "note": "Guarda el device_secret ahora; no se volverá a mostrar.",
+        "note": "Guarda el device_secret ahora; no se volverá a mostrar. También quedó en una cookie segura del navegador.",
     }
 
 
 @router.post("/device/login")
-def device_login(body: DeviceLoginIn, conn=Depends(get_conn)) -> dict[str, Any]:
+def device_login(
+    body: DeviceLoginIn,
+    request: Request,
+    response: Response,
+    conn=Depends(get_conn),
+) -> dict[str, Any]:
     """PRE-AUTH: crea una sesión full a partir de device_id + device_secret.
 
     Es el "remember me" desktop del plan M18: el cliente guarda el secret en
@@ -187,18 +203,22 @@ def device_login(body: DeviceLoginIn, conn=Depends(get_conn)) -> dict[str, Any]:
     revocado y el usuario siga activo.
     """
     invalid = HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciales de dispositivo inválidas")
+    device_secret = body.device_secret or request.cookies.get("faberloom_fnd_device")
+    if not device_secret:
+        raise invalid
+
     device = conn.execute("SELECT * FROM fnd_devices WHERE id = ?", (body.device_id,)).fetchone()
     if device is None or device["revoked_at"] is not None:
         raise invalid
 
     # Verificación doble: fingerprint (hash) + secreto cifrado en el almacén local.
-    if not hmac.compare_digest(_fingerprint(body.device_secret), device["fingerprint"]):
+    if not hmac.compare_digest(_fingerprint(device_secret), device["fingerprint"]):
         raise invalid
     stored = conn.execute(
         "SELECT secret_encrypted FROM fnd_device_secrets WHERE device_id = ?", (body.device_id,)
     ).fetchone()
     plain = _decrypt_secret(stored["secret_encrypted"]) if stored else None
-    if plain is None or not hmac.compare_digest(plain, body.device_secret):
+    if plain is None or not hmac.compare_digest(plain, device_secret):
         raise invalid
 
     user = conn.execute("SELECT * FROM fnd_users WHERE id = ?", (device["user_id"],)).fetchone()
@@ -221,6 +241,14 @@ def device_login(body: DeviceLoginIn, conn=Depends(get_conn)) -> dict[str, Any]:
         actor_id=user["id"], actor_email=user["email"],
         resource_type="device", resource_id=device["id"],
         payload={"session_id": session_id},
+    )
+    response.set_cookie(
+        key="fnd_session",
+        value=session_id,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path="/api/foundation",
     )
     return {
         "session": session_id,

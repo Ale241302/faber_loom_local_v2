@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -719,6 +719,131 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE mail_outbox ADD COLUMN error_json TEXT NOT NULL DEFAULT '{}';
 
     ALTER TABLE workspace ADD COLUMN email_signature TEXT;
+    """,
+    21: """
+    -- P0 fugu hardening: refresh tokens, fail-closed tenant_id, and missing
+    -- tenant columns on workspace-owned tables.
+
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, revoked_at, expires_at);
+
+    -- Add tenant_id to tables that did not have it.
+    ALTER TABLE workspace_smtp_config ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default';
+    ALTER TABLE mail_outbox ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default';
+    ALTER TABLE editorial_history ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default';
+
+    -- Backfill existing rows and enforce NOT NULL behavior via triggers.
+    UPDATE workspace SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE kb_source SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE chat SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE message SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE draft SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE routine SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE routine_run SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE usage_record SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE mail_message SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE email_account SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE kb_chunk SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE kb_fact SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE gold_candidate SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE audit_log SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE workspace_smtp_config SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE mail_outbox SET tenant_id = 'default' WHERE tenant_id IS NULL;
+    UPDATE editorial_history SET tenant_id = 'default' WHERE tenant_id IS NULL;
+
+    CREATE TRIGGER IF NOT EXISTS trg_workspace_tenant_nn BEFORE INSERT ON workspace
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_workspace_tenant_nn_upd BEFORE UPDATE ON workspace
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_source_tenant_nn BEFORE INSERT ON kb_source
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_source_tenant_nn_upd BEFORE UPDATE ON kb_source
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_chat_tenant_nn BEFORE INSERT ON chat
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_chat_tenant_nn_upd BEFORE UPDATE ON chat
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_message_tenant_nn BEFORE INSERT ON message
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_message_tenant_nn_upd BEFORE UPDATE ON message
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_draft_tenant_nn BEFORE INSERT ON draft
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_draft_tenant_nn_upd BEFORE UPDATE ON draft
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_routine_tenant_nn BEFORE INSERT ON routine
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_routine_tenant_nn_upd BEFORE UPDATE ON routine
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_routine_run_tenant_nn BEFORE INSERT ON routine_run
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_routine_run_tenant_nn_upd BEFORE UPDATE ON routine_run
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_usage_record_tenant_nn BEFORE INSERT ON usage_record
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_usage_record_tenant_nn_upd BEFORE UPDATE ON usage_record
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_mail_message_tenant_nn BEFORE INSERT ON mail_message
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_mail_message_tenant_nn_upd BEFORE UPDATE ON mail_message
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_email_account_tenant_nn BEFORE INSERT ON email_account
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_email_account_tenant_nn_upd BEFORE UPDATE ON email_account
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_chunk_tenant_nn BEFORE INSERT ON kb_chunk
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_chunk_tenant_nn_upd BEFORE UPDATE ON kb_chunk
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_fact_tenant_nn BEFORE INSERT ON kb_fact
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_kb_fact_tenant_nn_upd BEFORE UPDATE ON kb_fact
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_gold_candidate_tenant_nn BEFORE INSERT ON gold_candidate
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_gold_candidate_tenant_nn_upd BEFORE UPDATE ON gold_candidate
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_audit_log_tenant_nn BEFORE INSERT ON audit_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_audit_log_tenant_nn_upd BEFORE UPDATE ON audit_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_workspace_smtp_config_tenant_nn BEFORE INSERT ON workspace_smtp_config
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_workspace_smtp_config_tenant_nn_upd BEFORE UPDATE ON workspace_smtp_config
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_mail_outbox_tenant_nn BEFORE INSERT ON mail_outbox
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_mail_outbox_tenant_nn_upd BEFORE UPDATE ON mail_outbox
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_editorial_history_tenant_nn BEFORE INSERT ON editorial_history
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_editorial_history_tenant_nn_upd BEFORE UPDATE ON editorial_history
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_tenant ON workspace(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_source_tenant ON kb_source(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_tenant ON chat(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_message_tenant ON message(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_draft_tenant ON draft(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_tenant ON routine(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_routine_run_tenant ON routine_run(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_usage_record_tenant ON usage_record(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_message_tenant ON mail_message(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_email_account_tenant ON email_account(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_tenant ON kb_chunk(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_tenant ON kb_fact(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_gold_candidate_tenant ON gold_candidate(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_tenant ON audit_log(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_smtp_config_tenant ON workspace_smtp_config(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_outbox_tenant ON mail_outbox(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_editorial_history_tenant ON editorial_history(workspace_id, tenant_id);
     """,
 }
 

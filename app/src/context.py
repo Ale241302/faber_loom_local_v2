@@ -1,9 +1,9 @@
 """Context layer for FaberLoom SL0.
 
 Every query that reads or writes application data receives a Context. In SL0 the
-app is single-user/local-first, so tenant_id and user_id are latent fields; the
-seam exists now to avoid rewriting repositories when Etapa 2-3 adds real access
-enforcement.
+app is single-user/local-first, so tenant_id defaults to the configured tenant
+('default' unless FABERLOOM_TENANT_ID is set). The seam exists now to avoid
+rewriting repositories when Etapa 2-3 adds real access enforcement.
 
 Two scopes are intentionally explicit:
 
@@ -15,12 +15,14 @@ Two scopes are intentionally explicit:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
 SYSTEM_WORKSPACE_ID = "__system__"
 DEFAULT_LOCAL_USER_ID = "local"
 DEFAULT_LOCAL_ACTOR_ROLE = "owner"
+DEFAULT_TENANT_ID = os.getenv("FABERLOOM_TENANT_ID", "default")
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +30,7 @@ class Context:
     """Access scope and actor identity for a unit of work."""
 
     workspace_id: str
-    tenant_id: str | None = None
+    tenant_id: str
     user_id: str | None = None
     actor_id: str | None = None
     actor_role_at_decision: str | None = None
@@ -53,6 +55,13 @@ class Context:
 
         if self.workspace_id != SYSTEM_WORKSPACE_ID:
             raise ValueError("A system Context is required for bootstrap workspace operations")
+
+    def require_tenant(self) -> str:
+        """Return the tenant id or raise for malformed context."""
+
+        if not self.tenant_id:
+            raise ValueError("Context.tenant_id is required")
+        return self.tenant_id
 
     @property
     def is_system(self) -> bool:
@@ -82,7 +91,7 @@ def system_context(
 
     return Context(
         workspace_id=SYSTEM_WORKSPACE_ID,
-        tenant_id=tenant_id,
+        tenant_id=tenant_id or DEFAULT_TENANT_ID,
         user_id=user_id,
         actor_id=actor_id,
         actor_role_at_decision=actor_role_at_decision,

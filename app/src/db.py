@@ -484,7 +484,7 @@ def system_list_workspaces(ctx: Context, conn: sqlite3.Connection) -> list[dict[
         f"""
         SELECT {WORKSPACE_COLUMNS}
         FROM workspace
-        WHERE tenant_id IS ?
+        WHERE tenant_id = ?
         ORDER BY created_at ASC, name ASC
         """,
         (ctx.tenant_id,),
@@ -505,7 +505,7 @@ def get_workspace(ctx: Context, conn: sqlite3.Connection) -> dict[str, Any] | No
         f"""
         SELECT {WORKSPACE_COLUMNS}
         FROM workspace
-        WHERE id = ? AND tenant_id IS ?
+        WHERE id = ? AND tenant_id = ?
         """,
         (workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -517,7 +517,7 @@ def workspace_seal_id(ctx: Context, conn: sqlite3.Connection) -> str:
 
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
-        "SELECT seal_id FROM workspace WHERE id = ? AND tenant_id IS ?",
+        "SELECT seal_id FROM workspace WHERE id = ? AND tenant_id = ?",
         (workspace_id, ctx.tenant_id),
     ).fetchone()
     if row is None or row["seal_id"] is None:
@@ -537,7 +537,7 @@ def system_get_workspace(
         f"""
         SELECT {WORKSPACE_COLUMNS}
         FROM workspace
-        WHERE id = ? AND tenant_id IS ?
+        WHERE id = ? AND tenant_id = ?
         """,
         (workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -554,7 +554,7 @@ def system_get_workspace_by_slug(
         f"""
         SELECT {WORKSPACE_COLUMNS}
         FROM workspace
-        WHERE slug = ? AND tenant_id IS ?
+        WHERE slug = ? AND tenant_id = ?
         """,
         (slug, ctx.tenant_id),
     ).fetchone()
@@ -664,7 +664,7 @@ def get_workspace_field_aliases(
 
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
-        "SELECT field_aliases_json FROM workspace WHERE id = ? AND tenant_id IS ?",
+        "SELECT field_aliases_json FROM workspace WHERE id = ? AND tenant_id = ?",
         (workspace_id, ctx.tenant_id),
     ).fetchone()
     if row is None or row["field_aliases_json"] is None:
@@ -691,7 +691,7 @@ def update_workspace_field_aliases(
             """
             UPDATE workspace
             SET field_aliases_json = ?, updated_at = ?
-            WHERE id = ? AND tenant_id IS ?
+            WHERE id = ? AND tenant_id = ?
             """,
             (json.dumps(aliases, ensure_ascii=False, sort_keys=True), utc_now(), workspace_id, ctx.tenant_id),
         )
@@ -731,13 +731,14 @@ def record_editorial_event(
     conn.execute(
         """
         INSERT INTO editorial_history (
-            id, workspace_id, entity_type, entity_id, action, actor_id, reason, payload_json, created_at
+            id, workspace_id, tenant_id, entity_type, entity_id, action, actor_id, reason, payload_json, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
             workspace_id,
+            ctx.require_tenant(),
             entity_type,
             entity_id,
             action,
@@ -773,9 +774,9 @@ def list_editorial_history(
     sql = f"""
         SELECT {EDITORIAL_HISTORY_COLUMNS}
         FROM editorial_history
-        WHERE workspace_id = ?
+        WHERE workspace_id = ? AND tenant_id = ?
     """
-    params: list[Any] = [workspace_id]
+    params: list[Any] = [workspace_id, ctx.require_tenant()]
     if entity_type is not None:
         sql += " AND entity_type = ?"
         params.append(entity_type)
@@ -981,7 +982,7 @@ def create_chat(
         ),
     )
     row = conn.execute(
-        f"SELECT {CHAT_COLUMNS} FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?",
+        f"SELECT {CHAT_COLUMNS} FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?",
         (chat_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
     assert row is not None
@@ -995,7 +996,7 @@ def list_chats(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         f"""
         SELECT {CHAT_COLUMNS}
         FROM chat
-        WHERE workspace_id = ? AND tenant_id IS ? AND user_id = ?
+        WHERE workspace_id = ? AND tenant_id = ? AND user_id = ?
         ORDER BY created_at DESC
         """,
         (workspace_id, ctx.tenant_id, user_id),
@@ -1014,7 +1015,7 @@ def get_chat(
         f"""
         SELECT {CHAT_COLUMNS}
         FROM chat
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?
         """,
         (chat_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
@@ -1035,7 +1036,7 @@ def update_chat(
         """
         UPDATE chat
         SET title = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?
         """,
         (title.strip(), chat_id, workspace_id, ctx.tenant_id, user_id),
     )
@@ -1057,11 +1058,11 @@ def delete_chat(
     workspace_id = ctx.require_scoped_workspace()
     user_id = _chat_user_id(ctx)
     conn.execute(
-        "UPDATE usage_record SET chat_id = NULL WHERE chat_id = ? AND workspace_id = ?",
-        (chat_id, workspace_id),
+        "UPDATE usage_record SET chat_id = NULL WHERE chat_id = ? AND workspace_id = ? AND tenant_id = ?",
+        (chat_id, workspace_id, ctx.require_tenant()),
     )
     cursor = conn.execute(
-        "DELETE FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?",
+        "DELETE FROM chat WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?",
         (chat_id, workspace_id, ctx.tenant_id, user_id),
     )
     return cursor.rowcount > 0
@@ -1134,7 +1135,7 @@ def insert_message(
         f"""
         SELECT {MESSAGE_COLUMNS}
         FROM message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?
         """,
         (message_id, workspace_id, ctx.tenant_id, user_id),
     ).fetchone()
@@ -1153,7 +1154,7 @@ def get_messages(
         f"""
         SELECT {MESSAGE_COLUMNS}
         FROM message
-        WHERE chat_id = ? AND workspace_id = ? AND tenant_id IS ? AND user_id = ?
+        WHERE chat_id = ? AND workspace_id = ? AND tenant_id = ? AND user_id = ?
         ORDER BY created_at ASC, id ASC
         """,
         (chat_id, workspace_id, ctx.tenant_id, user_id),
@@ -1267,7 +1268,7 @@ def insert_usage_record(
         f"""
         SELECT {USAGE_RECORD_COLUMNS}
         FROM usage_record
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (record_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1285,7 +1286,7 @@ def list_usage_records(
         f"""
         SELECT {USAGE_RECORD_COLUMNS}
         FROM usage_record
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
         ORDER BY created_at DESC
         LIMIT ?
         """,
@@ -1302,15 +1303,12 @@ def sum_workspace_usage_cost(
     """Return accumulated cost_usd for the current workspace."""
 
     workspace_id = ctx.require_scoped_workspace()
-    params: list[Any] = [workspace_id]
-    tenant_clause = "tenant_id IS NULL" if ctx.tenant_id is None else "tenant_id = ?"
-    if ctx.tenant_id is not None:
-        params.append(ctx.tenant_id)
+    params: list[Any] = [workspace_id, ctx.require_tenant()]
 
-    sql = f"""
+    sql = """
         SELECT COALESCE(SUM(cost_usd), 0.0) AS total
         FROM usage_record
-        WHERE workspace_id = ? AND {tenant_clause} AND status = 'succeeded'
+        WHERE workspace_id = ? AND tenant_id = ? AND status = 'succeeded'
     """
     if since:
         sql += " AND created_at >= ?"
@@ -1424,7 +1422,7 @@ def create_routine_run(
         ),
     )
     row = conn.execute(
-        f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
         (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     assert row is not None
@@ -1449,7 +1447,7 @@ def set_routine_run_output(
         f"""
         SELECT {ROUTINE_RUN_COLUMNS}
         FROM routine_run
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1466,7 +1464,7 @@ def set_routine_run_output(
         """
         UPDATE routine_run
         SET output_json = ?, evidence_json = ?, status = ?, edit_pct = ?, workspace_hmac = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (
             output_json_str,
@@ -1494,7 +1492,7 @@ def get_routine_run(
         f"""
         SELECT {ROUTINE_RUN_COLUMNS}
         FROM routine_run
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (run_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1515,7 +1513,7 @@ def list_routine_runs(
     """List routine_run rows, discarding any with a broken workspace HMAC seal."""
 
     workspace_id = ctx.require_scoped_workspace()
-    sql = f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE workspace_id = ? AND tenant_id IS ?"
+    sql = f"SELECT {ROUTINE_RUN_COLUMNS} FROM routine_run WHERE workspace_id = ? AND tenant_id = ?"
     params: list[Any] = [workspace_id, ctx.tenant_id]
     if routine_id is not None:
         sql += " AND routine_id = ?"
@@ -1586,7 +1584,7 @@ def create_mail_message(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE workspace_id = ? AND account = ? AND mail_uid = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND account = ? AND mail_uid = ? AND tenant_id = ?
         """,
         (workspace_id, account, mail_uid, ctx.tenant_id),
     ).fetchone()
@@ -1649,7 +1647,7 @@ def create_mail_message(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (mail_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1667,7 +1665,7 @@ def list_mail_messages(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
         ORDER BY created_at DESC
         LIMIT ?
         """,
@@ -1686,7 +1684,7 @@ def get_mail_message(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (mail_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1705,7 +1703,7 @@ def update_mail_message_status(
             """
             UPDATE mail_message
             SET status = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (status, utc_now(), mail_id, workspace_id, ctx.tenant_id),
         )
@@ -1713,7 +1711,7 @@ def update_mail_message_status(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (mail_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1733,7 +1731,7 @@ def link_mail_message_to_draft(
             """
             UPDATE mail_message
             SET draft_id = ?, status = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (draft_id, status, utc_now(), mail_id, workspace_id, ctx.tenant_id),
         )
@@ -1741,7 +1739,7 @@ def link_mail_message_to_draft(
         f"""
         SELECT {MAIL_MESSAGE_COLUMNS}
         FROM mail_message
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (mail_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1868,7 +1866,7 @@ def create_routine(
         f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (routine_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -1889,6 +1887,7 @@ def _upsert_gold_candidate_from_run(
 
     candidate_id = new_id("gold")
     now = utc_now()
+    tenant_id = ctx.require_tenant()
     conn.execute(
         """
         INSERT INTO gold_candidate (
@@ -1907,7 +1906,7 @@ def _upsert_gold_candidate_from_run(
         (
             candidate_id,
             run["workspace_id"],
-            run.get("tenant_id"),
+            tenant_id,
             run["routine_id"],
             run["id"],
             edit_pct,
@@ -1964,7 +1963,7 @@ def update_routine_run_output(
             """
             UPDATE routine_run
             SET output_json = ?, edit_pct = ?, status = ?, approved_by = ?, source_version = ?, workspace_hmac = ?
-            WHERE id = ? AND workspace_id = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (
                 output_json_str,
@@ -1975,6 +1974,7 @@ def update_routine_run_output(
                 hmac,
                 run_id,
                 workspace_id,
+                ctx.require_tenant(),
             ),
         )
         if cursor.rowcount == 0:
@@ -2026,7 +2026,7 @@ def record_routine_run_edit(
         """
         UPDATE routine_run
         SET output_json = ?, edit_pct = ?, source_version = ?, workspace_hmac = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (
             output_json_str,
@@ -2082,7 +2082,7 @@ def approve_routine_run(
             """
             UPDATE routine_run
             SET status = ?, approved_by = ?, source_version = ?, workspace_hmac = ?, urgency = ?, reason = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             ("succeeded", approved_by, source_version, hmac, urgency, reason, run_id, workspace_id, ctx.tenant_id),
         )
@@ -2133,7 +2133,7 @@ def reject_routine_run(
             """
             UPDATE routine_run
             SET status = ?, source_version = ?, workspace_hmac = ?, reason = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             ("cancelled", source_version, hmac, reason, run_id, workspace_id, ctx.tenant_id),
         )
@@ -2172,7 +2172,7 @@ def approve_routine(
         """
         UPDATE routine
         SET approved_by = ?, updated_at = ?
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ? AND approved_by IS NULL
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ? AND approved_by IS NULL
         """,
         (approved_by, utc_now(), routine_id, workspace_id, ctx.tenant_id),
     )
@@ -2192,7 +2192,7 @@ def is_routine_name_taken(
     workspace_id = ctx.require_scoped_workspace()
     sql = f"""
         SELECT 1 FROM routine
-        WHERE workspace_id = ? AND tenant_id IS ? AND lower(name) = lower(?)
+        WHERE workspace_id = ? AND tenant_id = ? AND lower(name) = lower(?)
     """
     params: list[Any] = [workspace_id, ctx.tenant_id, name.strip()]
     if exclude_id:
@@ -2214,7 +2214,7 @@ def get_routine(
         f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (routine_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -2236,7 +2236,7 @@ def get_routine_by_name(
     sql = f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE workspace_id = ? AND tenant_id IS ? AND lower(name) = lower(?)
+        WHERE workspace_id = ? AND tenant_id = ? AND lower(name) = lower(?)
     """
     params: list[Any] = [workspace_id, ctx.tenant_id, name]
     if category is not None:
@@ -2258,7 +2258,7 @@ def list_routines(
     sql = f"""
         SELECT {ROUTINE_COLUMNS}
         FROM routine
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
     """
     params: list[Any] = [workspace_id, ctx.tenant_id]
     if category is not None:
@@ -2278,7 +2278,7 @@ def delete_routine(
 
     workspace_id = ctx.require_scoped_workspace()
     cursor = conn.execute(
-        "DELETE FROM routine WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        "DELETE FROM routine WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
         (routine_id, workspace_id, ctx.tenant_id),
     )
     return cursor.rowcount > 0
@@ -2352,7 +2352,7 @@ def update_routine(
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [utc_now(), routine_id, workspace_id, ctx.tenant_id]
     cursor = conn.execute(
-        f"UPDATE routine SET {set_clause}, updated_at = ? WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+        f"UPDATE routine SET {set_clause}, updated_at = ? WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
         params,
     )
     if cursor.rowcount == 0:
@@ -2374,9 +2374,9 @@ def get_mail_outbox(
         SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
                failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
-        WHERE workspace_id = ? AND mail_id = ?
+        WHERE workspace_id = ? AND tenant_id = ? AND mail_id = ?
         """,
-        (workspace_id, mail_id),
+        (workspace_id, ctx.require_tenant(), mail_id),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -2394,9 +2394,9 @@ def get_mail_outbox_by_key(
         SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
                failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
-        WHERE workspace_id = ? AND idempotency_key = ?
+        WHERE workspace_id = ? AND tenant_id = ? AND idempotency_key = ?
         """,
-        (workspace_id, idempotency_key),
+        (workspace_id, ctx.require_tenant(), idempotency_key),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -2429,21 +2429,21 @@ def create_or_get_mail_outbox(
     conn.execute(
         """
         INSERT INTO mail_outbox (
-            id, workspace_id, mail_id, idempotency_key, status,
+            id, workspace_id, tenant_id, mail_id, idempotency_key, status,
             smtp_message_id, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (outbox_id, workspace_id, mail_id, idempotency_key, status, None, now, now),
+        (outbox_id, workspace_id, ctx.require_tenant(), mail_id, idempotency_key, status, None, now, now),
     )
     row = conn.execute(
         """
         SELECT id, workspace_id, mail_id, idempotency_key, status,
                smtp_message_id, created_at, updated_at
         FROM mail_outbox
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
-        (outbox_id, workspace_id),
+        (outbox_id, workspace_id, ctx.require_tenant()),
     ).fetchone()
     assert row is not None
     return row_to_dict(row)
@@ -2474,18 +2474,18 @@ def update_mail_outbox_status(
                 retry_count = retry_count + ?,
                 failed_at = ?,
                 updated_at = ?
-            WHERE id = ? AND workspace_id = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
-            (status, smtp_message_id, error_json, 1 if increment_retry else 0, failed_at, now, outbox_id, workspace_id),
+            (status, smtp_message_id, error_json, 1 if increment_retry else 0, failed_at, now, outbox_id, workspace_id, ctx.require_tenant()),
         )
     row = conn.execute(
         """
         SELECT id, workspace_id, mail_id, idempotency_key, status, retry_count,
                failed_at, error_json, smtp_message_id, created_at, updated_at
         FROM mail_outbox
-        WHERE id = ? AND workspace_id = ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
-        (outbox_id, workspace_id),
+        (outbox_id, workspace_id, ctx.require_tenant()),
     ).fetchone()
     return row_to_dict(row) if row else None
 
@@ -2506,10 +2506,14 @@ SMTP_CONFIG_COLUMNS = """
 def get_workspace_smtp_config(
     ctx: Context,
     conn: sqlite3.Connection,
+    *,
+    include_password: bool = False,
 ) -> dict[str, Any] | None:
     """Return the workspace SMTP configuration row or None.
 
-    The password is never returned in plain text; only a has_password flag.
+    By default the password is never returned in plain text; only a
+    ``has_password`` flag. Pass ``include_password=True`` to receive the
+    decrypted password for internal backend use.
     """
 
     workspace_id = ctx.require_scoped_workspace()
@@ -2518,15 +2522,18 @@ def get_workspace_smtp_config(
         f"""
         SELECT {SMTP_CONFIG_COLUMNS}
         FROM workspace_smtp_config
-        WHERE workspace_id = ? AND user_id = ?
+        WHERE workspace_id = ? AND user_id = ? AND tenant_id = ?
         """,
-        (workspace_id, user_id),
+        (workspace_id, user_id, ctx.require_tenant()),
     ).fetchone()
     if row is None:
         return None
     data = row_to_dict(row)
     data["has_password"] = bool(data.get("password"))
-    data["password"] = ""
+    if include_password:
+        data["password"] = decrypt_value(data.get("password")) or ""
+    else:
+        data["password"] = ""
     return data
 
 
@@ -2552,8 +2559,8 @@ def set_workspace_smtp_config(
 
     with transaction(conn):
         existing_row = conn.execute(
-            "SELECT password FROM workspace_smtp_config WHERE workspace_id = ? AND user_id = ?",
-            (workspace_id, user_id),
+            "SELECT password FROM workspace_smtp_config WHERE workspace_id = ? AND user_id = ? AND tenant_id = ?",
+            (workspace_id, user_id, ctx.require_tenant()),
         ).fetchone()
         existing_encrypted = existing_row["password"] if existing_row else None
 
@@ -2565,10 +2572,10 @@ def set_workspace_smtp_config(
         conn.execute(
             """
             INSERT INTO workspace_smtp_config (
-                workspace_id, user_id, host, port, use_ssl, username, password, from_email,
+                workspace_id, tenant_id, user_id, host, port, use_ssl, username, password, from_email,
                 created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(workspace_id, user_id) DO UPDATE SET
                 host = excluded.host,
                 port = excluded.port,
@@ -2578,7 +2585,7 @@ def set_workspace_smtp_config(
                 from_email = excluded.from_email,
                 updated_at = excluded.updated_at
             """,
-            (workspace_id, user_id, host, port, 1 if use_ssl else 0, username, encrypted_password, from_email, now, now),
+            (workspace_id, ctx.require_tenant(), user_id, host, port, 1 if use_ssl else 0, username, encrypted_password, from_email, now, now),
         )
     return get_workspace_smtp_config(ctx, conn)
 
@@ -2638,8 +2645,8 @@ def create_email_account(
         # A workspace can only have one default account at a time.
         if is_default:
             conn.execute(
-                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ?",
-                (workspace_id,),
+                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ? AND tenant_id = ?",
+                (workspace_id, ctx.require_tenant()),
             )
         conn.execute(
             f"""
@@ -2675,13 +2682,14 @@ def create_email_account(
         f"""
         SELECT {EMAIL_ACCOUNT_COLUMNS}
         FROM email_account
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (account_id, workspace_id, ctx.tenant_id),
     ).fetchone()
     assert row is not None
     data = row_to_dict(row)
     data["password"] = decrypt_value(data.get("password"))
+    data["has_password"] = bool(data.get("password"))
     return data
 
 
@@ -2699,7 +2707,7 @@ def list_email_accounts(
         f"""
         SELECT {EMAIL_ACCOUNT_COLUMNS}
         FROM email_account
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
         ORDER BY is_default DESC, created_at ASC
         """,
         (workspace_id, ctx.tenant_id),
@@ -2728,7 +2736,7 @@ def get_email_account(
         f"""
         SELECT {EMAIL_ACCOUNT_COLUMNS}
         FROM email_account
-        WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
         """,
         (account_id, workspace_id, ctx.tenant_id),
     ).fetchone()
@@ -2751,7 +2759,7 @@ def get_default_email_account(
         f"""
         SELECT {EMAIL_ACCOUNT_COLUMNS}
         FROM email_account
-        WHERE workspace_id = ? AND tenant_id IS ? AND is_default = 1
+        WHERE workspace_id = ? AND tenant_id = ? AND is_default = 1
         ORDER BY created_at ASC
         LIMIT 1
         """,
@@ -2790,7 +2798,7 @@ def update_email_account(
 
     with transaction(conn):
         existing_row = conn.execute(
-            "SELECT password FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            "SELECT password FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             (account_id, workspace_id, ctx.tenant_id),
         ).fetchone()
         if existing_row is None:
@@ -2801,8 +2809,8 @@ def update_email_account(
 
         if is_default:
             conn.execute(
-                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ?",
-                (workspace_id,),
+                "UPDATE email_account SET is_default = 0 WHERE workspace_id = ? AND tenant_id = ?",
+                (workspace_id, ctx.require_tenant()),
             )
         conn.execute(
             """
@@ -2810,7 +2818,7 @@ def update_email_account(
             SET label = ?, provider = ?, host = ?, port = ?, username = ?,
                 password = ?, folders_json = ?, auth_type = ?, read_only = ?,
                 is_default = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id IS ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (
                 label,
@@ -2842,7 +2850,7 @@ def delete_email_account(
     workspace_id = ctx.require_scoped_workspace()
     with transaction(conn):
         cursor = conn.execute(
-            "DELETE FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id IS ?",
+            "DELETE FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             (account_id, workspace_id, ctx.tenant_id),
         )
     return cursor.rowcount > 0
@@ -2856,7 +2864,7 @@ def get_workspace_email_signature(
 
     workspace_id = ctx.require_scoped_workspace()
     row = conn.execute(
-        "SELECT email_signature FROM workspace WHERE id = ? AND tenant_id IS ?",
+        "SELECT email_signature FROM workspace WHERE id = ? AND tenant_id = ?",
         (workspace_id, ctx.tenant_id),
     ).fetchone()
     return row["email_signature"] if row else None
@@ -2872,7 +2880,7 @@ def set_workspace_email_signature(
     workspace_id = ctx.require_scoped_workspace()
     with transaction(conn):
         conn.execute(
-            "UPDATE workspace SET email_signature = ?, updated_at = ? WHERE id = ? AND tenant_id IS ?",
+            "UPDATE workspace SET email_signature = ?, updated_at = ? WHERE id = ? AND tenant_id = ?",
             (signature, utc_now(), workspace_id, ctx.tenant_id),
         )
     return get_workspace(ctx, conn)

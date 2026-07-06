@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import urllib.request
@@ -40,6 +41,24 @@ UPDATE_MANIFEST_FIELDS = {"version", "payload_hash", "signature", "public_key"}
 # is populated at startup from a hard-coded pinned key or trust-on-first-use
 # with a visible fingerprint.
 _TRUSTED_PUBLIC_KEYS: set[str] = set()
+
+
+def load_trusted_update_keys() -> None:
+    """Load pinned update public keys from the environment.
+
+    Reads FABERLOOM_UPDATE_PUBLIC_KEY_B64 (single key) and
+    FABERLOOM_UPDATE_PUBLIC_KEYS_B64 (comma-separated list). If no keys are
+    configured the trusted set remains empty and verification fails closed.
+    """
+    single = os.getenv("FABERLOOM_UPDATE_PUBLIC_KEY_B64", "").strip()
+    if single:
+        add_trusted_public_key(single)
+    multi = os.getenv("FABERLOOM_UPDATE_PUBLIC_KEYS_B64", "").strip()
+    if multi:
+        for key in multi.split(","):
+            key = key.strip()
+            if key:
+                add_trusted_public_key(key)
 
 # Maximum number of previous versions to retain for rollback.
 MAX_ROLLBACK_VERSIONS = 5

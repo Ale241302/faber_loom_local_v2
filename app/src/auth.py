@@ -1,25 +1,34 @@
-"""Minimal JWT authentication for the FaberLoom web deployment.
+"""JWT authentication with httpOnly cookies for the FaberLoom web deployment.
 
 Users and passwords are read from the ``FABERLOOM_USERS`` environment variable
 as a JSON object, e.g.:
 
     FABERLOOM_USERS='{"admin@example.com":"secret"}'
 
-If the variable is empty or unset, authentication is bypassed and the shell
-behaves as before (local single-user).  This keeps the test suite green without
-needing tokens.
+Access tokens are short-lived JWTs delivered as ``HttpOnly``, ``Secure`` (over
+HTTPS) and ``SameSite=Strict`` cookies. A refresh token is stored in a separate
+``HttpOnly`` cookie and rotated on every use.
+
+If the variable is empty or unset and ``FABERLOOM_AUTH_DISABLED`` is set, the
+request is treated as the legacy local user so existing tests keep working.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
+import sqlite3
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
+
+from .context import DEFAULT_TENANT_ID
+from .db import get_db
 
 auth_router = APIRouter()
 
@@ -30,9 +39,12 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
     token_type: str = "bearer"
     email: str
+
+
+ACCESS_TOKEN_TTL_MINUTES = int(os.getenv("FABERLOOM_ACCESS_TOKEN_TTL_MINUTES", "15"))
+REFRESH_TOKEN_TTL_DAYS = int(os.getenv("FABERLOOM_REFRESH_TOKEN_TTL_DAYS", "7"))
 
 
 def _users() -> dict[str, str]:
@@ -51,41 +63,111 @@ def _users() -> dict[str, str]:
 def _secret() -> str:
     secret = os.getenv("FABERLOOM_SECRET_KEY")
     if not secret:
-        # In production this should be set explicitly; the fallback is only so
-        # the container does not crash during local smoke tests.
+        auth_disabled = os.getenv("FABERLOOM_AUTH_DISABLED")
+        if not auth_disabled and _users():
+            raise RuntimeError(
+                "FABERLOOM_SECRET_KEY is required when FABERLOOM_USERS is configured"
+            )
+        # Local dev/test fallback only when auth is disabled or no users.
         secret = "faberloom-dev-secret-replace-me"
     return secret
 
 
+def _cookie_settings(request: Request) -> dict[str, Any]:
+    return {
+        "httponly": True,
+        "secure": request.url.scheme == "https",
+        "samesite": "strict",
+        "path": "/",
+    }
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _create_refresh_token(
+    conn: sqlite3.Connection, user_id: str
+) -> tuple[str, datetime]:
+    token = "rt_" + secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=REFRESH_TOKEN_TTL_DAYS)
+    token_hash = _hash_token(token)
+    conn.execute(
+        """
+        INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "rtid_" + secrets.token_urlsafe(16),
+            user_id,
+            token_hash,
+            expires.isoformat(),
+            now.isoformat(),
+        ),
+    )
+    return token, expires
+
+
+def _refresh_token_for_cookie(
+    conn: sqlite3.Connection, cookie_token: str
+) -> sqlite3.Row | None:
+    row = conn.execute(
+        """
+        SELECT * FROM refresh_tokens
+        WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?
+        """,
+        (_hash_token(cookie_token), datetime.now(timezone.utc).isoformat()),
+    ).fetchone()
+    return row
+
+
+def _revoke_refresh_token(conn: sqlite3.Connection, token_hash: str) -> None:
+    conn.execute(
+        "UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ?",
+        (datetime.now(timezone.utc).isoformat(), token_hash),
+    )
+
+
 def create_access_token(email: str, role: str = "admin") -> str:
     now = datetime.now(timezone.utc)
-    payload = {"sub": email, "role": role, "iat": now, "exp": now + timedelta(days=7)}
+    payload = {
+        "sub": email,
+        "role": role,
+        "tenant_id": DEFAULT_TENANT_ID,
+        "iat": now,
+        "exp": now + timedelta(minutes=ACCESS_TOKEN_TTL_MINUTES),
+    }
     return jwt.encode(payload, _secret(), algorithm="HS256")
 
 
-def get_current_user(request: Request) -> dict[str, Any]:
-    """FastAPI dependency that validates the Bearer token.
+def _local_user() -> dict[str, Any]:
+    return {"sub": "local", "role": "owner", "tenant_id": DEFAULT_TENANT_ID}
 
-    When no users are configured or ``FABERLOOM_AUTH_DISABLED`` is set, the
-    request is treated as the legacy local user so existing tests keep working.
-    """
+
+def get_current_user(request: Request) -> dict[str, Any]:
+    """FastAPI dependency that validates the access token (cookie or header)."""
 
     if os.getenv("FABERLOOM_AUTH_DISABLED"):
-        return {"sub": "local", "role": "owner"}
+        return _local_user()
 
     users = _users()
     if not users:
-        return {"sub": "local", "role": "owner"}
+        return _local_user()
 
+    token: str | None = None
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+    if token is None:
+        token = request.cookies.get("faberloom_at")
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = auth[7:]
     try:
         payload = jwt.decode(token, _secret(), algorithms=["HS256"])
     except jwt.ExpiredSignatureError as exc:
@@ -101,12 +183,19 @@ def get_current_user(request: Request) -> dict[str, Any]:
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
+    if not payload.get("tenant_id"):
+        payload["tenant_id"] = DEFAULT_TENANT_ID
     request.state.user = payload
     return request.state.user
 
 
 @auth_router.post("/auth/login", response_model=TokenResponse)
-def api_login(payload: LoginRequest) -> TokenResponse:
+def api_login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> TokenResponse:
     users = _users()
     expected = users.get(payload.email)
     if expected is None or expected != payload.password:
@@ -114,5 +203,56 @@ def api_login(payload: LoginRequest) -> TokenResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
-    token = create_access_token(payload.email)
-    return TokenResponse(access_token=token, email=payload.email)
+
+    access_token = create_access_token(payload.email)
+    refresh_token, _expires = _create_refresh_token(conn, payload.email)
+
+    cookie_opts = _cookie_settings(request)
+    response.set_cookie(key="faberloom_at", value=access_token, **cookie_opts)
+    response.set_cookie(key="faberloom_rt", value=refresh_token, **cookie_opts)
+
+    return TokenResponse(email=payload.email)
+
+
+@auth_router.post("/auth/refresh")
+def api_refresh(
+    request: Request,
+    response: Response,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    cookie_token = request.cookies.get("faberloom_rt")
+    if not cookie_token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token required")
+
+    row = _refresh_token_for_cookie(conn, cookie_token)
+    if row is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+
+    _revoke_refresh_token(conn, row["token_hash"])
+
+    access_token = create_access_token(row["user_id"])
+    refresh_token, _expires = _create_refresh_token(conn, row["user_id"])
+
+    cookie_opts = _cookie_settings(request)
+    response.set_cookie(key="faberloom_at", value=access_token, **cookie_opts)
+    response.set_cookie(key="faberloom_rt", value=refresh_token, **cookie_opts)
+
+    return {"email": row["user_id"]}
+
+
+@auth_router.post("/auth/logout")
+def api_logout(
+    request: Request,
+    response: Response,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    cookie_token = request.cookies.get("faberloom_rt")
+    if cookie_token:
+        row = _refresh_token_for_cookie(conn, cookie_token)
+        if row is not None:
+            _revoke_refresh_token(conn, row["token_hash"])
+
+    cookie_opts = _cookie_settings(request)
+    response.delete_cookie(key="faberloom_at", **cookie_opts)
+    response.delete_cookie(key="faberloom_rt", **cookie_opts)
+    return {"detail": "Sesión cerrada"}

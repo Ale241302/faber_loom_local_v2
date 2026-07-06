@@ -59,9 +59,8 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def _token(client: TestClient, email: str) -> str:
-    response = client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
-    assert response.status_code == 200, response.text
-    return response.json()["access_token"]
+    from app.src.auth import create_access_token
+    return create_access_token(email)
 
 
 def _auth(email: str, token: str) -> dict[str, str]:

@@ -68,7 +68,7 @@ def _create_workspace(client: TestClient, name: str) -> dict[str, Any]:
 def _routine_and_run(client: TestClient, workspace_id: str):
     """Create a routine and a routine_run directly through the repository layer."""
 
-    ctx = Context(workspace_id=workspace_id)
+    ctx = Context(workspace_id=workspace_id, tenant_id="default")
     with db_session() as conn:
         with transaction(conn):
             routine = create_routine(
@@ -106,7 +106,7 @@ def test_schema_has_gold_candidate_table(client: TestClient) -> None:
 
 def test_create_routine_run_and_compute_edit_pct(client: TestClient) -> None:
     workspace = _create_workspace(client, "Edit Pct")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -135,7 +135,7 @@ def test_create_routine_run_and_compute_edit_pct(client: TestClient) -> None:
 
 def test_approve_low_edit_generates_gold_candidate(client: TestClient) -> None:
     workspace = _create_workspace(client, "Gold Gen")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -173,7 +173,7 @@ def test_approve_low_edit_generates_gold_candidate(client: TestClient) -> None:
 
 def test_approve_high_edit_does_not_generate_gold_candidate(client: TestClient) -> None:
     workspace = _create_workspace(client, "No Gold")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -205,7 +205,7 @@ def test_approve_high_edit_does_not_generate_gold_candidate(client: TestClient) 
 def test_reject_routine_run(client: TestClient) -> None:
     workspace = _create_workspace(client, "Reject Run")
     routine, run = _routine_and_run(client, workspace["id"])
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -230,7 +230,7 @@ def test_list_workloom_endpoint(client: TestClient) -> None:
 
 def test_list_workloom_helper_orders_and_filters(client: TestClient) -> None:
     workspace = _create_workspace(client, "WorkLoom Filter")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         routine = create_routine(ctx, conn, name="Cotizador")
@@ -260,7 +260,7 @@ def test_list_workloom_helper_orders_and_filters(client: TestClient) -> None:
 
 def test_gold_candidates_endpoint_and_promote(client: TestClient) -> None:
     workspace = _create_workspace(client, "Gold Endpoint")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -308,7 +308,7 @@ def test_workspace_isolation_for_workloom(client: TestClient) -> None:
     alpha = _create_workspace(client, "Alpha WorkLoom")
     beta = _create_workspace(client, "Beta WorkLoom")
 
-    ctx_alpha = Context(workspace_id=alpha["id"])
+    ctx_alpha = Context(workspace_id=alpha["id"], tenant_id="default")
     with db_session() as conn:
         with transaction(conn):
             routine = create_routine(ctx_alpha, conn, name="Cotizador")
@@ -335,7 +335,7 @@ def test_gold_candidates_are_workspace_isolated(client: TestClient) -> None:
     alpha = _create_workspace(client, "Alpha Gold")
     beta = _create_workspace(client, "Beta Gold")
 
-    ctx_alpha = Context(workspace_id=alpha["id"])
+    ctx_alpha = Context(workspace_id=alpha["id"], tenant_id="default")
     with db_session() as conn:
         with transaction(conn):
             routine = create_routine(ctx_alpha, conn, name="Cotizador")
@@ -368,7 +368,7 @@ def test_gold_candidates_are_workspace_isolated(client: TestClient) -> None:
 
 def test_workloom_sorted_by_urgency(client: TestClient) -> None:
     workspace = _create_workspace(client, "WorkLoom Urgency")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -421,7 +421,7 @@ def test_workloom_sorted_by_urgency(client: TestClient) -> None:
 
 def test_approval_reason_is_persisted(client: TestClient) -> None:
     workspace = _create_workspace(client, "Approval Reason")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -465,7 +465,7 @@ def test_approval_reason_is_persisted(client: TestClient) -> None:
 
 def test_editorial_history_recorded(client: TestClient) -> None:
     workspace = _create_workspace(client, "Editorial History")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -521,7 +521,7 @@ def test_editorial_history_recorded(client: TestClient) -> None:
 
 def test_apply_gold_to_routine_updates_schema(client: TestClient) -> None:
     workspace = _create_workspace(client, "Apply Gold")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -593,7 +593,7 @@ def test_task_type_is_captured_on_routine_run(client: TestClient) -> None:
     """routine_run stores the routine category as task_type for per-task metrics."""
 
     workspace = _create_workspace(client, "Task Type Capture")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -615,7 +615,7 @@ def test_edit_pct_declines_with_repetitions_by_task_type(client: TestClient) -> 
     """Seeded sessions for the same task_type show a declining edit_pct trend."""
 
     workspace = _create_workspace(client, "Edit Pct Decline")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     target = {"reply": "approved response", "lang": "es"}
     # Each successive model output is closer to the approved target.
@@ -666,7 +666,7 @@ def test_hard_field_gold_requires_second_gate(client: TestClient) -> None:
     """Gold candidates containing prices/SKUs/stock require independent verification."""
 
     workspace = _create_workspace(client, "Hard Field Gate")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):
@@ -753,7 +753,7 @@ def test_gold_refeed_appends_approved_examples_to_skill_prompt(client: TestClien
     """Approved gold candidates are injected into the skill prompt at execution time."""
 
     workspace = _create_workspace(client, "Gold Refeed")
-    ctx = Context(workspace_id=workspace["id"])
+    ctx = Context(workspace_id=workspace["id"], tenant_id="default")
 
     with db_session() as conn:
         with transaction(conn):

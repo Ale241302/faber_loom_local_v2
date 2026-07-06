@@ -32,9 +32,10 @@ def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
             conn,
             WorkspaceCreate(name=DEMO_WORKSPACE_NAME, slug=DEMO_WORKSPACE_SLUG),
         )
+        from .context import DEFAULT_TENANT_ID
         workspace_ctx = Context(
             workspace_id=created["id"],
-            tenant_id=created.get("tenant_id"),
+            tenant_id=created.get("tenant_id") or DEFAULT_TENANT_ID,
             user_id=created.get("user_id") or "local",
             actor_id=created.get("actor_id") or "local",
             actor_role_at_decision=created.get("actor_role_at_decision") or "owner",

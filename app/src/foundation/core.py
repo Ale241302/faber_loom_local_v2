@@ -487,6 +487,9 @@ def _session_token(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer fnds_"):
         return auth[7:]
+    cookie = request.cookies.get("fnd_session")
+    if cookie:
+        return cookie
     return None
 
 
@@ -499,14 +502,23 @@ def load_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     return row
 
 
-def _jwt_context(request: Request, conn: sqlite3.Connection) -> SessionContext | None:
-    """Fallback: cuando el frontend envía el JWT principal de FaberLoom,
-    permite usar Foundation sin login propio. Se busca (o se crea) un usuario
-    Foundation con el mismo email y se le asigna el rol owner para que las
-    opciones de Tenant funcionen transparentemente.
+def _bootstrap_path(request: Request) -> bool:
+    path = request.url.path
+    return path.startswith("/api/foundation/bootstrap")
+
+
+def _bootstrap_jwt_context(request: Request, conn: sqlite3.Connection) -> SessionContext | None:
+    """Durante el bootstrap inicial, un JWT principal válido puede usarse como
+    puente temporal para los endpoints /api/foundation/bootstrap/*. Una vez que
+    el tenant tiene un owner activo, este fallback se cierra y Foundation exige
+    una sesión propia.
     """
+    if not _bootstrap_path(request):
+        return None
+    if is_bootstrapped(conn):
+        return None
+
     auth = request.headers.get("Authorization", "")
-    # Foundation session tokens se procesan por _session_token; no duplicar aquí.
     if not auth.startswith("Bearer ") or auth.startswith("Bearer fnds_"):
         return None
     try:
@@ -518,47 +530,30 @@ def _jwt_context(request: Request, conn: sqlite3.Connection) -> SessionContext |
         return None
 
     tenant = get_active_tenant(conn)
-    if tenant is None:
-        return None
-    tenant_id = tenant["id"]
+    tenant_id = tenant["id"] if tenant else new_id("tnt")
 
-    user = conn.execute(
-        "SELECT * FROM fnd_users WHERE tenant_id = ? AND email = ?",
-        (tenant_id, email),
-    ).fetchone()
-    if user is None:
-        # Auto-provision shadow user as owner so the integrated Tenant menu works.
-        user_id = new_id("usr")
-        conn.execute(
-            """INSERT INTO fnd_users
-               (id, tenant_id, email, display_name, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, tenant_id, email, email.split("@")[0], "active", utcnow()),
-        )
-        role = conn.execute(
-            "SELECT id FROM fnd_roles WHERE tenant_id = ? AND name = ?",
-            (tenant_id, "owner"),
-        ).fetchone()
-        if role:
-            conn.execute(
-                """INSERT OR IGNORE INTO fnd_user_roles
-                   (tenant_id, user_id, role_id, assigned_at)
-                   VALUES (?, ?, ?, ?)""",
-                (tenant_id, user_id, role["id"], utcnow()),
-            )
-        user = conn.execute("SELECT * FROM fnd_users WHERE id = ?", (user_id,)).fetchone()
-    elif user["status"] != "active":
-        return None
-
-    # Synthetic session row for SessionContext. It is not persisted so logout is a no-op.
+    # Synthetic owner-like user with bootstrap permission only. It is NOT persisted.
+    synthetic_user: dict[str, Any] = {
+        "id": f"jwt_{email}",
+        "tenant_id": tenant_id,
+        "email": email,
+        "display_name": email.split("@")[0],
+        "status": "active",
+        "password_hash": "",
+        "totp_enabled": 0,
+        "failed_attempts": 0,
+    }
     synthetic_session = {
         "id": f"jwt_{email}",
         "tenant_id": tenant_id,
-        "user_id": user["id"],
+        "user_id": synthetic_user["id"],
         "stage": "full",
         "expires_at": "9999-12-31T23:59:59+00:00",
     }
-    return SessionContext(conn, synthetic_session, user)
+    ctx = SessionContext(conn, synthetic_session, synthetic_user)  # type: ignore[arg-type]
+    ctx.permissions.add("bootstrap.manage")
+    ctx.permissions.add("*")
+    return ctx
 
 
 def require_session(
@@ -580,8 +575,8 @@ def require_session(
             )
             return SessionContext(conn, session, user)
 
-    # Fallback al JWT principal de la app. Si no hay JWT válido, 401.
-    ctx = _jwt_context(request, conn)
+    # Bridge temporal solo durante bootstrap inicial.
+    ctx = _bootstrap_jwt_context(request, conn)
     if ctx is not None:
         return ctx
 

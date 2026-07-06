@@ -756,7 +756,7 @@ def test_at_mention_duplicate_name_returns_409(client: TestClient) -> None:
     from app.src.db import create_routine as db_create_routine, db_session
 
     with db_session() as conn:
-        ctx = Context(workspace_id=workspace_id)
+        ctx = Context(workspace_id=workspace_id, tenant_id="default")
         db_create_routine(
             ctx,
             conn,

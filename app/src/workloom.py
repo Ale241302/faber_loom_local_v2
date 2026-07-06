@@ -30,7 +30,7 @@ def list_workloom_items(
         f"""
         SELECT {ROUTINE_RUN_COLUMNS}
         FROM routine_run
-        WHERE workspace_id = ? AND tenant_id IS ? AND status IN ('requires_hitl', 'running', 'failed')
+        WHERE workspace_id = ? AND tenant_id = ? AND status IN ('requires_hitl', 'running', 'failed')
         ORDER BY urgency DESC, created_at DESC
         """,
         (workspace_id, tenant_id),
@@ -40,7 +40,7 @@ def list_workloom_items(
         """
         SELECT *
         FROM draft
-        WHERE workspace_id = ? AND tenant_id IS ? AND status IN ('draft', 'pending_approval')
+        WHERE workspace_id = ? AND tenant_id = ? AND status IN ('draft', 'pending_approval')
         ORDER BY urgency DESC, created_at DESC
         """,
         (workspace_id, tenant_id),
@@ -50,7 +50,7 @@ def list_workloom_items(
         f"""
         SELECT {GOLD_CANDIDATE_COLUMNS}
         FROM gold_candidate
-        WHERE workspace_id = ? AND tenant_id IS ?
+        WHERE workspace_id = ? AND tenant_id = ?
         ORDER BY created_at DESC
         LIMIT ?
         """,

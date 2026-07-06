@@ -24,6 +24,7 @@ from .features import is_email_connector_enabled
 from .models import FeaturesRead
 from .router.config_store import load_env_file
 from .seed import seed_demo_workspace
+from .update import load_trusted_update_keys
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
         initialize_database(conn)
         seed_demo_workspace(conn)
     init_foundation_db()
+    load_trusted_update_keys()
     yield
 
 

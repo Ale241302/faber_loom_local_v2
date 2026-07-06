@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from .audit import audit_writer
 from .auth import get_current_user
-from .context import SYSTEM_WORKSPACE_ID, Context, system_context
+from .context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context, system_context
 from .connectors.imap import fetch_unread_messages, send_message
 from .features import is_email_connector_enabled
 from .db import (
@@ -220,17 +220,17 @@ def context_from_request(request: Request, workspace_id: str | None = None) -> C
     # Authenticated user takes precedence when auth is active.
     user = getattr(request.state, "user", None)
     if user:
-        tenant_id = None
+        tenant_id = user.get("tenant_id") or DEFAULT_TENANT_ID
         user_id = user.get("sub") or "local"
         actor_id = user_id
         actor_role = user.get("role") or "owner"
     elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS"):
-        tenant_id = request.headers.get("x-tenant-id") or None
+        tenant_id = request.headers.get("x-tenant-id") or DEFAULT_TENANT_ID
         user_id = request.headers.get("x-user-id") or "local"
         actor_id = request.headers.get("x-actor-id") or user_id
         actor_role = request.headers.get("x-actor-role") or "owner"
     else:
-        tenant_id = None
+        tenant_id = DEFAULT_TENANT_ID
         user_id = "local"
         actor_id = "local"
         actor_role = "owner"
@@ -2281,7 +2281,7 @@ def _resolve_smtp_config(
     from_email. Passwords flow through but are never logged.
     """
 
-    config = get_workspace_smtp_config(ctx, conn)
+    config = get_workspace_smtp_config(ctx, conn, include_password=True)
     if config is not None:
         return {
             "host": config["host"],
@@ -2290,6 +2290,7 @@ def _resolve_smtp_config(
             "username": config["username"],
             "password": config["password"],
             "from_email": config["from_email"],
+            "has_password": config.get("has_password", bool(config.get("password"))),
         }
 
     # Fallback to environment variables so existing deployments keep working.
@@ -2314,6 +2315,7 @@ def _resolve_smtp_config(
         "username": username,
         "password": password,
         "from_email": from_email or username,
+        "has_password": bool(password),
     }
 
 

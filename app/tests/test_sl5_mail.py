@@ -148,7 +148,7 @@ def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest
 
     login = client.post("/api/auth/login", json={"email": "admin@mwt.one", "password": "secret"})
     assert login.status_code == 200, login.text
-    token = login.json()["access_token"]
+    token = auth_module.create_access_token("admin@mwt.one")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Store the SMTP config as the authenticated user so the per-user lookup succeeds.

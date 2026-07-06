@@ -14,6 +14,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import base64
+
 from app.src.foundation import core, foundation_router, init_foundation_db
 from app.src.foundation.core import (
     emit_event,
@@ -22,6 +24,7 @@ from app.src.foundation.core import (
     seed_system_roles,
     utcnow,
 )
+from app.src.update import create_update_manifest, generate_keypair, load_trusted_update_keys
 
 
 def _iso(dt: datetime) -> str:
@@ -56,6 +59,18 @@ def _seed_user(conn, tenant_id: str, email: str, role_name: str) -> dict[str, st
 @pytest.fixture()
 def env(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv("FABERLOOM_FOUNDATION_DB", str(tmp_path / "foundation.sqlite3"))
+
+    private_key, public_key = generate_keypair()
+    public_key_b64 = base64.b64encode(public_key).decode("ascii")
+    monkeypatch.setenv("FABERLOOM_UPDATE_PUBLIC_KEY_B64", public_key_b64)
+    load_trusted_update_keys()
+
+    payload_path = tmp_path / "update.bin"
+    payload_path.write_bytes(b"test update payload")
+    manifest = create_update_manifest(payload_path.read_bytes(), "9.9.9", private_key)
+    manifest["min_supported_client_version"] = "0.1.0"
+    manifest["url"] = "https://updates.test/faberloom-9.9.9.bin"
+
     init_foundation_db()
 
     with fnd_db() as conn:
@@ -72,7 +87,14 @@ def env(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     app = FastAPI()
     app.include_router(foundation_router, prefix="/api")
     client = TestClient(app)
-    return {"client": client, "tenant_id": tenant_id, "owner": owner, "viewer": viewer}
+    return {
+        "client": client,
+        "tenant_id": tenant_id,
+        "owner": owner,
+        "viewer": viewer,
+        "manifest": manifest,
+        "payload_path": payload_path,
+    }
 
 
 def _h(session: str) -> dict[str, str]:
@@ -295,16 +317,8 @@ def test_apply_marks_conflict_when_resource_changed_after_queue(env: dict[str, A
 # M20 — auto update
 # ---------------------------------------------------------------------------
 
-MANIFEST = {
-    "version": "9.9.9",
-    "min_supported_client_version": "0.1.0",
-    "url": "https://updates.test/faberloom-9.9.9.bin",
-    "sha256": "0" * 64,
-    "notes": "test release",
-}
-
-
-def _put_manifest(env: dict[str, Any], manifest: dict[str, Any], channel: str = "stable"):
+def _put_manifest(env: dict[str, Any], manifest: dict[str, Any] | None = None, channel: str = "stable"):
+    manifest = manifest or env["manifest"]
     return env["client"].put(
         "/api/foundation/updates/manifest",
         json={"channel": channel, "manifest": manifest},
@@ -323,12 +337,12 @@ def test_current_version_from_file(env: dict[str, Any]) -> None:
 def test_manifest_put_requires_permission(env: dict[str, Any]) -> None:
     res = env["client"].put(
         "/api/foundation/updates/manifest",
-        json={"channel": "stable", "manifest": MANIFEST},
+        json={"channel": "stable", "manifest": env["manifest"]},
         headers=_h(env["viewer"]["session"]),
     )
     assert res.status_code == 403
 
-    res = _put_manifest(env, MANIFEST)
+    res = _put_manifest(env)
     assert res.status_code == 200, res.text
 
     res = env["client"].get(
@@ -339,7 +353,7 @@ def test_manifest_put_requires_permission(env: dict[str, Any]) -> None:
 
 def test_check_force_update_below_min_supported(env: dict[str, Any]) -> None:
     dev = _register_device(env)
-    manifest = dict(MANIFEST, min_supported_client_version="2.0.0")
+    manifest = dict(env["manifest"], min_supported_client_version="2.0.0")
     assert _put_manifest(env, manifest).status_code == 200
 
     res = env["client"].post(
@@ -365,7 +379,7 @@ def test_install_gated_by_pending_mutations_until_reconcile(env: dict[str, Any])
     client: TestClient = env["client"]
     dev = _register_device(env)
     headers = _h(env["owner"]["session"])
-    assert _put_manifest(env, MANIFEST).status_code == 200
+    assert _put_manifest(env).status_code == 200
 
     res = client.post(
         "/api/foundation/updates/check",
@@ -376,7 +390,7 @@ def test_install_gated_by_pending_mutations_until_reconcile(env: dict[str, Any])
 
     res = client.post(
         "/api/foundation/updates/stage",
-        json={"device_id": dev["device_id"], "version": "9.9.9"},
+        json={"device_id": dev["device_id"], "version": "9.9.9", "file_path": str(env["payload_path"])},
         headers=headers,
     )
     assert res.status_code == 200 and res.json()["status"] == "staged"
@@ -431,7 +445,7 @@ def test_install_blocked_while_sync_mode_full(env: dict[str, Any]) -> None:
     client: TestClient = env["client"]
     dev = _register_device(env)
     headers = _h(env["owner"]["session"])
-    assert _put_manifest(env, MANIFEST).status_code == 200
+    assert _put_manifest(env).status_code == 200
 
     client.post(
         "/api/foundation/updates/check",
@@ -440,7 +454,7 @@ def test_install_blocked_while_sync_mode_full(env: dict[str, Any]) -> None:
     )
     client.post(
         "/api/foundation/updates/stage",
-        json={"device_id": dev["device_id"], "version": "9.9.9"},
+        json={"device_id": dev["device_id"], "version": "9.9.9", "file_path": str(env["payload_path"])},
         headers=headers,
     )
 

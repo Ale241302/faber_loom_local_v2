@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from .core import (
     SessionContext,
+    get_foundation_db_path,
     register_schema,
     require_permission,
     require_session,
@@ -33,11 +35,19 @@ from .core import (
     utcnow,
 )
 from .m18_desktop_auth import get_tenant_device
+from ..update import (
+    download_update,
+    get_trusted_public_keys,
+    install_update as apply_update,
+    verify_update_manifest,
+)
 
 router = APIRouter(prefix="/updates", tags=["foundation-m20"])
 
 CHANNELS = ("stable", "beta")
-MANIFEST_REQUIRED = ("version", "min_supported_client_version", "url", "sha256")
+MANIFEST_REQUIRED = (
+    "version", "min_supported_client_version", "url", "payload_hash", "signature", "public_key"
+)
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+.].*)?$")
 
 SCHEMA = """
@@ -54,6 +64,7 @@ CREATE TABLE IF NOT EXISTS fnd_update_state (
     channel TEXT NOT NULL DEFAULT 'stable',
     available_version TEXT,
     staged_version TEXT,
+    staged_path TEXT,
     status TEXT NOT NULL DEFAULT 'idle',
     blocked_reason TEXT,
     updated_at TEXT NOT NULL
@@ -192,6 +203,13 @@ def put_manifest(
         )
     _validate_semver(manifest["version"], "version")
     _validate_semver(manifest["min_supported_client_version"], "min_supported_client_version")
+
+    trusted = get_trusted_public_keys()
+    if not trusted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay claves de confianza configuradas para updates")
+    if manifest.get("public_key") not in trusted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "La clave pública del manifiesto no está en el trust store")
+
     now = utcnow()
     ctx.conn.execute(
         """INSERT INTO fnd_update_channels (channel, manifest_json, updated_at)
@@ -258,14 +276,14 @@ def check_update(body: CheckIn, ctx: SessionContext = Depends(require_session)) 
     return out
 
 
+def _staging_dir(device_id: str, version: str) -> Path:
+    base = get_foundation_db_path().parent / "updates"
+    return base / device_id / version
+
+
 @router.post("/stage")
 def stage_update(body: StageIn, ctx: SessionContext = Depends(require_session)) -> dict[str, Any]:
-    """Simula la descarga (autoDownload de electron-updater) y la verifica.
-
-    Si se aporta ``file_path`` local se verifica sha256 contra el manifiesto y,
-    si el manifiesto trae firma Ed25519 (signature + public_key), se verifica
-    con los helpers de app/src/update.py (fail-closed si no están disponibles).
-    """
+    """Descarga el artefacto (o usa file_path) y lo verifica contra el trust store."""
     device = get_tenant_device(ctx.conn, ctx.tenant_id, body.device_id)
     state = _get_state(ctx.conn, ctx.tenant_id, device["id"])
     channel = state["channel"] if state else "stable"
@@ -283,46 +301,35 @@ def stage_update(body: StageIn, ctx: SessionContext = Depends(require_session)) 
         if not payload_path.is_file():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "file_path no existe")
         payload = payload_path.read_bytes()
-        digest = hashlib.sha256(payload).hexdigest()
-        if digest != manifest.get("sha256"):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "sha256 del artefacto no coincide con el manifiesto",
-            )
-        if manifest.get("signature") and manifest.get("public_key"):
-            try:
-                import base64 as _b64
+    else:
+        download_manifest = dict(manifest)
+        download_manifest.setdefault("payload_url", manifest.get("url"))
+        staging = _staging_dir(device["id"], body.version)
+        try:
+            payload_path = download_update(download_manifest, staging)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Descarga/verificación fallida: {exc}")
+        payload = payload_path.read_bytes()
 
-                from ..update import verify_payload
-            except Exception:  # fail-closed: firma presente pero sin verificador
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    "No se pudo verificar la firma Ed25519 (verificador no disponible)",
-                )
-            ok = verify_payload(
-                payload,
-                _b64.b64decode(manifest["signature"]),
-                _b64.b64decode(manifest["public_key"]),
-            )
-            if not ok:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Firma Ed25519 inválida")
+    if not verify_update_manifest(payload, manifest):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Firma o hash del artefacto no confiable")
 
     _upsert_state(ctx.conn, ctx.tenant_id, device["id"],
-                  channel=channel, staged_version=body.version, status="staged",
-                  blocked_reason=None)
+                  channel=channel, staged_version=body.version,
+                  staged_path=str(payload_path), status="staged", blocked_reason=None)
     ctx.audit("updates.staged", resource_type="device", resource_id=device["id"],
-              payload={"version": body.version, "verified_file": bool(body.file_path)})
+              payload={"version": body.version, "staged_path": str(payload_path)})
     ctx.emit("updates", "client.update.downloaded",
              {"device_id": device["id"], "version": body.version})
-    return {"status": "staged", "version": body.version}
+    return {"status": "staged", "version": body.version, "staged_path": str(payload_path)}
 
 
 @router.post("/install")
 def install_update(body: InstallIn, ctx: SessionContext = Depends(require_session)) -> dict[str, Any]:
-    """Port de canInstallSafely() + quitAndInstall(): gate M19 antes de instalar."""
+    """Port de canInstallSafely() + quitAndInstall(): gate M19 y verificación firmada."""
     device = get_tenant_device(ctx.conn, ctx.tenant_id, body.device_id)
     state = _get_state(ctx.conn, ctx.tenant_id, device["id"])
-    if state is None or not state["staged_version"]:
+    if state is None or not state["staged_version"] or not state["staged_path"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay versión staged para instalar")
 
     blocked_reason: str | None = None
@@ -353,10 +360,40 @@ def install_update(body: InstallIn, ctx: SessionContext = Depends(require_sessio
         return {"status": "blocked", "blocked_reason": blocked_reason,
                 "staged_version": state["staged_version"]}
 
+    payload_path = Path(state["staged_path"])
+    if not payload_path.is_file():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Artefacto staged no encontrado")
+    payload = payload_path.read_bytes()
+
+    channel = state["channel"] if state else "stable"
+    manifest = _get_manifest(ctx.conn, channel)
+    if manifest is None or manifest.get("version") != state["staged_version"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Manifiesto staged no disponible")
+
+    if not verify_update_manifest(payload, manifest):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Verificación del artefacto fallida en install")
+
+    current_version = _app_version()
+    if _ver_tuple(manifest["version"]) <= _ver_tuple(current_version):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"La versión staged {manifest['version']} no es más nueva que {current_version}")
+
+    if getattr(sys, "frozen", False):
+        try:
+            apply_update(
+                current_path=sys.executable,
+                payload_path=payload_path,
+                manifest=manifest,
+                trusted_public_keys=get_trusted_public_keys(),
+                current_version=current_version,
+            )
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Instalación fallida: {exc}")
+
     version = state["staged_version"]
     _upsert_state(ctx.conn, ctx.tenant_id, device["id"],
                   status="installed", current_version=version, staged_version=None,
-                  available_version=None, blocked_reason=None)
+                  staged_path=None, available_version=None, blocked_reason=None)
     ctx.audit("updates.installed", resource_type="device", resource_id=device["id"],
               payload={"version": version})
     ctx.emit("updates", "client.update.installed",
