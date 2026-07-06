@@ -53,6 +53,7 @@ LOCKOUT_MINUTES = 15
 class LoginBody(BaseModel):
     email: str
     password: str
+    tenant: str | None = None  # slug — desambigua si el email existe en varios tenants
 
 
 class TotpVerifyBody(BaseModel):
@@ -118,6 +119,9 @@ def create_session(
 
 def _user_payload(conn: sqlite3.Connection, tenant_id: str, user: sqlite3.Row) -> dict[str, Any]:
     perms = get_user_permissions(conn, tenant_id, user["id"])
+    tenant = conn.execute(
+        "SELECT name, slug FROM fnd_tenants WHERE id = ?", (tenant_id,)
+    ).fetchone()
     return {
         "id": user["id"],
         "email": user["email"],
@@ -125,6 +129,8 @@ def _user_payload(conn: sqlite3.Connection, tenant_id: str, user: sqlite3.Row) -
         "roles": user_role_names(conn, tenant_id, user["id"]),
         "permissions": sorted(perms),
         "tenant_id": tenant_id,
+        "tenant_name": tenant["name"] if tenant else None,
+        "tenant_slug": tenant["slug"] if tenant else None,
         "totp_enabled": bool(user["totp_enabled"]),
     }
 
@@ -197,16 +203,32 @@ def login(
     tenant = get_active_tenant(conn)
     if tenant is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Tenant no inicializado (bootstrap pendiente)")
-    tenant_id = tenant["id"]
     email = body.email.strip().lower()
 
-    user = conn.execute(
-        "SELECT * FROM fnd_users WHERE tenant_id = ? AND email = ?", (tenant_id, email)
-    ).fetchone()
-    if user is None:
-        audit_log(conn, tenant_id, "auth.login.failed", actor_email=email,
-                  payload={"reason": "unknown_user"})
+    # Multi-tenant: buscar el email en todos los tenants ACTIVOS. Si aparece en
+    # más de uno, se exige `tenant` (slug) para desambiguar.
+    slug_filter = (body.tenant or "").strip().lower()
+    query = """SELECT u.*, t.slug AS _tenant_slug FROM fnd_users u
+               JOIN fnd_tenants t ON t.id = u.tenant_id
+               WHERE u.email = ? AND t.status = 'active'"""
+    params: list[Any] = [email]
+    if slug_filter:
+        query += " AND t.slug = ?"
+        params.append(slug_filter)
+    candidates = conn.execute(query + " ORDER BY t.created_at ASC", params).fetchall()
+
+    if not candidates:
+        audit_log(conn, tenant["id"], "auth.login.failed", actor_email=email,
+                  payload={"reason": "unknown_user", "tenant": slug_filter or None})
         _raise_committed(conn, HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciales inválidas"))
+    if len(candidates) > 1:
+        slugs = ", ".join(c["_tenant_slug"] for c in candidates)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"El email existe en varios tenants; especifica el campo tenant (slug): {slugs}",
+        )
+    user = candidates[0]
+    tenant_id = user["tenant_id"]
 
     if user["status"] != "active":
         audit_log(conn, tenant_id, "auth.login.failed", actor_email=email,

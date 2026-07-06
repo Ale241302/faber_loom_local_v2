@@ -379,9 +379,17 @@
 
     const emptyUser = { email: "", display_name: "", password: "", roles: [] };
     const [newUser, setNewUser] = useState(emptyUser);
+    const [newUserTenant, setNewUserTenant] = useState("");
     const [editing, setEditing] = useState(null); // {id, email, display_name, status, password, roles}
+    const [moveTenant, setMoveTenant] = useState("");
     const emptyRole = { name: "", description: "", permissions: [] };
     const [newRole, setNewRole] = useState(emptyRole);
+
+    // Multi-tenant (requiere tenants.manage; si no hay permiso, tenants = null y
+    // la sección de tenants no se muestra).
+    const [tenants, setTenants] = useState(null);
+    const emptyTenant = { name: "", slug: "", owner_email: "", owner_display_name: "", owner_password: "" };
+    const [newTenant, setNewTenant] = useState(emptyTenant);
 
     const load = useCallback(async () => {
       try {
@@ -390,6 +398,10 @@
         ]);
         setUsers(u.users); setRoles(r.roles); setCatalog(p.permissions); setError(null);
       } catch (e) { setError(e); }
+      try {
+        const t = await api.get("/tenants/all");
+        setTenants(t.tenants);
+      } catch (e) { setTenants(null); /* sin permiso tenants.manage */ }
     }, []);
     useEffect(() => { load(); }, [load]);
 
@@ -406,8 +418,31 @@
       list.includes(value) ? list.filter((x) => x !== value) : list.concat([value]);
 
     const createUser = () => run(async () => {
-      await api.post("/rbac/users", newUser);
+      const targetTenant = newUserTenant || (me && me.tenant_id) || "";
+      if (tenants && targetTenant && me && targetTenant !== me.tenant_id) {
+        await api.post("/tenants/" + targetTenant + "/users", newUser);
+      } else {
+        await api.post("/rbac/users", newUser);
+      }
       setNewUser(emptyUser);
+      setNewUserTenant("");
+    });
+
+    const createTenant = () => run(async () => {
+      const body = { name: newTenant.name, slug: newTenant.slug };
+      if (newTenant.owner_email) {
+        body.owner_email = newTenant.owner_email;
+        body.owner_display_name = newTenant.owner_display_name;
+        body.owner_password = newTenant.owner_password;
+      }
+      await api.post("/tenants", body);
+      setNewTenant(emptyTenant);
+    });
+
+    const moveUser = () => run(async () => {
+      await api.post("/tenants/" + moveTenant + "/assign", { user_id: editing.id });
+      setEditing(null);
+      setMoveTenant("");
     });
 
     const saveEditing = () => run(async () => {
@@ -505,6 +540,21 @@
                 <button type="button" style={buttonPrimaryStyle} disabled={busy} onClick={saveEditing}>Guardar</button>
                 <button type="button" style={buttonStyle} onClick={() => setEditing(null)}>Cancelar</button>
               </div>
+              {tenants && me && editing.id !== me.id && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 8, borderTop: "1px dashed var(--border-default)" }}>
+                  <FndField label="Mover a otro tenant">
+                    <select style={inputStyle} value={moveTenant} onChange={(e) => setMoveTenant(e.target.value)}>
+                      <option value="">Elegir tenant destino…</option>
+                      {tenants.filter((t) => t.id !== (me && me.tenant_id)).map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.slug})</option>
+                      ))}
+                    </select>
+                  </FndField>
+                  <button type="button" style={buttonStyle} disabled={busy || !moveTenant} onClick={moveUser}>
+                    Mover usuario
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -523,6 +573,16 @@
                 <input style={inputStyle} type="password" value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
               </FndField>
+              {tenants && (
+                <FndField label="Tenant">
+                  <select style={inputStyle} value={newUserTenant || (me && me.tenant_id) || ""}
+                    onChange={(e) => setNewUserTenant(e.target.value)}>
+                    {tenants.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.slug})</option>
+                    ))}
+                  </select>
+                </FndField>
+              )}
             </div>
             <FndField label="Roles">
               {rolePicker(newUser.roles, (roles2) => setNewUser({ ...newUser, roles: roles2 }))}
@@ -530,8 +590,72 @@
             <button type="button" style={buttonPrimaryStyle}
               disabled={busy || !newUser.email || newUser.password.length < 8}
               onClick={createUser}>Crear usuario</button>
+            {tenants && newUserTenant && me && newUserTenant !== me.tenant_id && (
+              <div style={{ color: "var(--text-muted)", fontSize: 11.5 }}>
+                El usuario se creará en otro tenant y no aparecerá en la tabla de arriba (aislamiento multi-tenant).
+              </div>
+            )}
           </div>
         </FndPanel>
+
+        {tenants && (
+          <FndPanel title="Tenants" meta="Organizaciones de esta instancia (multi-tenant)">
+            <FndTable
+              empty="Sin tenants"
+              columns={[
+                { key: "name", label: "Nombre", render: (t) => (
+                  <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {t.name}
+                    {me && t.id === me.tenant_id && <FndBadge tone="ok">actual</FndBadge>}
+                  </span>
+                ) },
+                { key: "slug", label: "Slug", render: (t) => <span style={monoStyle}>{t.slug}</span> },
+                { key: "status", label: "Estado", render: (t) => (
+                  <FndBadge tone={t.status === "active" ? "ok" : "warn"}>{t.status}</FndBadge>
+                ) },
+                { key: "users_count", label: "Usuarios" },
+                { key: "owners_count", label: "Owners" },
+                { key: "created_at", label: "Creado", render: (t) => fmtDate(t.created_at) },
+              ]}
+              rows={tenants}
+            />
+
+            <div style={Object.assign({}, stackStyle, { marginTop: 14, padding: 12, border: "1px dashed var(--border-default)", borderRadius: 8 })}>
+              <div style={{ fontWeight: 650, fontSize: 12.5 }}>Crear tenant</div>
+              <div style={rowStyle}>
+                <FndField label="Nombre">
+                  <input style={inputStyle} value={newTenant.name} placeholder="Mi Empresa S.A."
+                    onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })} />
+                </FndField>
+                <FndField label="Slug">
+                  <input style={inputStyle} value={newTenant.slug} placeholder="mi-empresa"
+                    onChange={(e) => setNewTenant({ ...newTenant, slug: e.target.value })} />
+                </FndField>
+              </div>
+              <div style={{ color: "var(--text-muted)", fontSize: 11.5 }}>
+                Owner inicial (opcional — sin owner el tenant queda en «provisioning» hasta que le asignes uno):
+              </div>
+              <div style={rowStyle}>
+                <FndField label="Email del owner">
+                  <input style={inputStyle} type="email" value={newTenant.owner_email}
+                    onChange={(e) => setNewTenant({ ...newTenant, owner_email: e.target.value })} />
+                </FndField>
+                <FndField label="Nombre del owner">
+                  <input style={inputStyle} value={newTenant.owner_display_name}
+                    onChange={(e) => setNewTenant({ ...newTenant, owner_display_name: e.target.value })} />
+                </FndField>
+                <FndField label="Contraseña del owner">
+                  <input style={inputStyle} type="password" value={newTenant.owner_password}
+                    onChange={(e) => setNewTenant({ ...newTenant, owner_password: e.target.value })} />
+                </FndField>
+              </div>
+              <button type="button" style={buttonPrimaryStyle}
+                disabled={busy || !newTenant.name || !newTenant.slug ||
+                  (!!newTenant.owner_email && newTenant.owner_password.length < 8)}
+                onClick={createTenant}>Crear tenant</button>
+            </div>
+          </FndPanel>
+        )}
 
         <FndPanel title="Roles" meta="Roles de sistema y roles custom del tenant">
           <FndTable

@@ -8,9 +8,10 @@
 
 function FoundationSection({ initialView, activeWorkspace }) {
   const F = window.Foundation;
-  const { FndPanel, FndBadge, FndError } = F.ui;
+  const { FndPanel, FndBadge, FndError, FndField, inputStyle, buttonPrimaryStyle } = F.ui;
   const [status, setStatus] = useState(null);
   const [me, setMe] = useState(null);
+  const [meMissing, setMeMissing] = useState(false); // 401: usuario sin tenant asignado
   const [error, setError] = useState(null);
   const [active, setActive] = useState(initialView || null);
 
@@ -22,8 +23,8 @@ function FoundationSection({ initialView, activeWorkspace }) {
   }, []);
 
   const refreshMe = useCallback(async () => {
-    try { setMe(await F.api.get("/auth/me")); setError(null); }
-    catch (e) { setMe(null); }
+    try { setMe(await F.api.get("/auth/me")); setMeMissing(false); setError(null); }
+    catch (e) { setMe(null); setMeMissing(e && e.status === 401); }
   }, []);
 
   useEffect(() => { refreshStatus(); }, [refreshStatus]);
@@ -45,7 +46,13 @@ function FoundationSection({ initialView, activeWorkspace }) {
     return <div style={{ padding: 24, color: "var(--text-muted)" }}>Bootstrap Wizard (M07) no cargado.</div>;
   }
 
-  // 2) Bootstrapped pero aún no tenemos /auth/me
+  // 2a) Sesión principal válida pero SIN usuario Foundation en ningún tenant →
+  //     self-service: el usuario puede crear su propio tenant y quedar como owner.
+  if (!me && meMissing) {
+    return <SelfServiceTenant F={F} onDone={refreshMe} />;
+  }
+
+  // 2b) Bootstrapped pero aún no tenemos /auth/me
   if (!me) {
     return (
       <div style={{ padding: 24, color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
@@ -92,6 +99,61 @@ function FoundationSection({ initialView, activeWorkspace }) {
         {current
           ? <current.component api={window.Foundation.api} me={me} refreshMe={refreshMe} tenant={status.tenant} activeWorkspace={activeWorkspace} />
           : <div style={{ padding: 24, color: "var(--text-muted)" }}>No hay vistas foundation disponibles para tu rol.</div>}
+      </div>
+    </div>
+  );
+}
+
+function SelfServiceTenant({ F, onDone }) {
+  const { FndPanel, FndError, FndField, inputStyle, buttonPrimaryStyle } = F.ui;
+  const [form, setForm] = useState({ name: "", slug: "", display_name: "", password: "" });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    setBusy(true); setError(null);
+    try {
+      const resp = await F.api.post("/tenants/self-service", form);
+      if (resp && resp.session) F.setSession(resp.session);
+      await onDone();
+    } catch (e) { setError(e); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ display: "grid", placeItems: "center", minHeight: "60vh", padding: 24 }}>
+      <div style={{ width: "min(520px, 100%)", display: "grid", gap: 14 }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontWeight: 650, fontSize: 16 }}>Tu usuario no está asignado a ningún tenant</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
+            Podés crear tu propio tenant ahora mismo (quedás como owner), o pedirle a un
+            admin que te asigne a uno existente desde «Roles y permisos».
+          </div>
+        </div>
+        <FndPanel title="Crear mi tenant" meta="Self-service · quedás como owner">
+          <FndError error={error} />
+          <div style={{ display: "grid", gap: 12 }}>
+            <FndField label="Nombre de la organización">
+              <input style={inputStyle} value={form.name} placeholder="Mi Empresa S.A."
+                onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </FndField>
+            <FndField label="Slug">
+              <input style={inputStyle} value={form.slug} placeholder="mi-empresa"
+                onChange={(e) => setForm({ ...form, slug: e.target.value })} />
+            </FndField>
+            <FndField label="Tu nombre a mostrar (opcional)">
+              <input style={inputStyle} value={form.display_name}
+                onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+            </FndField>
+            <FndField label="Contraseña Foundation (mínimo 8 caracteres)">
+              <input style={inputStyle} type="password" value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </FndField>
+            <button type="button" style={buttonPrimaryStyle}
+              disabled={busy || !form.name || !form.slug || form.password.length < 8}
+              onClick={create}>{busy ? "Creando…" : "Crear tenant"}</button>
+          </div>
+        </FndPanel>
       </div>
     </div>
   );

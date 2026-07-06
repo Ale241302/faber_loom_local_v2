@@ -397,7 +397,7 @@ SYSTEM_ROLES: dict[str, dict[str, Any]] = {
             "users.manage", "roles.manage", "policy.manage", "audit.read",
             "classifier.manage", "drafts.review", "drafts.send", "outcomes.read",
             "memory.manage", "events.read", "sync.manage", "updates.manage",
-            "bootstrap.manage", "tenants.read",
+            "bootstrap.manage", "tenants.read", "tenants.manage",
         ],
     },
     "operator": {
@@ -418,7 +418,8 @@ SYSTEM_ROLES: dict[str, dict[str, Any]] = {
 def seed_system_roles(conn: sqlite3.Connection, tenant_id: str) -> None:
     for name, spec in SYSTEM_ROLES.items():
         exists = conn.execute(
-            "SELECT id FROM fnd_roles WHERE tenant_id = ? AND name = ?", (tenant_id, name)
+            "SELECT id, permissions_json FROM fnd_roles WHERE tenant_id = ? AND name = ?",
+            (tenant_id, name),
         ).fetchone()
         if not exists:
             conn.execute(
@@ -427,6 +428,25 @@ def seed_system_roles(conn: sqlite3.Connection, tenant_id: str) -> None:
                 (new_id("rol"), tenant_id, name, spec["description"],
                  json.dumps(spec["permissions"]), utcnow()),
             )
+        else:
+            # Sync idempotente: si el catálogo de permisos del rol de sistema
+            # cambió entre versiones, la BD existente se actualiza al arrancar.
+            expected = json.dumps(spec["permissions"])
+            if exists["permissions_json"] != expected:
+                conn.execute(
+                    "UPDATE fnd_roles SET permissions_json = ? WHERE id = ?",
+                    (expected, exists["id"]),
+                )
+
+
+def _sync_system_roles_all_tenants(conn: sqlite3.Connection) -> None:
+    """Al inicializar la BD, re-siembra/sincroniza los roles de sistema de
+    TODOS los tenants existentes (heals de despliegues previos)."""
+    for row in conn.execute("SELECT id FROM fnd_tenants").fetchall():
+        seed_system_roles(conn, row["id"])
+
+
+register_seed(_sync_system_roles_all_tenants)
 
 
 def get_user_permissions(conn: sqlite3.Connection, tenant_id: str, user_id: str) -> set[str]:
@@ -582,15 +602,20 @@ def _sso_jwt_context(request: Request, conn: sqlite3.Connection) -> SessionConte
     email = (jwt_user.get("sub") or "").strip().lower()
     if not email or email == "local" or "@" not in email:
         return None
+    # Multi-tenant: el email puede vivir en cualquier tenant ACTIVO (no solo el
+    # primero). Se toma el match más antiguo por orden de creación del tenant.
     user = conn.execute(
-        "SELECT * FROM fnd_users WHERE tenant_id = ? AND email = ? AND status = 'active'",
-        (tenant["id"], email),
+        """SELECT u.* FROM fnd_users u
+           JOIN fnd_tenants t ON t.id = u.tenant_id
+           WHERE u.email = ? AND u.status = 'active' AND t.status = 'active'
+           ORDER BY t.created_at ASC LIMIT 1""",
+        (email,),
     ).fetchone()
     if user is None:
         return None
     synthetic_session = {
         "id": f"sso_{user['id']}",
-        "tenant_id": tenant["id"],
+        "tenant_id": user["tenant_id"],
         "user_id": user["id"],
         "stage": "full",
     }
