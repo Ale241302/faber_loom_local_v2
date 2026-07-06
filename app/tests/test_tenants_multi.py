@@ -301,6 +301,78 @@ def test_assign_guardrails(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
+# Ver y quitar usuarios de un tenant específico
+# ---------------------------------------------------------------------------
+
+
+def test_list_and_remove_user_from_tenant(client: TestClient):
+    session, me = _bootstrap(client)
+    tenant = client.post(
+        "/api/foundation/tenants",
+        json={
+            "name": "Beta", "slug": "beta",
+            "owner_email": "boss@beta.test", "owner_password": "beta-pass-123",
+        },
+        headers=_h(session),
+    ).json()
+    client.post(
+        f"/api/foundation/tenants/{tenant['id']}/users",
+        json={"email": "op@beta.test", "password": "beta-pass-456", "roles": ["operator"]},
+        headers=_h(session),
+    )
+
+    # Listar usuarios del tenant beta desde acme (cross-tenant admin).
+    resp = client.get(f"/api/foundation/tenants/{tenant['id']}/users", headers=_h(session))
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["tenant"]["slug"] == "beta"
+    emails = {u["email"]: u for u in data["users"]}
+    assert set(emails) == {"boss@beta.test", "op@beta.test"}
+    assert emails["boss@beta.test"]["roles"] == ["owner"]
+    assert all(u["tenant_slug"] == "beta" for u in data["users"])
+
+    # Guardrail: quitar al último owner con otros usuarios presentes → 400.
+    resp = client.delete(
+        f"/api/foundation/tenants/{tenant['id']}/users/{emails['boss@beta.test']['id']}",
+        headers=_h(session),
+    )
+    assert resp.status_code == 400
+
+    # Quitar al operator sí funciona y revoca sus sesiones.
+    op_login = _login(client, "op@beta.test", "beta-pass-456")
+    resp = client.delete(
+        f"/api/foundation/tenants/{tenant['id']}/users/{emails['op@beta.test']['id']}",
+        headers=_h(session),
+    )
+    assert resp.status_code == 200, resp.text
+    assert client.get(
+        "/api/foundation/auth/me", headers=_h(op_login["session"])
+    ).status_code == 401
+
+    # Ahora el owner (único usuario restante) sí puede quitarse → tenant queda vacío.
+    resp = client.delete(
+        f"/api/foundation/tenants/{tenant['id']}/users/{emails['boss@beta.test']['id']}",
+        headers=_h(session),
+    )
+    assert resp.status_code == 200, resp.text
+    data = client.get(
+        f"/api/foundation/tenants/{tenant['id']}/users", headers=_h(session)
+    ).json()
+    assert data["users"] == []
+
+    # No podés quitarte a vos mismo.
+    resp = client.delete(
+        f"/api/foundation/tenants/{_my_tenant_id(client, session)}/users/{me['id']}",
+        headers=_h(session),
+    )
+    assert resp.status_code == 400
+
+
+def _my_tenant_id(client: TestClient, session: str) -> str:
+    return client.get("/api/foundation/auth/me", headers=_h(session)).json()["tenant_id"]
+
+
+# ---------------------------------------------------------------------------
 # Login multi-tenant con email duplicado
 # ---------------------------------------------------------------------------
 

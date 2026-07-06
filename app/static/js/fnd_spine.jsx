@@ -390,6 +390,7 @@
     const [tenants, setTenants] = useState(null);
     const emptyTenant = { name: "", slug: "", owner_email: "", owner_display_name: "", owner_password: "" };
     const [newTenant, setNewTenant] = useState(emptyTenant);
+    const [tenantView, setTenantView] = useState(null); // {tenant, users} del tenant inspeccionado
 
     const load = useCallback(async () => {
       try {
@@ -445,6 +446,17 @@
       setMoveTenant("");
     });
 
+    const viewTenantUsers = (t) => run(async () => {
+      const data = await api.get("/tenants/" + t.id + "/users");
+      setTenantView(data);
+    });
+
+    const removeFromTenant = (tenantId, userId) => run(async () => {
+      await api.del("/tenants/" + tenantId + "/users/" + userId);
+      const data = await api.get("/tenants/" + tenantId + "/users");
+      setTenantView(data);
+    });
+
     const saveEditing = () => run(async () => {
       const patch = { display_name: editing.display_name, status: editing.status };
       if (editing.password) patch.password = editing.password;
@@ -479,7 +491,8 @@
       <div style={stackStyle}>
         <FndError error={error} />
 
-        <FndPanel title="Usuarios" meta="Cuentas del tenant y sus roles"
+        <FndPanel title="Usuarios"
+          meta={"Tenant: " + ((me && (me.tenant_name || me.tenant_slug)) || "actual") + " · cuentas y roles"}
           actions={<button type="button" style={buttonStyle} onClick={load}>Refrescar</button>}>
           <FndTable
             empty="Sin usuarios"
@@ -616,9 +629,52 @@
                 { key: "users_count", label: "Usuarios" },
                 { key: "owners_count", label: "Owners" },
                 { key: "created_at", label: "Creado", render: (t) => fmtDate(t.created_at) },
+                { key: "actions", label: "", render: (t) => (
+                  <button type="button" style={buttonStyle} disabled={busy}
+                    onClick={() => viewTenantUsers(t)}>Ver usuarios</button>
+                ) },
               ]}
               rows={tenants}
             />
+
+            {tenantView && (
+              <div style={Object.assign({}, stackStyle, { marginTop: 14, padding: 12, border: "1px solid var(--border-default)", borderRadius: 8 })}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>
+                    Usuarios de {tenantView.tenant.name} <span style={monoStyle}>({tenantView.tenant.slug})</span>
+                  </div>
+                  <button type="button" style={buttonStyle} onClick={() => setTenantView(null)}>Cerrar</button>
+                </div>
+                <FndTable
+                  empty="Este tenant no tiene usuarios"
+                  columns={[
+                    { key: "email", label: "Email" },
+                    { key: "display_name", label: "Nombre" },
+                    { key: "roles", label: "Roles", render: (u) => (
+                      <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {(u.roles || []).map((x) => <FndBadge key={x} tone={x === "owner" ? "warn" : "muted"}>{x}</FndBadge>)}
+                      </span>
+                    ) },
+                    { key: "status", label: "Estado", render: (u) => (
+                      <FndBadge tone={u.status === "active" ? "ok" : "danger"}>{u.status}</FndBadge>
+                    ) },
+                    { key: "actions", label: "", render: (u) => (
+                      me && u.id !== me.id
+                        ? <button type="button" style={buttonDangerStyle} disabled={busy}
+                            onClick={() => removeFromTenant(tenantView.tenant.id, u.id)}>
+                            Quitar del tenant
+                          </button>
+                        : null
+                    ) },
+                  ]}
+                  rows={tenantView.users}
+                />
+                <div style={{ color: "var(--text-muted)", fontSize: 11.5 }}>
+                  «Quitar del tenant» elimina la cuenta de ese tenant (revoca sus sesiones). No se puede
+                  quitar al último owner si el tenant aún tiene otros usuarios.
+                </div>
+              </div>
+            )}
 
             <div style={Object.assign({}, stackStyle, { marginTop: 14, padding: 12, border: "1px dashed var(--border-default)", borderRadius: 8 })}>
               <div style={{ fontWeight: 650, fontSize: 12.5 }}>Crear tenant</div>

@@ -340,6 +340,98 @@ def self_service_tenant(
     }
 
 
+@router.get("/{tenant_id}/users")
+def list_users_of_tenant(
+    tenant_id: str,
+    ctx: SessionContext = Depends(require_permission("tenants.manage")),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """Usuarios de un tenant específico (vista de administración multi-tenant)."""
+    tenant = _get_tenant_or_404(conn, tenant_id)
+    rows = conn.execute(
+        "SELECT * FROM fnd_users WHERE tenant_id = ? ORDER BY created_at", (tenant_id,)
+    ).fetchall()
+    users = []
+    for row in rows:
+        roles = conn.execute(
+            """SELECT r.name FROM fnd_user_roles ur JOIN fnd_roles r ON r.id = ur.role_id
+               WHERE ur.tenant_id = ? AND ur.user_id = ?""",
+            (tenant_id, row["id"]),
+        ).fetchall()
+        users.append({
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+            "status": row["status"],
+            "roles": [r["name"] for r in roles],
+            "totp_enabled": bool(row["totp_enabled"]),
+            "created_at": row["created_at"],
+            "tenant_id": tenant_id,
+            "tenant_name": tenant["name"],
+            "tenant_slug": tenant["slug"],
+        })
+    return {"tenant": {"id": tenant_id, "name": tenant["name"], "slug": tenant["slug"]},
+            "users": users}
+
+
+@router.delete("/{tenant_id}/users/{user_id}")
+def remove_user_from_tenant(
+    tenant_id: str,
+    user_id: str,
+    ctx: SessionContext = Depends(require_permission("tenants.manage")),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """Quita (elimina) un usuario de un tenant específico. Mismo efecto que el
+    borrado de M09 pero operable cross-tenant por un admin de plataforma."""
+    _get_tenant_or_404(conn, tenant_id)
+    user = conn.execute(
+        "SELECT * FROM fnd_users WHERE id = ? AND tenant_id = ?", (user_id, tenant_id)
+    ).fetchone()
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuario no encontrado en ese tenant")
+    if user_id == ctx.user_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No podés quitar tu propio usuario")
+
+    roles = conn.execute(
+        """SELECT r.name FROM fnd_user_roles ur JOIN fnd_roles r ON r.id = ur.role_id
+           WHERE ur.tenant_id = ? AND ur.user_id = ?""",
+        (tenant_id, user_id),
+    ).fetchall()
+    role_names = [r["name"] for r in roles]
+    if "owner" in role_names:
+        other_owners = conn.execute(
+            """SELECT COUNT(DISTINCT u.id) AS c FROM fnd_users u
+               JOIN fnd_user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+               JOIN fnd_roles r ON r.id = ur.role_id
+               WHERE u.tenant_id = ? AND u.status = 'active' AND r.name = 'owner' AND u.id != ?""",
+            (tenant_id, user_id),
+        ).fetchone()["c"]
+        other_users = conn.execute(
+            "SELECT COUNT(*) AS c FROM fnd_users WHERE tenant_id = ? AND id != ?",
+            (tenant_id, user_id),
+        ).fetchone()["c"]
+        if other_users and not other_owners:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "No se puede quitar al último owner de un tenant que aún tiene usuarios",
+            )
+
+    email = user["email"]
+    conn.execute("DELETE FROM fnd_user_roles WHERE tenant_id = ? AND user_id = ?",
+                 (tenant_id, user_id))
+    # Igual que M09: las sesiones se eliminan (FK fnd_sessions.user_id → fnd_users.id).
+    conn.execute("DELETE FROM fnd_sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM fnd_users WHERE id = ? AND tenant_id = ?", (user_id, tenant_id))
+
+    payload = {"email": email, "tenant_id": tenant_id, "roles": sorted(role_names)}
+    ctx.audit("tenant.user.removed", resource_type="user", resource_id=user_id, payload=payload)
+    audit_log(conn, tenant_id, "tenant.user.removed", actor_id=ctx.user_id,
+              actor_email=ctx.email, resource_type="user", resource_id=user_id,
+              payload=payload)
+    emit_event(conn, tenant_id, "tenant", "user.removed", payload)
+    return {"detail": "Usuario quitado del tenant"}
+
+
 @router.post("/{tenant_id}/users", status_code=status.HTTP_201_CREATED)
 def create_user_in_tenant(
     tenant_id: str,
