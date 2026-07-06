@@ -431,6 +431,8 @@ def initialize_database(conn: sqlite3.Connection | None = None) -> None:
         for version in sorted(MIGRATIONS):
             if version in applied:
                 continue
+            if version == 22:
+                _migrate_v22_correlation_id(conn)
             conn.executescript(MIGRATIONS[version])
             conn.execute(
                 "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
@@ -438,8 +440,6 @@ def initialize_database(conn: sqlite3.Connection | None = None) -> None:
             )
             if version == 19:
                 _migrate_v19_data(conn)
-            if version == 22:
-                _migrate_v22_correlation_id(conn)
         recompute_all_workspace_hmacs(conn)
         conn.commit()
     except Exception:
