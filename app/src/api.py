@@ -14,16 +14,16 @@ try:
 except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
     sqlcipher3 = None  # type: ignore[assignment]
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audit import audit_writer
 from .auth import get_current_user
 from .context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context, system_context
 from .connectors.imap import fetch_unread_messages, send_message
-from .features import is_email_connector_enabled
+from .features import is_email_connector_enabled, is_shared_instance
 from .db import (
     approve_routine,
     approve_routine_run,
@@ -31,11 +31,13 @@ from .db import (
     create_email_account,
     create_mail_message,
     create_or_get_mail_outbox,
+    create_model_catalog_entry,
     create_routine,
     create_routine_run,
     create_workspace,
     delete_chat,
     delete_email_account,
+    delete_model_catalog_entry,
     delete_routine,
     get_chat,
     get_database_path,
@@ -46,9 +48,11 @@ from .db import (
     get_mail_outbox,
     get_message_history,
     get_messages,
+    get_model_catalog_entry,
     get_routine,
     get_routine_by_name,
     get_routine_run,
+    get_routing_policy,
     get_schema_version,
     get_workspace,
     get_workspace_email_signature,
@@ -62,7 +66,9 @@ from .db import (
     list_editorial_history,
     list_email_accounts,
     list_mail_messages,
+    list_model_catalog,
     list_routine_runs,
+    rotate_email_account_credentials,
     list_routines,
     list_usage_records,
     list_workspaces,
@@ -78,8 +84,10 @@ from .db import (
     update_email_account,
     update_mail_message_status,
     update_mail_outbox_status,
+    update_model_catalog_entry,
     update_routine,
     update_routine_run_output,
+    update_routing_policy,
     update_workspace_field_aliases,
     workspace_seal_id,
 )
@@ -116,6 +124,9 @@ from .gold import (
     list_gold_candidates,
     promote_gold_candidate,
 )
+from .ledger import start_chain
+from .routing import catalog as routing_catalog
+from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -137,10 +148,14 @@ from .models import (
     KBSourceRead,
     EmailAccountCreate,
     EmailAccountRead,
+    EmailAccountRotateRequest,
     EmailAccountWrite,
     FeaturesRead,
     MailMessageRead,
     MessageRead,
+    ModelCatalogEntryCreate,
+    ModelCatalogEntryRead,
+    ModelCatalogEntryUpdate,
     ProviderConfigListRead,
     ProviderConfigRead,
     ProviderConfigWrite,
@@ -151,6 +166,7 @@ from .models import (
     RoutineRunApproveRequest,
     RoutineRunRead,
     RoutineRunRejectRequest,
+    UserRead,
     RoutineUpdate,
     RouterProviderRead,
     RouterStatusRead,
@@ -165,6 +181,8 @@ from .models import (
     WorkspaceFieldAliasesUpdate,
     WorkspaceListRead,
     WorkspaceRead,
+    WorkspaceRoutingPolicyRead,
+    WorkspaceRoutingPolicyUpdate,
 )
 from .workloom import list_workloom_items
 from .router import BudgetExceeded, ProviderError, build_router
@@ -183,8 +201,8 @@ class RoutineRunEditRequest(BaseModel):
 
 class PromoteGoldCandidateRequest(BaseModel):
     learned_output_json: dict[str, Any]
-    approved_by: str | None = None
     verified_by: str | None = None
+    target_state: Literal["active_l2", "l3_pending", "l3", "rejected"] = "active_l2"
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -221,8 +239,9 @@ def context_from_request(request: Request, workspace_id: str | None = None) -> C
     user = getattr(request.state, "user", None)
     if user:
         tenant_id = user.get("tenant_id") or DEFAULT_TENANT_ID
-        user_id = user.get("sub") or "local"
-        actor_id = user_id
+        # E2-0: prefer the Foundation-resolved user_id; fallback to legacy sub (email).
+        user_id = user.get("user_id") or user.get("sub") or "local"
+        actor_id = user.get("actor_id") or user_id
         actor_role = user.get("role") or "owner"
     elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS"):
         tenant_id = request.headers.get("x-tenant-id") or DEFAULT_TENANT_ID
@@ -308,6 +327,26 @@ def health() -> HealthRead:
         status="ok",
         schema_version=get_schema_version(),
         database_path=str(get_database_path()),
+    )
+
+
+@router.get("/me", response_model=UserRead)
+def api_me(request: Request) -> UserRead:
+    """Return the currently authenticated user resolved by the backend.
+
+    This is the single source of session identity for the frontend: the backend
+    resolves the cookie/session into Foundation claims when possible and falls
+    back to the legacy local user only when Foundation is not available.
+    """
+
+    user = request.state.user
+    return UserRead(
+        email=user.get("sub"),
+        tenant_id=user.get("tenant_id"),
+        user_id=user.get("user_id"),
+        role=user.get("role"),
+        roles=user.get("roles") or [],
+        foundation_resolved=user.get("foundation_resolved", False),
     )
 
 
@@ -457,6 +496,71 @@ def _serialize_message(row: dict[str, Any]) -> MessageRead:
 
 def _allowed_models_for_provider(provider_slug: str) -> set[str]:
     return router_cost.MODEL_ALLOWLIST.get(provider_slug, set())
+
+
+def _validate_manual_choice(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    payload: ChatCompletionRequest,
+) -> None:
+    """Validate a manual provider/model selection against the workspace catalog and policy.
+
+    If the catalog entry is disabled but the configured router still reports the
+    provider/model as available (e.g., a provider was enabled after the catalog was
+    seeded), the request is allowed. This keeps catalog seeding from permanently
+    blocking models that become available later.
+    """
+
+    entries = list_model_catalog(ctx, conn, enabled_only=False)
+    entry = next(
+        (
+            e
+            for e in entries
+            if e["provider_slug"] == payload.provider_slug and e["model"] == payload.model
+        ),
+        None,
+    )
+
+    router = build_router(user_id=ctx.user_id)
+    provider = router.providers.get(payload.provider_slug)
+    provider_available = provider is not None and provider.is_available()
+    model_allowed = payload.model in router_cost.MODEL_ALLOWLIST.get(payload.provider_slug, set())
+
+    if entry is None:
+        # Allow never-seeded models if the router can serve them.
+        if not (provider_available and model_allowed):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Model '{payload.model}' for provider '{payload.provider_slug}' is not in the workspace catalog",
+            )
+    elif not entry["is_enabled"]:
+        # Allow disabled catalog entries when the router currently has the provider
+        # available and the model is in the global allowlist.
+        if not (provider_available and model_allowed):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Model '{payload.model}' is disabled in the workspace catalog",
+            )
+
+    policy = get_routing_policy(ctx, conn)
+    provider_allowlist = policy.get("provider_allowlist") or []
+    if provider_allowlist and payload.provider_slug not in provider_allowlist:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Provider '{payload.provider_slug}' is not allowed by workspace routing policy",
+        )
+    model_allowlist = policy.get("model_allowlist") or {}
+    allowed_models = model_allowlist.get(payload.provider_slug)
+    if allowed_models is not None and payload.model not in allowed_models:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Model '{payload.model}' is not allowed by workspace routing policy",
+        )
+    if policy.get("require_local_only") and not (entry and entry["is_local"]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Workspace requires local-only models; '{payload.model}' is not local",
+        )
 
 
 def _validate_completion_choice(payload: ChatCompletionRequest, router) -> None:
@@ -780,6 +884,72 @@ def api_create_completion(
             duration_ms=result.get("duration_ms", 0),
         )
 
+    # Ensure the workspace catalog and default policy row exist before validating
+    # manual/auto choices. This is a separate transaction so the policy row is
+    # committed before any nested per-mode transactions begin.
+    with transaction(conn):
+        routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
+
+    if payload.mode == "auto":
+        try:
+            with transaction(conn):
+                routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
+                auto_result = run_auto_chain(
+                    ctx,
+                    conn,
+                    chat_id=chat_id,
+                    user_request=payload.message,
+                )
+                insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.message)
+                route = {
+                    "chain_id": auto_result["chain_id"],
+                    "steps": auto_result["steps"],
+                    "provider_slug": auto_result["provider_slug"],
+                    "model": auto_result["model"],
+                    "cost_usd": auto_result["cost_usd"],
+                    "input_tokens": auto_result["input_tokens"],
+                    "output_tokens": auto_result["output_tokens"],
+                    "duration_ms": auto_result["duration_ms"],
+                    "mode": "auto",
+                }
+                assistant_message = _serialize_message(
+                    insert_message(
+                        ctx,
+                        conn,
+                        chat_id=chat_id,
+                        role="assistant",
+                        content=auto_result["content"],
+                        route=route,
+                    )
+                )
+        except NoCapacityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc),
+            ) from exc
+        except AutoDispatcherError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(exc),
+            ) from exc
+
+        return ChatCompletionResponse(
+            message=assistant_message,
+            provider_slug=auto_result["provider_slug"],
+            model=auto_result["model"],
+            input_tokens=auto_result["input_tokens"],
+            output_tokens=auto_result["output_tokens"],
+            cost_usd=auto_result["cost_usd"],
+            duration_ms=auto_result["duration_ms"],
+            chain_id=auto_result.get("chain_id"),
+            steps=auto_result.get("steps"),
+            mode="auto",
+        )
+
+    # Manual mode
+    if payload.provider_slug is not None or payload.model is not None:
+        _validate_manual_choice(ctx, conn, payload)
+
     router = build_router(user_id=ctx.user_id)
 
     if not router.has_available_provider():
@@ -1008,7 +1178,74 @@ def api_create_completion(
         output_tokens=result.output_tokens,
         cost_usd=result.cost_usd,
         duration_ms=result.duration_ms,
+        mode="manual",
     )
+
+
+class AutoChainRequest(BaseModel):
+    user_request: str = Field(default="", max_length=20000)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    mode: str = "auto"
+
+
+@router.post("/workspaces/{workspace_id}/chats/{chat_id}/auto")
+def api_run_auto_chain(
+    workspace_id: str,
+    chat_id: str,
+    payload: AutoChainRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    """Run the auto dispatcher with optional attachments (PDF, etc.)."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if get_chat(ctx, conn, chat_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    try:
+        with transaction(conn):
+            routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
+            auto_result = run_auto_chain(
+                ctx,
+                conn,
+                chat_id=chat_id,
+                user_request=payload.user_request,
+                attachments=payload.attachments,
+            )
+            insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.user_request)
+            route = {
+                "chain_id": auto_result["chain_id"],
+                "steps": auto_result["steps"],
+                "provider_slug": auto_result["provider_slug"],
+                "model": auto_result["model"],
+                "cost_usd": auto_result["cost_usd"],
+                "input_tokens": auto_result["input_tokens"],
+                "output_tokens": auto_result["output_tokens"],
+                "duration_ms": auto_result["duration_ms"],
+                "mode": "auto",
+            }
+            insert_message(
+                ctx,
+                conn,
+                chat_id=chat_id,
+                role="assistant",
+                content=auto_result["content"],
+                route=route,
+            )
+    except NoCapacityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except AutoDispatcherError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return auto_result
 
 
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/invoke", response_model=ChatCompletionResponse)
@@ -1456,6 +1693,7 @@ def _persist_skill_usage(
         routine_version=routine_version,
         skill_version=skill_version,
         source_version=source_version,
+        correlation_id=run_id,
         mirror_jsonl=False,
     )
 
@@ -1759,13 +1997,158 @@ def api_router_status(
     spent = sum_workspace_usage_cost(ctx, conn)
     visible_providers = [provider for provider in router.all_providers() if provider.provider_slug in _VISIBLE_PROVIDER_SLUGS]
     visible_model_allowlist = {k: sorted(v) for k, v in router_cost.MODEL_ALLOWLIST.items() if k in _VISIBLE_PROVIDER_SLUGS}
+    policy = get_routing_policy(ctx, conn)
     return RouterStatusRead(
         providers=[_provider_status(provider, router) for provider in visible_providers],
-        budget_cap_usd=router.settings.budget_cap_usd,
+        budget_cap_usd=policy.get("budget_cap_usd", router.settings.budget_cap_usd),
         spent_usd=spent,
-        provider_allowlist=router.settings.provider_allowlist,
+        provider_allowlist=policy.get("provider_allowlist") or router.settings.provider_allowlist,
         model_allowlist=visible_model_allowlist,
+        auto_mode_enabled=bool(policy.get("auto_mode_enabled", False)),
+        max_auto_steps=policy.get("max_auto_steps", 3),
+        require_local_only=bool(policy.get("require_local_only", False)),
     )
+
+
+# -----------------------------------------------------------------------------
+# E2-4: Workspace routing policy and model catalog
+# -----------------------------------------------------------------------------
+
+
+def _require_routing_admin(ctx: Context) -> None:
+    role = (ctx.actor_role_at_decision or "").lower()
+    if role not in {"owner", "admin", "ceo"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Routing policy changes require owner or admin role",
+        )
+
+
+@router.get("/workspaces/{workspace_id}/routing-policy", response_model=WorkspaceRoutingPolicyRead)
+def api_get_routing_policy(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceRoutingPolicyRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    policy = get_routing_policy(ctx, conn)
+    return WorkspaceRoutingPolicyRead(**policy)
+
+
+@router.put("/workspaces/{workspace_id}/routing-policy", response_model=WorkspaceRoutingPolicyRead)
+def api_update_routing_policy(
+    workspace_id: str,
+    payload: WorkspaceRoutingPolicyUpdate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceRoutingPolicyRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    _require_routing_admin(ctx)
+    with transaction(conn):
+        policy = update_routing_policy(
+            ctx,
+            conn,
+            provider_allowlist=payload.provider_allowlist,
+            model_allowlist=payload.model_allowlist,
+            budget_cap_usd=payload.budget_cap_usd,
+            auto_mode_enabled=payload.auto_mode_enabled,
+            max_auto_steps=payload.max_auto_steps,
+            require_local_only=payload.require_local_only,
+        )
+    return WorkspaceRoutingPolicyRead(**policy)
+
+
+@router.get("/workspaces/{workspace_id}/model-catalog", response_model=list[ModelCatalogEntryRead])
+def api_list_model_catalog(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[ModelCatalogEntryRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    with transaction(conn):
+        routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
+    return [ModelCatalogEntryRead(**row) for row in list_model_catalog(ctx, conn, enabled_only=False)]
+
+
+@router.post("/workspaces/{workspace_id}/model-catalog", response_model=ModelCatalogEntryRead, status_code=status.HTTP_201_CREATED)
+def api_create_model_catalog_entry(
+    workspace_id: str,
+    payload: ModelCatalogEntryCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> ModelCatalogEntryRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    _require_routing_admin(ctx)
+    with transaction(conn):
+        row = create_model_catalog_entry(
+            ctx,
+            conn,
+            provider_slug=payload.provider_slug,
+            model=payload.model,
+            capabilities=payload.capabilities,
+            priority=payload.priority,
+            cost_input_1k=payload.cost_input_1k,
+            cost_output_1k=payload.cost_output_1k,
+            is_local=payload.is_local,
+            is_managed=payload.is_managed,
+            is_enabled=payload.is_enabled,
+        )
+    return ModelCatalogEntryRead(**row)
+
+
+@router.patch("/workspaces/{workspace_id}/model-catalog/{entry_id}", response_model=ModelCatalogEntryRead)
+def api_update_model_catalog_entry(
+    workspace_id: str,
+    entry_id: str,
+    payload: ModelCatalogEntryUpdate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> ModelCatalogEntryRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    _require_routing_admin(ctx)
+    with transaction(conn):
+        row = update_model_catalog_entry(
+            ctx,
+            conn,
+            entry_id,
+            capabilities=payload.capabilities,
+            priority=payload.priority,
+            cost_input_1k=payload.cost_input_1k,
+            cost_output_1k=payload.cost_output_1k,
+            is_local=payload.is_local,
+            is_managed=payload.is_managed,
+            is_enabled=payload.is_enabled,
+        )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Catalog entry not found")
+    return ModelCatalogEntryRead(**row)
+
+
+@router.delete("/workspaces/{workspace_id}/model-catalog/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_model_catalog_entry(
+    workspace_id: str,
+    entry_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> None:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    _require_routing_admin(ctx)
+    with transaction(conn):
+        deleted = delete_model_catalog_entry(ctx, conn, entry_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Catalog entry not found")
 
 
 @router.get("/workspaces/{workspace_id}/usage", response_model=list[UsageRecordRead])
@@ -2278,7 +2661,10 @@ def _resolve_smtp_config(
     """Return workspace SMTP config or a fallback from environment variables.
 
     The returned dict contains: host, port, use_ssl, username, password,
-    from_email. Passwords flow through but are never logged.
+    from_email, is_app_password. Passwords flow through but are never logged.
+
+    In a shared instance the legacy/global environment fallback is disabled;
+    every user must store their own SMTP credentials.
     """
 
     config = get_workspace_smtp_config(ctx, conn, include_password=True)
@@ -2291,9 +2677,14 @@ def _resolve_smtp_config(
             "password": config["password"],
             "from_email": config["from_email"],
             "has_password": config.get("has_password", bool(config.get("password"))),
+            "is_app_password": bool(config.get("is_app_password")),
         }
 
-    # Fallback to environment variables so existing deployments keep working.
+    if is_shared_instance():
+        # Shared deployments must never use a global SMTP credential.
+        return None
+
+    # Fallback to environment variables so existing single-user deployments keep working.
     host = os.getenv("FABERLOOM_SMTP_SERVER")
     port_raw = os.getenv("FABERLOOM_SMTP_PORT")
     username = os.getenv("FABERLOOM_IMAP_USER") or os.getenv("FABERLOOM_SMTP_USER")
@@ -2316,6 +2707,7 @@ def _resolve_smtp_config(
         "password": password,
         "from_email": from_email or username,
         "has_password": bool(password),
+        "is_app_password": False,
     }
 
 
@@ -2330,8 +2722,15 @@ def api_sync_mail(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    account = get_default_email_account(ctx, conn)
+    # In shared mode each user must have their own default IMAP account.
+    account_user = ctx.user_id if is_shared_instance() else None
+    account = get_default_email_account(ctx, conn, user_id=account_user)
     if account is not None:
+        if is_shared_instance() and account.get("auth_type") == "password" and not account.get("is_app_password"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Shared instance requires an app-password for IMAP password authentication.",
+            )
         try:
             folders = json.loads(account["folders_json"] or '["INBOX"]')
         except json.JSONDecodeError:
@@ -2345,6 +2744,11 @@ def api_sync_mail(
             "mailbox": mailbox,
             "account_id": account["id"],
         }
+    elif is_shared_instance():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="IMAP credentials are not configured. Add your own app-password account in Admin > IMAP.",
+        )
     else:
         # Fallback to environment variables for legacy / headless deployments.
         try:
@@ -2647,6 +3051,13 @@ def api_update_smtp_config(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    if is_shared_instance() and payload.is_app_password == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Shared instance requires an app-password for SMTP authentication.",
+        )
+
     updated = set_workspace_smtp_config(
         ctx,
         conn,
@@ -2656,6 +3067,7 @@ def api_update_smtp_config(
         username=payload.username,
         password=payload.password,
         from_email=payload.from_email,
+        is_app_password=payload.is_app_password,
     )
     return SMTPConfigRead(
         host=updated["host"],
@@ -2664,6 +3076,7 @@ def api_update_smtp_config(
         username=updated["username"],
         has_password=bool(updated.get("has_password")),
         from_email=updated["from_email"],
+        is_app_password=bool(updated.get("is_app_password")),
     )
 
 
@@ -2733,6 +3146,13 @@ def api_create_imap_config(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    if is_shared_instance() and payload.auth_type == "password" and not payload.is_app_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Shared instance requires an app-password for IMAP password authentication.",
+        )
+
     row = create_email_account(
         ctx,
         conn,
@@ -2746,6 +3166,7 @@ def api_create_imap_config(
         auth_type=payload.auth_type,
         read_only=payload.read_only,
         is_default=payload.is_default,
+        is_app_password=payload.is_app_password,
     )
     return EmailAccountRead(**row)
 
@@ -2764,6 +3185,13 @@ def api_update_imap_config(
     existing = get_email_account(ctx, conn, account_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+
+    if is_shared_instance() and payload.auth_type == "password" and payload.is_app_password == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Shared instance requires an app-password for IMAP password authentication.",
+        )
+
     row = update_email_account(
         ctx,
         conn,
@@ -2778,6 +3206,7 @@ def api_update_imap_config(
         auth_type=payload.auth_type,
         read_only=payload.read_only,
         is_default=payload.is_default,
+        is_app_password=payload.is_app_password,
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
@@ -2796,6 +3225,43 @@ def api_delete_imap_config(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if not delete_email_account(ctx, conn, account_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+
+
+@router.post("/workspaces/{workspace_id}/admin/imap-config/{account_id}/rotate", response_model=EmailAccountRead)
+def api_rotate_imap_credentials(
+    workspace_id: str,
+    account_id: str,
+    payload: EmailAccountRotateRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> EmailAccountRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    existing = get_email_account(ctx, conn, account_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+
+    if is_shared_instance() and existing.get("user_id") != ctx.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only rotate credentials for your own email account in a shared instance.",
+        )
+
+    row = rotate_email_account_credentials(ctx, conn, account_id, payload.password)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email account not found")
+
+    audit_event = audit_writer.write(
+        ctx,
+        conn,
+        action="mail.imap_credentials_rotated",
+        payload={"account_id": account_id, "username": existing.get("username")},
+        mirror_jsonl=False,
+    )
+    _mirror_audit(audit_event)
+    return EmailAccountRead(**row)
 
 
 @router.get("/workspaces/{workspace_id}/email-signature", response_model=dict[str, str])
@@ -2902,14 +3368,15 @@ def api_edit_routine_run(
         current_output = {}
 
     with transaction(conn):
-        if payload.approved_by:
+        if payload.approved_by is not None:
+            # E2-0: approved_by must reflect the authenticated actor, not a client value.
             updated = update_routine_run_output(
                 ctx,
                 conn,
                 run_id,
                 output_json=current_output,
                 edited_output_json=payload.edited_output_json,
-                approved_by=payload.approved_by,
+                approved_by=ctx.resolved_actor_id(),
             )
         else:
             updated = record_routine_run_edit(
@@ -2927,6 +3394,7 @@ def api_edit_routine_run(
         conn,
         action="routine_run.edited",
         payload={"run_id": run_id, "approved_by": payload.approved_by},
+        correlation_id=run_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -2939,7 +3407,6 @@ def api_approve_routine_run(
     run_id: str,
     request: Request,
     payload: RoutineRunApproveRequest | None = None,
-    approved_by: str | None = None,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> RoutineRunRead:
     ctx = context_from_request(request, workspace_id=workspace_id)
@@ -2948,11 +3415,11 @@ def api_approve_routine_run(
 
     request_payload = payload or RoutineRunApproveRequest()
     with transaction(conn):
+        # E2-0: approved_by is taken from the authenticated Context, never from the client.
         updated = approve_routine_run(
             ctx,
             conn,
             run_id,
-            approved_by=approved_by,
             reason=request_payload.reason,
             urgency=request_payload.urgency,
         )
@@ -2970,6 +3437,7 @@ def api_approve_routine_run(
             "reason": request_payload.reason,
             "urgency": request_payload.urgency,
         },
+        correlation_id=run_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -3000,6 +3468,7 @@ def api_reject_routine_run(
         conn,
         action="routine_run.rejected",
         payload={"run_id": run_id, "reason": request_payload.reason},
+        correlation_id=run_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -3056,8 +3525,10 @@ def api_promote_gold_candidate(
                 conn,
                 candidate_id,
                 learned_output_json=payload.learned_output_json,
-                approved_by=payload.approved_by,
+                approved_by=ctx.resolved_actor_id(),
                 verified_by=payload.verified_by,
+                target_state=payload.target_state,
+                actor_role_at_decision=ctx.actor_role_at_decision,
             )
     except ValueError as exc:
         raise HTTPException(
@@ -3072,7 +3543,13 @@ def api_promote_gold_candidate(
         ctx,
         conn,
         action="gold_candidate.promoted",
-        payload={"candidate_id": candidate_id, "approved_by": updated.get("approved_by")},
+        payload={
+            "candidate_id": candidate_id,
+            "approved_by": updated.get("approved_by"),
+            "state": updated.get("state"),
+            "target_state": payload.target_state,
+        },
+        correlation_id=candidate_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -3107,6 +3584,7 @@ def api_apply_gold_to_routine(
             "candidate_id": candidate_id,
             "routine_id": result["routine"]["id"],
         },
+        correlation_id=candidate_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -3184,6 +3662,7 @@ def api_create_routine(
                 "category": created["category"],
                 "preset_id": created.get("preset_id"),
             },
+            correlation_id=created["id"],
             mirror_jsonl=False,
         )
 
@@ -3308,6 +3787,7 @@ def api_update_routine(
                 "fields": list(updates.keys()),
                 "approval_cleared": approval_cleared,
             },
+            correlation_id=routine_id,
             mirror_jsonl=False,
         )
 
@@ -3335,6 +3815,7 @@ def api_delete_routine(
             conn,
             action="routine.deleted",
             payload={"routine_id": routine_id, "confirmed_by": ctx.resolved_actor_id()},
+            correlation_id=routine_id,
             mirror_jsonl=False,
         )
     _mirror_audit(audit_event)
@@ -3345,7 +3826,6 @@ def api_approve_routine(
     workspace_id: str,
     routine_id: str,
     request: Request,
-    approved_by: str | None = None,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> RoutineRead:
     ctx = context_from_request(request, workspace_id=workspace_id)
@@ -3355,7 +3835,8 @@ def api_approve_routine(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
 
     with transaction(conn):
-        updated = approve_routine(ctx, conn, routine_id, approved_by=approved_by)
+        # E2-0: approved_by is taken from the authenticated Context, never from the client.
+        updated = approve_routine(ctx, conn, routine_id)
 
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
@@ -3365,6 +3846,7 @@ def api_approve_routine(
         conn,
         action="routine.approved",
         payload={"routine_id": routine_id, "approved_by": updated.get("approved_by")},
+        correlation_id=routine_id,
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -3509,6 +3991,7 @@ def api_import_faberloom_routines(
                     "routine_ids": [r["id"] for r in imported],
                     "item_ids": payload.imports,
                 },
+                correlation_id=imported[0]["id"] if imported else None,
                 mirror_jsonl=False,
             )
 

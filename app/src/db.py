@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .context import Context
+from .context import Context, enforce_tenant_scoped
 from .models import MIGRATIONS, SCHEMA_VERSION, RoutineCreate, WorkspaceCreate
 from .router import cost as router_cost
 from .router.config_store import decrypt_value, encrypt_value
@@ -98,6 +98,7 @@ WORKSPACE_COLUMNS = """
     inherits_kb,
     confidential,
     email_signature,
+    is_canary,
     created_at,
     updated_at
 """
@@ -267,6 +268,22 @@ def recompute_all_workspace_hmacs(conn: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_v22_correlation_id(conn: sqlite3.Connection) -> None:
+    """Idempotently add correlation_id to audit_log for E2-0.
+
+    The v1 schema base already includes the column for new databases; this
+    hook ensures existing databases receive the column without failing on
+    duplicate-column errors.
+    """
+
+    row = conn.execute(
+        "SELECT 1 FROM pragma_table_info('audit_log') WHERE name = ?",
+        ("correlation_id",),
+    ).fetchone()
+    if row is None:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN correlation_id TEXT;")
+
+
 def _migrate_v19_data(conn: sqlite3.Connection) -> None:
     """Backfill per-user data for the v19 schema change.
 
@@ -421,6 +438,8 @@ def initialize_database(conn: sqlite3.Connection | None = None) -> None:
             )
             if version == 19:
                 _migrate_v19_data(conn)
+            if version == 22:
+                _migrate_v22_correlation_id(conn)
         recompute_all_workspace_hmacs(conn)
         conn.commit()
     except Exception:
@@ -656,6 +675,273 @@ def create_workspace(
     return created
 
 
+# -----------------------------------------------------------------------------
+# E2-4: Workspace routing policy and model catalog
+# -----------------------------------------------------------------------------
+
+
+def get_routing_policy(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    workspace_id: str | None = None,
+) -> dict[str, Any]:
+    """Return the routing policy for a workspace, creating a default row if absent."""
+
+    ws_id = workspace_id or ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"""
+        SELECT {WORKSPACE_ROUTING_POLICY_COLUMNS}
+        FROM workspace_routing_policy
+        WHERE workspace_id = ? AND tenant_id = ?
+        """,
+        (ws_id, ctx.require_tenant()),
+    ).fetchone()
+    if row is None:
+        now = utc_now()
+        conn.execute(
+            f"""
+            INSERT INTO workspace_routing_policy (
+                workspace_id, tenant_id, provider_allowlist_json, model_allowlist_json,
+                budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (ws_id, ctx.require_tenant(), "[]", "{}", 5.0, 0, 3, 0, now),
+        )
+        row = conn.execute(
+            f"""
+            SELECT {WORKSPACE_ROUTING_POLICY_COLUMNS}
+            FROM workspace_routing_policy
+            WHERE workspace_id = ? AND tenant_id = ?
+            """,
+            (ws_id, ctx.require_tenant()),
+        ).fetchone()
+    data = row_to_dict(row)
+    data["provider_allowlist"] = json.loads(data.get("provider_allowlist_json") or "[]")
+    data["model_allowlist"] = json.loads(data.get("model_allowlist_json") or "{}")
+    return data
+
+
+def update_routing_policy(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    provider_allowlist: list[str] | None = None,
+    model_allowlist: dict[str, list[str]] | None = None,
+    budget_cap_usd: float | None = None,
+    auto_mode_enabled: bool | None = None,
+    max_auto_steps: int | None = None,
+    require_local_only: bool | None = None,
+) -> dict[str, Any]:
+    """Update the routing policy for the current scoped workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    policy = get_routing_policy(ctx, conn, workspace_id)
+    updates: dict[str, Any] = {"updated_at": utc_now()}
+    if provider_allowlist is not None:
+        updates["provider_allowlist_json"] = json.dumps(provider_allowlist, ensure_ascii=False)
+    if model_allowlist is not None:
+        updates["model_allowlist_json"] = json.dumps(model_allowlist, ensure_ascii=False)
+    if budget_cap_usd is not None:
+        updates["budget_cap_usd"] = budget_cap_usd
+    if auto_mode_enabled is not None:
+        updates["auto_mode_enabled"] = 1 if auto_mode_enabled else 0
+    if max_auto_steps is not None:
+        updates["max_auto_steps"] = max_auto_steps
+    if require_local_only is not None:
+        updates["require_local_only"] = 1 if require_local_only else 0
+
+    if not updates:
+        return policy
+
+    cols = ", ".join(f"{k} = ?" for k in updates)
+    conn.execute(
+        f"UPDATE workspace_routing_policy SET {cols} WHERE workspace_id = ? AND tenant_id = ?",
+        (*updates.values(), workspace_id, ctx.require_tenant()),
+    )
+    return get_routing_policy(ctx, conn, workspace_id)
+
+
+def list_model_catalog(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    capability: str | None = None,
+    local_only: bool = False,
+    enabled_only: bool = True,
+) -> list[dict[str, Any]]:
+    """List model catalog entries for the current scoped workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    query = f"""
+        SELECT {WORKSPACE_MODEL_CATALOG_COLUMNS}
+        FROM workspace_model_catalog
+        WHERE workspace_id = ? AND tenant_id = ?
+    """
+    params: list[Any] = [workspace_id, ctx.require_tenant()]
+    if enabled_only:
+        query += " AND is_enabled = 1"
+    if local_only:
+        query += " AND is_local = 1"
+    if capability:
+        query += " AND capabilities_json LIKE ?"
+        params.append(f'%"{capability}"%')
+    query += " ORDER BY priority ASC, provider_slug ASC, model ASC"
+    rows = conn.execute(query, params).fetchall()
+    return [_model_catalog_row_to_dict(row) for row in rows]
+
+
+def get_model_catalog_entry(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    entry_id: str,
+) -> dict[str, Any] | None:
+    """Return a single catalog entry if it belongs to the current workspace/tenant."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"""
+        SELECT {WORKSPACE_MODEL_CATALOG_COLUMNS}
+        FROM workspace_model_catalog
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+        """,
+        (entry_id, workspace_id, ctx.require_tenant()),
+    ).fetchone()
+    return _model_catalog_row_to_dict(row) if row else None
+
+
+def create_model_catalog_entry(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    provider_slug: str,
+    model: str,
+    capabilities: list[str],
+    priority: int = 100,
+    cost_input_1k: float = 0.0,
+    cost_output_1k: float = 0.0,
+    is_local: bool = False,
+    is_managed: bool = False,
+    is_enabled: bool = True,
+) -> dict[str, Any]:
+    """Insert a model catalog entry for the current scoped workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    entry_id = new_id("mce")
+    now = utc_now()
+    conn.execute(
+        f"""
+        INSERT INTO workspace_model_catalog (
+            id, workspace_id, tenant_id, provider_slug, model, capabilities_json,
+            is_enabled, priority, cost_input_1k, cost_output_1k, is_local, is_managed,
+            source_version, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entry_id,
+            workspace_id,
+            ctx.require_tenant(),
+            provider_slug,
+            model,
+            json.dumps(capabilities, ensure_ascii=False),
+            1 if is_enabled else 0,
+            priority,
+            cost_input_1k,
+            cost_output_1k,
+            1 if is_local else 0,
+            1 if is_managed else 0,
+            router_cost.PRICING_VERSION,
+            now,
+        ),
+    )
+    row = conn.execute(
+        f"""
+        SELECT {WORKSPACE_MODEL_CATALOG_COLUMNS}
+        FROM workspace_model_catalog
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+        """,
+        (entry_id, workspace_id, ctx.require_tenant()),
+    ).fetchone()
+    assert row is not None
+    return _model_catalog_row_to_dict(row)
+
+
+def update_model_catalog_entry(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    entry_id: str,
+    *,
+    capabilities: list[str] | None = None,
+    priority: int | None = None,
+    cost_input_1k: float | None = None,
+    cost_output_1k: float | None = None,
+    is_local: bool | None = None,
+    is_managed: bool | None = None,
+    is_enabled: bool | None = None,
+) -> dict[str, Any] | None:
+    """Update a model catalog entry. Returns None if not found or not owned."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    updates: dict[str, Any] = {}
+    if capabilities is not None:
+        updates["capabilities_json"] = json.dumps(capabilities, ensure_ascii=False)
+    if priority is not None:
+        updates["priority"] = priority
+    if cost_input_1k is not None:
+        updates["cost_input_1k"] = cost_input_1k
+    if cost_output_1k is not None:
+        updates["cost_output_1k"] = cost_output_1k
+    if is_local is not None:
+        updates["is_local"] = 1 if is_local else 0
+    if is_managed is not None:
+        updates["is_managed"] = 1 if is_managed else 0
+    if is_enabled is not None:
+        updates["is_enabled"] = 1 if is_enabled else 0
+
+    if not updates:
+        return get_model_catalog_entry(ctx, conn, entry_id)
+
+    cols = ", ".join(f"{k} = ?" for k in updates)
+    cursor = conn.execute(
+        f"""
+        UPDATE workspace_model_catalog
+        SET {cols}
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+        """,
+        (*updates.values(), entry_id, workspace_id, ctx.require_tenant()),
+    )
+    if cursor.rowcount == 0:
+        return None
+    return get_model_catalog_entry(ctx, conn, entry_id)
+
+
+def delete_model_catalog_entry(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    entry_id: str,
+) -> bool:
+    """Delete a model catalog entry. Returns True if deleted."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    cursor = conn.execute(
+        "DELETE FROM workspace_model_catalog WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+        (entry_id, workspace_id, ctx.require_tenant()),
+    )
+    return cursor.rowcount > 0
+
+
+def _model_catalog_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = row_to_dict(row)
+    caps = data.get("capabilities_json") or '["text"]'
+    try:
+        data["capabilities"] = json.loads(caps)
+    except Exception:
+        data["capabilities"] = ["text"]
+    data.pop("capabilities_json", None)
+    return data
+
+
 def get_workspace_field_aliases(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -810,6 +1096,7 @@ def insert_audit_log(
     routine_version: str | None = None,
     skill_version: str | None = None,
     source_version: str | None = None,
+    correlation_id: str | None = None,
     created_at: str | None = None,
 ) -> None:
     """Insert an audit event row.
@@ -834,9 +1121,10 @@ def insert_audit_log(
             skill_version,
             schema_version,
             source_version,
+            correlation_id,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -852,6 +1140,7 @@ def insert_audit_log(
             skill_version,
             SCHEMA_VERSION,
             source_version,
+            correlation_id,
             created_at or utc_now(),
         ),
     )
@@ -918,6 +1207,39 @@ USAGE_RECORD_COLUMNS = """
     schema_version,
     source_version,
     approved_by,
+    run_id,
+    step_index,
+    chain_id,
+    capability,
+    created_at
+"""
+
+WORKSPACE_ROUTING_POLICY_COLUMNS = """
+    workspace_id,
+    tenant_id,
+    provider_allowlist_json,
+    model_allowlist_json,
+    budget_cap_usd,
+    auto_mode_enabled,
+    max_auto_steps,
+    require_local_only,
+    updated_at
+"""
+
+WORKSPACE_MODEL_CATALOG_COLUMNS = """
+    id,
+    workspace_id,
+    tenant_id,
+    provider_slug,
+    model,
+    capabilities_json,
+    is_enabled,
+    priority,
+    cost_input_1k,
+    cost_output_1k,
+    is_local,
+    is_managed,
+    source_version,
     created_at
 """
 
@@ -939,6 +1261,7 @@ def create_chat(
 ) -> dict[str, Any]:
     """Insert a chat scoped to the current workspace and user."""
 
+    enforce_tenant_scoped(ctx)
     workspace_id = ctx.require_scoped_workspace()
     chat_id = new_id("chat")
     now = utc_now()
@@ -1202,6 +1525,10 @@ def insert_usage_record(
     request_json: dict[str, Any],
     response_json: dict[str, Any],
     source_version: str | None = router_cost.PRICING_VERSION,
+    run_id: str | None = None,
+    step_index: int | None = None,
+    chain_id: str | None = None,
+    capability: str | None = None,
 ) -> dict[str, Any]:
     workspace_id = ctx.require_scoped_workspace()
     record_id = new_id("use")
@@ -1233,9 +1560,13 @@ def insert_usage_record(
             schema_version,
             source_version,
             approved_by,
+            run_id,
+            step_index,
+            chain_id,
+            capability,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record_id,
@@ -1261,6 +1592,10 @@ def insert_usage_record(
             SCHEMA_VERSION,
             source_version,
             None,
+            run_id,
+            step_index,
+            chain_id,
+            capability,
             now,
         ),
     )
@@ -1365,6 +1700,7 @@ def create_routine_run(
 ) -> dict[str, Any]:
     """Insert a routine_run row sealed to the current workspace."""
 
+    enforce_tenant_scoped(ctx)
     workspace_id = ctx.require_scoped_workspace()
     if task_type is None:
         routine = get_routine(ctx, conn, routine_id)
@@ -1549,6 +1885,7 @@ MAIL_MESSAGE_COLUMNS = """
     status,
     category,
     draft_id,
+    account_id,
     schema_version,
     source_version,
     approved_by,
@@ -1577,6 +1914,7 @@ def create_mail_message(
     UNIQUE(workspace_id, account, mail_uid) constraint.
     """
 
+    enforce_tenant_scoped(ctx)
     workspace_id = ctx.require_scoped_workspace()
     now = utc_now()
 
@@ -1791,6 +2129,9 @@ GOLD_CANDIDATE_COLUMNS = """
     schema_version,
     source_version,
     approved_by,
+    verified_by,
+    state,
+    actor_role_at_decision,
     created_at,
     updated_at
 """
@@ -1821,6 +2162,7 @@ def create_routine(
 ) -> dict[str, Any]:
     """Insert a routine scoped to the current workspace."""
 
+    enforce_tenant_scoped(ctx)
     workspace_id = ctx.require_scoped_workspace()
     routine_id = new_id("rtn")
     now = utc_now()
@@ -1893,9 +2235,10 @@ def _upsert_gold_candidate_from_run(
         INSERT INTO gold_candidate (
             id, workspace_id, tenant_id, routine_id, run_id, edit_pct,
             input_json, output_json, learned_output_json, approved,
-            schema_version, source_version, approved_by, created_at, updated_at
+            state, actor_role_at_decision, schema_version, source_version,
+            approved_by, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET
             edit_pct = excluded.edit_pct,
             input_json = excluded.input_json,
@@ -1914,6 +2257,8 @@ def _upsert_gold_candidate_from_run(
             run["output_json"],
             json.dumps({}, ensure_ascii=False),
             0,
+            "candidate",
+            ctx.actor_role_at_decision,
             SCHEMA_VERSION,
             run.get("source_version") or "v1",
             run.get("approved_by"),
@@ -2498,6 +2843,7 @@ SMTP_CONFIG_COLUMNS = """
     username,
     password,
     from_email,
+    is_app_password,
     created_at,
     updated_at
 """
@@ -2530,6 +2876,7 @@ def get_workspace_smtp_config(
         return None
     data = row_to_dict(row)
     data["has_password"] = bool(data.get("password"))
+    data["is_app_password"] = int(data.get("is_app_password") or 0)
     if include_password:
         data["password"] = decrypt_value(data.get("password")) or ""
     else:
@@ -2546,11 +2893,13 @@ def set_workspace_smtp_config(
     username: str,
     password: str,
     from_email: str,
+    is_app_password: int | None = None,
 ) -> dict[str, Any]:
     """Upsert the per-user workspace SMTP configuration.
 
     The password is encrypted with the master key before persistence.
     If ``password`` is empty, the existing encrypted password is kept.
+    If ``is_app_password`` is None, the existing value is kept.
     """
 
     workspace_id = ctx.require_scoped_workspace()
@@ -2559,23 +2908,26 @@ def set_workspace_smtp_config(
 
     with transaction(conn):
         existing_row = conn.execute(
-            "SELECT password FROM workspace_smtp_config WHERE workspace_id = ? AND user_id = ? AND tenant_id = ?",
+            "SELECT password, is_app_password FROM workspace_smtp_config WHERE workspace_id = ? AND user_id = ? AND tenant_id = ?",
             (workspace_id, user_id, ctx.require_tenant()),
         ).fetchone()
         existing_encrypted = existing_row["password"] if existing_row else None
+        existing_app_password = existing_row["is_app_password"] if existing_row else 0
 
         if password:
             encrypted_password = encrypt_value(password)
         else:
             encrypted_password = existing_encrypted
 
+        final_app_password = is_app_password if is_app_password is not None else existing_app_password
+
         conn.execute(
             """
             INSERT INTO workspace_smtp_config (
                 workspace_id, tenant_id, user_id, host, port, use_ssl, username, password, from_email,
-                created_at, updated_at
+                is_app_password, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(workspace_id, user_id) DO UPDATE SET
                 host = excluded.host,
                 port = excluded.port,
@@ -2583,9 +2935,10 @@ def set_workspace_smtp_config(
                 username = excluded.username,
                 password = COALESCE(excluded.password, workspace_smtp_config.password),
                 from_email = excluded.from_email,
+                is_app_password = excluded.is_app_password,
                 updated_at = excluded.updated_at
             """,
-            (workspace_id, ctx.require_tenant(), user_id, host, port, 1 if use_ssl else 0, username, encrypted_password, from_email, now, now),
+            (workspace_id, ctx.require_tenant(), user_id, host, port, 1 if use_ssl else 0, username, encrypted_password, from_email, final_app_password, now, now),
         )
     return get_workspace_smtp_config(ctx, conn)
 
@@ -2609,6 +2962,8 @@ EMAIL_ACCOUNT_COLUMNS = """
     auth_type,
     read_only,
     is_default,
+    is_app_password,
+    rotated_at,
     schema_version,
     source_version,
     created_at,
@@ -2630,6 +2985,7 @@ def create_email_account(
     auth_type: str,
     read_only: int,
     is_default: int,
+    is_app_password: int = 1,
 ) -> dict[str, Any]:
     """Insert an email account scoped to the current workspace.
 
@@ -2653,9 +3009,9 @@ def create_email_account(
             INSERT INTO email_account (
                 id, workspace_id, tenant_id, user_id, label, provider, host, port,
                 username, password, folders_json, auth_type, read_only, is_default,
-                schema_version, source_version, created_at, updated_at
+                is_app_password, schema_version, source_version, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -2672,6 +3028,7 @@ def create_email_account(
                 auth_type,
                 read_only,
                 is_default,
+                is_app_password,
                 SCHEMA_VERSION,
                 "v1",
                 now,
@@ -2690,6 +3047,15 @@ def create_email_account(
     data = row_to_dict(row)
     data["password"] = decrypt_value(data.get("password"))
     data["has_password"] = bool(data.get("password"))
+    data["is_app_password"] = int(data.get("is_app_password") or 0)
+    return data
+
+
+def _mask_email_account(row: Any) -> dict[str, Any]:
+    data = row_to_dict(row)
+    data["has_password"] = bool(data.get("password"))
+    data["is_app_password"] = int(data.get("is_app_password") or 0)
+    data["password"] = ""
     return data
 
 
@@ -2712,13 +3078,7 @@ def list_email_accounts(
         """,
         (workspace_id, ctx.tenant_id),
     ).fetchall()
-    result = []
-    for row in rows:
-        data = row_to_dict(row)
-        data["has_password"] = bool(data.get("password"))
-        data["password"] = ""
-        result.append(data)
-    return result
+    return [_mask_email_account(row) for row in rows]
 
 
 def get_email_account(
@@ -2742,33 +3102,38 @@ def get_email_account(
     ).fetchone()
     if row is None:
         return None
-    data = row_to_dict(row)
-    data["has_password"] = bool(data.get("password"))
-    data["password"] = ""
-    return data
+    return _mask_email_account(row)
 
 
 def get_default_email_account(
     ctx: Context,
     conn: sqlite3.Connection,
+    user_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Return the default email account for the workspace, if any."""
+    """Return the default email account for the workspace, optionally scoped to a user."""
 
     workspace_id = ctx.require_scoped_workspace()
+    params: list[Any] = [workspace_id, ctx.tenant_id]
+    user_filter = ""
+    if user_id is not None:
+        user_filter = "AND user_id = ?"
+        params.append(user_id)
     row = conn.execute(
         f"""
         SELECT {EMAIL_ACCOUNT_COLUMNS}
         FROM email_account
-        WHERE workspace_id = ? AND tenant_id = ? AND is_default = 1
+        WHERE workspace_id = ? AND tenant_id = ? AND is_default = 1 {user_filter}
         ORDER BY created_at ASC
         LIMIT 1
         """,
-        (workspace_id, ctx.tenant_id),
+        params,
     ).fetchone()
     if row is None:
         return None
     data = row_to_dict(row)
     data["password"] = decrypt_value(data.get("password"))
+    data["has_password"] = bool(data.get("password"))
+    data["is_app_password"] = int(data.get("is_app_password") or 0)
     return data
 
 
@@ -2787,10 +3152,12 @@ def update_email_account(
     auth_type: str,
     read_only: int,
     is_default: int,
+    is_app_password: int | None = None,
 ) -> dict[str, Any] | None:
     """Update an existing email account. Password is encrypted on write.
 
     If ``password`` is empty, the existing encrypted password is kept.
+    If ``is_app_password`` is None, the existing value is kept.
     """
 
     workspace_id = ctx.require_scoped_workspace()
@@ -2798,14 +3165,16 @@ def update_email_account(
 
     with transaction(conn):
         existing_row = conn.execute(
-            "SELECT password FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+            "SELECT password, is_app_password FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             (account_id, workspace_id, ctx.tenant_id),
         ).fetchone()
         if existing_row is None:
             return None
         existing_encrypted = existing_row["password"]
+        existing_app_password = existing_row["is_app_password"]
 
         encrypted_password = encrypt_value(password) if password else existing_encrypted
+        final_app_password = is_app_password if is_app_password is not None else existing_app_password
 
         if is_default:
             conn.execute(
@@ -2817,7 +3186,7 @@ def update_email_account(
             UPDATE email_account
             SET label = ?, provider = ?, host = ?, port = ?, username = ?,
                 password = ?, folders_json = ?, auth_type = ?, read_only = ?,
-                is_default = ?, updated_at = ?
+                is_default = ?, is_app_password = ?, updated_at = ?
             WHERE id = ? AND workspace_id = ? AND tenant_id = ?
             """,
             (
@@ -2831,11 +3200,42 @@ def update_email_account(
                 auth_type,
                 read_only,
                 is_default,
+                final_app_password,
                 now,
                 account_id,
                 workspace_id,
                 ctx.tenant_id,
             ),
+        )
+    return get_email_account(ctx, conn, account_id)
+
+
+def rotate_email_account_credentials(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    account_id: str,
+    password: str,
+) -> dict[str, Any] | None:
+    """Rotate the password of an email account and record the rotation time."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    now = utc_now()
+    encrypted_password = encrypt_value(password)
+
+    with transaction(conn):
+        existing = conn.execute(
+            "SELECT id FROM email_account WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+            (account_id, workspace_id, ctx.tenant_id),
+        ).fetchone()
+        if existing is None:
+            return None
+        conn.execute(
+            """
+            UPDATE email_account
+            SET password = ?, rotated_at = ?, updated_at = ?
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (encrypted_password, now, now, account_id, workspace_id, ctx.tenant_id),
         )
     return get_email_account(ctx, conn, account_id)
 

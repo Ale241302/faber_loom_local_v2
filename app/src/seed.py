@@ -7,6 +7,7 @@ persistent local state. No business facts are invented here.
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from .audit import audit_writer
 from .context import Context, system_context
@@ -17,6 +18,10 @@ from .models import AuditEvent, WorkspaceCreate
 
 DEMO_WORKSPACE_NAME = "MWT Demo"
 DEMO_WORKSPACE_SLUG = "mwt-demo"
+
+CANARY_WORKSPACE_NAME = "Canary Tenant"
+CANARY_WORKSPACE_SLUG = "canary"
+CANARY_TENANT_ID = "canary"
 
 
 def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
@@ -97,5 +102,58 @@ TEL-DEMO-003,Gabardina stretch,15.75,USD,85,2026-06-01,2026-09-30
             source_version="demo-v1",
             approved_by="seed",
         )
+
+    return created
+
+
+def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    """Seed a recognizable canary tenant/workspace for isolation regression tests.
+
+    The canary workspace is intentionally kept outside the default tenant so that
+    E2 isolation tests have a persistent, distinguishable row to probe. It does
+    not carry real business data.
+    """
+
+    from .context import DEFAULT_TENANT_ID
+
+    canary_ctx = system_context(tenant_id=CANARY_TENANT_ID)
+    existing = get_workspace_by_slug(canary_ctx, conn, CANARY_WORKSPACE_SLUG)
+    if existing is not None:
+        return existing
+
+    event: AuditEvent | None = None
+    with transaction(conn):
+        created = create_workspace(
+            canary_ctx,
+            conn,
+            WorkspaceCreate(name=CANARY_WORKSPACE_NAME, slug=CANARY_WORKSPACE_SLUG),
+        )
+        conn.execute(
+            "UPDATE workspace SET is_canary = 1 WHERE id = ?",
+            (created["id"],),
+        )
+        workspace_ctx = Context(
+            workspace_id=created["id"],
+            tenant_id=created.get("tenant_id") or DEFAULT_TENANT_ID,
+            user_id=created.get("user_id") or "local",
+            actor_id=created.get("actor_id") or "local",
+            actor_role_at_decision=created.get("actor_role_at_decision") or "owner",
+        )
+        event = audit_writer.write(
+            workspace_ctx,
+            conn,
+            action="workspace.seeded",
+            payload={
+                "workspace_id": created["id"],
+                "name": created["name"],
+                "slug": created["slug"],
+                "tenant_id": CANARY_TENANT_ID,
+                "is_canary": True,
+            },
+            mirror_jsonl=False,
+        )
+
+    if event is not None:
+        audit_writer.mirror(event)
 
     return created

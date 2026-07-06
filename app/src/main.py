@@ -20,10 +20,10 @@ from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .foundation import foundation_router, init_foundation_db
 from .db import db_session, initialize_database
-from .features import is_email_connector_enabled
+from .features import is_email_connector_enabled, is_shared_instance
 from .models import FeaturesRead
 from .router.config_store import load_env_file
-from .seed import seed_demo_workspace
+from .seed import seed_canary_workspace, seed_demo_workspace
 from .update import load_trusted_update_keys
 
 
@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     with db_session() as conn:
         initialize_database(conn)
         seed_demo_workspace(conn)
+        seed_canary_workspace(conn)
     init_foundation_db()
     load_trusted_update_keys()
     yield
@@ -131,7 +132,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/features", response_model=FeaturesRead)
     def features():
-        return FeaturesRead(email_connector_enabled=is_email_connector_enabled())
+        return FeaturesRead(
+            email_connector_enabled=is_email_connector_enabled(),
+            shared_instance=is_shared_instance(),
+        )
 
     @app.get("/", include_in_schema=False)
     def index():

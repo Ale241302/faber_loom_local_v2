@@ -439,6 +439,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder 
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
+  const [mode, setMode] = useState("manual");
   const [showModelPicker, setShowModelPicker] = useState(false);
 
   const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
@@ -448,8 +449,8 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder 
     event.preventDefault();
     const text = draft.trim();
     if (!text || disabled) return;
-    const options = {};
-    if (provider && model) {
+    const options = { mode };
+    if (mode === "manual" && provider && model) {
       options.provider_slug = provider;
       options.model = model;
     }
@@ -476,28 +477,37 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder 
     <div className="composer">
       <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled}/>
       <div className="composer-actions">
-        <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor">
-          <Icon name="route" size={16}/>{provider ? (PROVIDER_LABELS[provider] || provider) : "Auto"}
+        <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
+          <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
         </button>
         <button type="submit" className="send-button" disabled={disabled || !draft.trim()}><Icon name="send" size={16}/>Enviar</button>
       </div>
     </div>
     {showModelPicker && <div className="composer-picker">
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
-          Proveedor
-          <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
-            <option value="">Auto (router)</option>
-            {availableProviders.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+          Modo
+          <select style={S.select} value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="manual">Manual</option>
+            <option value="auto">Auto</option>
           </select>
         </label>
-        <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
-          Modelo
-          <select style={S.select} value={model} onChange={(e) => setModel(e.target.value)} disabled={!provider}>
-            <option value="">Seleccionar</option>
-            {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </label>
+        {mode === "manual" && <>
+          <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
+            Proveedor
+            <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
+              <option value="">Auto (router)</option>
+              {availableProviders.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+            </select>
+          </label>
+          <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
+            Modelo
+            <select style={S.select} value={model} onChange={(e) => setModel(e.target.value)} disabled={!provider}>
+              <option value="">Seleccionar</option>
+              {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+        </>}
         <button type="button" style={{ ...S.button, marginLeft: "auto" }} onClick={() => setShowModelPicker(false)}>Cerrar</button>
       </div>
     </div>}
@@ -724,7 +734,7 @@ function SpaceView({ activeWorkspace }) {
       };
       setMessages((prev) => [...prev, tempMessage]);
 
-      const body = { message: text };
+      const body = { message: text, mode: options.mode || "manual" };
       if (options.provider_slug && options.model) {
         body.provider_slug = options.provider_slug;
         body.model = options.model;
@@ -780,8 +790,10 @@ function SpaceView({ activeWorkspace }) {
               const requested = r.requested_provider_slug || r.requested_model
                 ? `${r.requested_provider_slug || "auto"}${r.requested_model ? "/" + r.requested_model : ""}`
                 : null;
-              const actual = `${r.provider_slug}/${r.model}`;
-              const routeLabel = requested && requested !== actual
+              const actual = r.mode === "auto" && r.chain_id
+                ? `auto · ${r.provider_slug}/${r.model} · ${(r.steps || []).length} pasos`
+                : `${r.provider_slug}/${r.model}`;
+              const routeLabel = requested && requested !== actual && r.mode !== "auto"
                 ? `${requested} → ${actual}`
                 : actual;
               const budgetUsd = typeof r.budget_usd === "number" ? r.budget_usd : (r.cost_usd || 0);
@@ -1424,7 +1436,7 @@ function RoutinesView({ activeWorkspace }) {
     if (!window.confirm(`¿Aprobar la rutina "${routine.name}"? Una vez aprobada podrá ejecutarse.`)) return;
     setError(null);
     try {
-      await apiPost(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}/approve?approved_by=local`);
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/routines/${routine.id}/approve`);
       await load();
       window.dispatchEvent(new CustomEvent("faberloom-refresh"));
     } catch (err) {
@@ -2107,8 +2119,8 @@ function AuditHistoryPanel({ activeWorkspace }) {
   </section>;
 }
 
-const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "" };
-const IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0 };
+const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "", is_app_password: 1 };
+const IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0, is_app_password: 1 };
 
 function IMAPConfigPanel({ activeWorkspace }) {
   const [accounts, setAccounts] = useState([]);
@@ -2156,6 +2168,7 @@ function IMAPConfigPanel({ activeWorkspace }) {
       auth_type: account.auth_type || "password",
       read_only: account.read_only ?? 1,
       is_default: account.is_default ?? 0,
+      is_app_password: account.is_app_password ?? 1,
     });
   };
 
@@ -2170,6 +2183,7 @@ function IMAPConfigPanel({ activeWorkspace }) {
         port: Number(form.port),
         read_only: Number(form.read_only),
         is_default: Number(form.is_default),
+        is_app_password: Number(form.is_app_password),
       };
       if (editing) {
         await apiPut(`/api/workspaces/${activeWorkspace.id}/admin/imap-config/${editing}`, payload);
@@ -2217,6 +2231,12 @@ function IMAPConfigPanel({ activeWorkspace }) {
           <Toggle checked={!!form.read_only} onChange={(checked) => update("read_only", checked ? 1 : 0)}/>
           Solo lectura
         </div>
+        {form.auth_type === "password" && (
+          <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+            <Toggle checked={!!form.is_app_password} onChange={(checked) => update("is_app_password", checked ? 1 : 0)}/>
+            Es app-password (no la contraseña principal)
+          </div>
+        )}
         <div style={S.inlineGroup}>
           <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving || (!editing && !form.password)}>{saving ? "Guardando…" : (editing ? "Actualizar" : "Agregar")}</button>
           {editing && <button type="button" style={S.button} onClick={reset}>Cancelar</button>}
@@ -2259,6 +2279,7 @@ function SMTPConfigPanel({ activeWorkspace }) {
         username: cfg.username || "",
         password: cfg.password || "",
         from_email: cfg.from_email || "",
+        is_app_password: cfg.is_app_password ?? 1,
       });
     } catch (err) {
       // 404 is expected when no config has been saved yet.
@@ -2285,6 +2306,7 @@ function SMTPConfigPanel({ activeWorkspace }) {
       const saved = await apiPut(`/api/workspaces/${activeWorkspace.id}/admin/smtp-config`, {
         ...config,
         port: Number(config.port),
+        is_app_password: Number(config.is_app_password),
       });
       setConfig({
         host: saved.host || "",
@@ -2293,6 +2315,7 @@ function SMTPConfigPanel({ activeWorkspace }) {
         username: saved.username || "",
         password: saved.password || "",
         from_email: saved.from_email || "",
+        is_app_password: saved.is_app_password ?? 1,
       });
       setSuccess("Configuración SMTP guardada.");
     } catch (err) {
@@ -2331,6 +2354,10 @@ function SMTPConfigPanel({ activeWorkspace }) {
         </div>
         <label style={S.label}>Usuario<input style={S.input} value={config.username} onChange={(e) => update("username", e.target.value)}/></label>
         <label style={S.label}>Contraseña<input type="password" style={S.input} value={config.password} onChange={(e) => update("password", e.target.value)} placeholder="No se imprime en logs"/></label>
+        <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+          <Toggle checked={!!config.is_app_password} onChange={(checked) => update("is_app_password", checked ? 1 : 0)}/>
+          Es app-password (no la contraseña principal)
+        </div>
         <label style={S.label}>From email<input style={S.input} value={config.from_email} onChange={(e) => update("from_email", e.target.value)}/></label>
         <div style={S.inlineGroup}>
           <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>
@@ -2657,11 +2684,11 @@ function AuthGate() {
 
   useEffect(() => {
     // Sesión basada en cookie HttpOnly: no podemos leerla desde JS, así que
-    // probamos la sesión llamando a la API. Limpiamos el token legacy de
+    // pedimos la identidad resuelta al backend. Limpiamos el token legacy de
     // localStorage que ya no se usa (y que producía `Bearer undefined`).
     localStorage.removeItem("faberloom_token");
-    apiGet("/api/workspaces")
-      .then(() => setUser({ email: localStorage.getItem("faberloom_user") || "" }))
+    apiGet("/api/me")
+      .then((data) => setUser(data))
       .catch(() => {
         localStorage.removeItem("faberloom_user");
         setUser(null);
@@ -2669,9 +2696,11 @@ function AuthGate() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleLogin = (email) => {
+  const handleLogin = async (email) => {
     localStorage.setItem("faberloom_user", email);
-    setUser({ email });
+    // Resolve real identity from the backend instead of trusting localStorage.
+    const me = await apiGet("/api/me").catch(() => null);
+    setUser(me || { email });
   };
 
   const logout = () => {

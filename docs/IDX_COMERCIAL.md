@@ -1,29 +1,39 @@
-# Índice comercial — SpaceLoom SL1b
+---
+id: IDX_COMERCIAL
+version: 1.1
+status: VIGENTE
+visibility: [INTERNAL]
+domain: COMERCIAL
+tipo: index
+last_review: 2026-05-06
+stamp: VIGENTE — 2026-05-06
+aplica_a: [SHARED]
+---
 
-> **⚠️ DEMO / FALLBACK — NO SON DATOS REALES DE MWT**
->
-> Este índice y las entidades vinculadas (`ENT_COMERCIAL_*`) contienen datos
-> sintéticos usados únicamente para cerrar el hito SL1b con dogfood reproducible.
-> Los datos comerciales reales de MWT están pendientes de entrega por parte del
-> CEO (ítem PRC-01 del `PROCUREMENT_LEDGER.md`). Hasta entonces, todo campo no
-> cubierto por estas fuentes demo se reportará como `[PENDIENTE — NO INVENTAR]`.
+# IDX_COMERCIAL — Domain Index
 
-## Fuentes disponibles
+> **Health:** 9/9 archivos con contenido · 0 stubs · 0 deprecated · +1 golden HTML en docs/archivo/
+> **Última revisión:** 2026-05-06 (INDEXA proforma COMTEK + perfil cliente enriquecido lazy)
 
-| Entidad | Archivo | Tipo | Frescura default |
-|---|---|---|---|
-| Productos | `ENT_COMERCIAL_PRODUCTOS.md` | md | 90 días |
-| Precios | `ENT_COMERCIAL_PRECIOS.md` | md | 30 días |
-| Stock | `ENT_COMERCIAL_STOCK.md` | md | 7 días |
-| Equivalencias | `ENT_COMERCIAL_EQUIVALENCIAS.md` | md | 90 días |
-| Términos comerciales | `ENT_COMERCIAL_TERMINOS.md` | md | 90 días |
+## Entities
+| Entity | Archivo | Status |
+|--------|---------|--------|
+| Canal | ENT_COMERCIAL_CANAL.md | DRAFT |
+| Clientes | ENT_COMERCIAL_CLIENTES.md | DRAFT v1.1 (CEO-ONLY · §E perfiles enriquecidos: 1 entry) |
+| Modelos | ENT_COMERCIAL_MODELOS.md | DRAFT |
+| Pricing | ENT_COMERCIAL_PRICING.md | DRAFT |
+| Costos | ENT_COMERCIAL_COSTOS.md | DRAFT |
+| Finanzas | ENT_COMERCIAL_FINANZAS.md | DRAFT |
 
-## Prompts de dogfood SL1b
+## Playbooks
+| Playbook | Archivo | Status |
+|----------|---------|--------|
+| Registro Proforma | PLB_REGISTRO_PROFORMA.md | DRAFT |
 
-Ver `harness/prompts/sl1b_dogfood_prompts.json`.
-
-## Estado de sourcing
-
-- `fully_sourced`: campo duro con fuente demo.
-- `[PENDIENTE — NO INVENTAR]`: campo duro no cubierto por fuente demo; el draft
-  debe dejar el placeholder explícito.
+## Skills
+| Skill | Archivo | Status |
+|-------|---------|--------|
+| Client Service | SKILL_CLIENT_SERVICE.md | SHADOW v1.1 |
+| Demand Forecaster | SKILL_DEMAND_FORECASTER.md | SHADOW v2.1 |
+| Humanización Comunicaciones CEO | SKILL_HUMANIZE_COMMS.md | SHADOW v0.2.0 |
+| Proforma Builder | SKILL_PROFORMA_BUILDER.md | SHADOW v1.1 |

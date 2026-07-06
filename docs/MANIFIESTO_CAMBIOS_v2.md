@@ -3038,3 +3038,9 @@ Archivos:
 - docs/faberloom/SCH_FB_SKILL_MANIFEST_v2.md : refs legacy sin prefijo FB y paths `docs/gold_samples/*` corregidos a nombres canon; version 2.0→2.0.1.
 - docs/faberloom/SPEC_FB_AGENT_BUILDER_v1.md : refs legacy sin prefijo FB corregidas a nombres canon; version 2.0→2.0.1.
 - docs/faberloom/SPEC_FB_RAG_SECURITY_FIREWALL_v1.md : ref de filename `POL_FB_KR_PRIVACY_TIERS_v1.1.md` corregida a `POL_FB_KR_PRIVACY_TIERS_v1.md`; version 1.0→1.0.1.
+
+## BATCH 2026-07-06 - Catalogo maestro de skills FaberLoom (sesion Cowork)
+- ALTA docs/faberloom/ENT_FB_SKILL_CATALOG_v1.md (v1.0, DRAFT, INTERNAL)
+  Catalogo maestro: 62 skills en 13 packs (33 GAP, 29 TEMPLATE), primitivos P15-P18 propuestos,
+  prerequisitos capa 0. Fuentes: SWARM_SKILLS_GAPS_20260706 (Kimi A1-A5+B) + catalogo skills Claude.
+  Decision CEO pendiente: adoptar P15-P18 en ENT_FB_UNIT_OF_WORK_TAXONOMY v2.

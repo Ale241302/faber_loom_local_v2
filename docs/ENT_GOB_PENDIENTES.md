@@ -14,8 +14,6 @@ aplica_a: [MWT]
 
 Nuevo producto SaaS B2B bajo Muito Work Limitada. Separado de Rana Walk. Track independiente.
 
-> **Nota 2026-06-30 — STACK-01 resuelto:** el spike desktop SQLite/pywebview se registra como `SpaceLoom Spike E1` (no canónico) en `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md` y como `DEC-011` en `ENT_GOB_DECISIONES`. El track canónico sigue siendo Foundation Beta v1.3.1. Las acciones de rename/repo/domain son tracking interno del spike, no pendientes CEO-XX.
-
 | Pendiente | Prioridad | Estado |
 |-----------|-----------|--------|
 | ENT_FABERLOOM_AGENT_BUILDER v1.0 indexado | P0 | ✅ DONE 2026-04-14 |

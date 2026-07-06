@@ -20,3 +20,19 @@ def is_email_connector_enabled() -> bool:
         "true",
         "yes",
     }
+
+
+def is_shared_instance() -> bool:
+    """Return True when this deployment is the shared internal instance.
+
+    In shared mode the mail connector refuses legacy/global environment
+    credentials and requires per-user app-password configuration.
+
+    Controlled by ``FABERLOOM_SHARED_INSTANCE`` (default ``false``).
+    """
+
+    return os.getenv("FABERLOOM_SHARED_INSTANCE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }

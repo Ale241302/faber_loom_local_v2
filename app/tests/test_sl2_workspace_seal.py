@@ -57,7 +57,8 @@ def test_workspace_has_unique_seal_id(client: TestClient) -> None:
             row["seal_id"]
             for row in conn.execute("SELECT seal_id FROM workspace").fetchall()
         }
-    assert len(seals) == len(workspaces)
+        workspace_count = conn.execute("SELECT COUNT(*) FROM workspace").fetchone()[0]
+    assert len(seals) == workspace_count
 
 
 def test_seal_is_distinct_per_workspace(client: TestClient) -> None:

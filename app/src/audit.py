@@ -38,6 +38,7 @@ class AuditWriter:
         routine_version: str | None = None,
         skill_version: str | None = None,
         source_version: str | None = None,
+        correlation_id: str | None = None,
         mirror_jsonl: bool = True,
     ) -> AuditEvent:
         """Write one audit event.
@@ -50,19 +51,23 @@ class AuditWriter:
 
         outer_transaction = conn.in_transaction
         created_at = utc_now()
+        event_payload = payload or {}
+        if correlation_id is not None:
+            event_payload = {**event_payload, "correlation_id": correlation_id}
         event = AuditEvent(
             id=new_id("audit"),
             workspace_id=ctx.require_scoped_workspace(),
             actor_id=ctx.resolved_actor_id(),
             actor_role_at_decision=ctx.actor_role_at_decision,
             action=action,
-            payload=payload or {},
+            payload=event_payload,
             tenant_id=ctx.tenant_id,
             user_id=ctx.user_id,
             approved_by=approved_by,
             routine_version=routine_version,
             skill_version=skill_version,
             source_version=source_version,
+            correlation_id=correlation_id,
             created_at=created_at,
         )
 
@@ -77,6 +82,7 @@ class AuditWriter:
                 routine_version=routine_version,
                 skill_version=skill_version,
                 source_version=source_version,
+                correlation_id=correlation_id,
                 created_at=created_at,
             )
 

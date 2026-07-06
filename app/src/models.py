@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 27
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -105,6 +105,7 @@ def _validate_preset_id(value: str | None) -> str | None:
 #   enabling per-task HITL metrics and tenant-scoped gold evidence.
 # - v17 closes SL3.5: workspace.confidential flag enabling SQLCipher-backed
 #   per-workspace confidential databases and hardened seal exposure.
+# - v22 adds correlation_id to audit_log for E2-0 audit event correlation.
 # - v2 hardens the contract-first seams required before closing SL0:
 #   routine/routine_run and a uniform latent-field surface.
 # - v3 adds SL1a chat router support: usage_record table with latent fields.
@@ -220,6 +221,7 @@ MIGRATIONS: dict[int, str] = {
         skill_version TEXT,
         schema_version INTEGER NOT NULL DEFAULT 1,
         source_version TEXT,
+        correlation_id TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
     );
@@ -229,6 +231,13 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_message_chat_id ON message(chat_id);
     CREATE INDEX IF NOT EXISTS idx_draft_chat_id ON draft(chat_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_workspace_id ON audit_log(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_correlation ON audit_log(workspace_id, correlation_id);
+    """,
+    22: """
+    -- E2-0: correlation of audit events for routines, runs, and gold candidates.
+    -- Column addition is performed by _migrate_v22_correlation_id in db.py so the
+    -- migration stays idempotent when the schema-base (v1) already created it.
+    CREATE INDEX IF NOT EXISTS idx_audit_log_correlation ON audit_log(workspace_id, correlation_id);
     """,
     2: """
     ALTER TABLE workspace ADD COLUMN actor_id TEXT;
@@ -845,6 +854,81 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_mail_outbox_tenant ON mail_outbox(workspace_id, tenant_id);
     CREATE INDEX IF NOT EXISTS idx_editorial_history_tenant ON editorial_history(workspace_id, tenant_id);
     """,
+    23: """
+    -- E2-0/E2-3: permanent canary tenant gate.
+    -- Mark one workspace as the canary so isolation tests have a persistent,
+    -- recognizable row that survives reseeds and cannot be confused with
+    -- production tenants.
+    ALTER TABLE workspace ADD COLUMN is_canary INTEGER NOT NULL DEFAULT 0
+        CHECK (is_canary IN (0, 1));
+
+    UPDATE workspace SET is_canary = 1 WHERE slug = 'canary';
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_is_canary ON workspace(tenant_id, is_canary);
+    """,
+    24: """
+    -- E2-0/E2-2: second gate gold — record the independent verifier.
+    ALTER TABLE gold_candidate ADD COLUMN verified_by TEXT;
+    """,
+    25: """
+    -- E2-2: formal closure of SL5 mail connector for shared instance.
+    -- Mark credentials as app-passwords and track IMAP credential rotation.
+    ALTER TABLE email_account ADD COLUMN is_app_password INTEGER NOT NULL DEFAULT 0
+        CHECK (is_app_password IN (0, 1));
+    ALTER TABLE email_account ADD COLUMN rotated_at TEXT;
+    ALTER TABLE workspace_smtp_config ADD COLUMN is_app_password INTEGER NOT NULL DEFAULT 0
+        CHECK (is_app_password IN (0, 1));
+    """,
+    26: """
+    -- E2-3: explicit gold candidate states and role tracking.
+    ALTER TABLE gold_candidate ADD COLUMN state TEXT NOT NULL DEFAULT 'candidate'
+        CHECK (state IN ('candidate', 'active_l2', 'l3_pending', 'l3', 'rejected'));
+    ALTER TABLE gold_candidate ADD COLUMN actor_role_at_decision TEXT;
+
+    -- Existing promoted candidates become active_l2; the rest stay candidate.
+    UPDATE gold_candidate SET state = CASE WHEN approved = 1 THEN 'active_l2' ELSE 'candidate' END;
+    """,
+    27: """
+    -- E2-4: routing policy, model catalog, and step-aware cost ledger.
+    CREATE TABLE IF NOT EXISTS workspace_routing_policy (
+        workspace_id TEXT PRIMARY KEY REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        provider_allowlist_json TEXT NOT NULL DEFAULT '[]',
+        model_allowlist_json TEXT NOT NULL DEFAULT '{}',
+        budget_cap_usd REAL NOT NULL DEFAULT 5.0 CHECK (budget_cap_usd >= 0),
+        auto_mode_enabled INTEGER NOT NULL DEFAULT 0 CHECK (auto_mode_enabled IN (0, 1)),
+        max_auto_steps INTEGER NOT NULL DEFAULT 3 CHECK (max_auto_steps BETWEEN 1 AND 10),
+        require_local_only INTEGER NOT NULL DEFAULT 0 CHECK (require_local_only IN (0, 1)),
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_model_catalog (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        provider_slug TEXT NOT NULL,
+        model TEXT NOT NULL,
+        capabilities_json TEXT NOT NULL DEFAULT '["text"]',
+        is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+        priority INTEGER NOT NULL DEFAULT 100,
+        cost_input_1k REAL NOT NULL DEFAULT 0.0,
+        cost_output_1k REAL NOT NULL DEFAULT 0.0,
+        is_local INTEGER NOT NULL DEFAULT 0 CHECK (is_local IN (0, 1)),
+        is_managed INTEGER NOT NULL DEFAULT 0 CHECK (is_managed IN (0, 1)),
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL,
+        UNIQUE(workspace_id, provider_slug, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_model_catalog_ws
+        ON workspace_model_catalog(workspace_id, is_enabled, is_local);
+
+    ALTER TABLE usage_record ADD COLUMN run_id TEXT;
+    ALTER TABLE usage_record ADD COLUMN step_index INTEGER;
+    ALTER TABLE usage_record ADD COLUMN chain_id TEXT;
+    ALTER TABLE usage_record ADD COLUMN capability TEXT;
+    CREATE INDEX IF NOT EXISTS idx_usage_record_chain
+        ON usage_record(workspace_id, tenant_id, chain_id, step_index);
+    """,
 }
 
 
@@ -902,8 +986,18 @@ class WorkspaceRead(BaseModel):
     inherits_kb: int = 0
     confidential: int = 0
     email_signature: str | None = None
+    is_canary: int = 0
     created_at: str
     updated_at: str
+
+
+class UserRead(BaseModel):
+    email: str | None = None
+    tenant_id: str | None = None
+    user_id: str | None = None
+    role: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    foundation_resolved: bool = False
 
 
 class WorkspaceFieldAliasesUpdate(BaseModel):
@@ -938,6 +1032,7 @@ class AuditEvent(BaseModel):
     routine_version: str | None = None
     skill_version: str | None = None
     source_version: str | None = None
+    correlation_id: str | None = None
     created_at: str
 
 
@@ -1146,6 +1241,7 @@ class SkillInvokeRequest(BaseModel):
 class ChatInvokeRequest(BaseModel):
     routine_id: str = Field(min_length=1, max_length=120)
     user_request: str = Field(default="", max_length=20000)
+    mode: Literal["manual", "auto"] = "manual"
 
 
 class AtMentionInvokeRequest(BaseModel):
@@ -1181,6 +1277,7 @@ class MailMessageRead(BaseModel):
     status: str
     category: str = "other"
     draft_id: str | None = None
+    account_id: str | None = None
     schema_version: int
     source_version: str | None = None
     approved_by: str | None = None
@@ -1206,6 +1303,9 @@ class GoldCandidateRead(BaseModel):
     schema_version: int
     source_version: str | None = None
     approved_by: str | None = None
+    verified_by: str | None = None
+    state: str = "candidate"
+    actor_role_at_decision: str | None = None
     created_at: str
     updated_at: str
 
@@ -1290,6 +1390,7 @@ class ChatCompletionRequest(BaseModel):
     model: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=1024, gt=0, le=4096)
+    mode: Literal["manual", "auto"] = "manual"
 
 
 class ChatCompletionResponse(BaseModel):
@@ -1300,6 +1401,9 @@ class ChatCompletionResponse(BaseModel):
     output_tokens: int
     cost_usd: float
     duration_ms: int
+    chain_id: str | None = None
+    steps: list[dict[str, Any]] | None = None
+    mode: str | None = None
 
 
 class UsageRecordRead(BaseModel):
@@ -1326,6 +1430,10 @@ class UsageRecordRead(BaseModel):
     schema_version: int
     source_version: str | None = None
     approved_by: str | None = None
+    run_id: str | None = None
+    step_index: int | None = None
+    chain_id: str | None = None
+    capability: str | None = None
     created_at: str
 
 
@@ -1345,6 +1453,90 @@ class RouterStatusRead(BaseModel):
     spent_usd: float
     provider_allowlist: list[str] | None = None
     model_allowlist: dict[str, list[str]] | None = None
+    auto_mode_enabled: bool = False
+    max_auto_steps: int = 3
+    require_local_only: bool = False
+
+
+class WorkspaceRoutingPolicyUpdate(BaseModel):
+    provider_allowlist: list[str] | None = None
+    model_allowlist: dict[str, list[str]] | None = None
+    budget_cap_usd: float | None = Field(default=None, ge=0.0)
+    auto_mode_enabled: bool | None = None
+    max_auto_steps: int | None = Field(default=None, ge=1, le=10)
+    require_local_only: bool | None = None
+
+
+class WorkspaceRoutingPolicyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    workspace_id: str
+    tenant_id: str
+    provider_allowlist: list[str]
+    model_allowlist: dict[str, list[str]]
+    budget_cap_usd: float
+    auto_mode_enabled: bool
+    max_auto_steps: int
+    require_local_only: bool
+    updated_at: str
+
+
+class ModelCatalogEntryCreate(BaseModel):
+    provider_slug: str = Field(min_length=1, max_length=60)
+    model: str = Field(min_length=1, max_length=120)
+    capabilities: list[str] = Field(default_factory=lambda: ["text"])
+    priority: int = Field(default=100, ge=1, le=1000)
+    cost_input_1k: float = Field(default=0.0, ge=0.0)
+    cost_output_1k: float = Field(default=0.0, ge=0.0)
+    is_local: bool = False
+    is_managed: bool = False
+    is_enabled: bool = True
+
+    @field_validator("capabilities")
+    @classmethod
+    def capabilities_must_be_non_empty(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("capabilities must not be empty")
+        return [v.strip().lower() for v in value if v.strip()]
+
+
+class ModelCatalogEntryUpdate(BaseModel):
+    capabilities: list[str] | None = None
+    priority: int | None = Field(default=None, ge=1, le=1000)
+    cost_input_1k: float | None = Field(default=None, ge=0.0)
+    cost_output_1k: float | None = Field(default=None, ge=0.0)
+    is_local: bool | None = None
+    is_managed: bool | None = None
+    is_enabled: bool | None = None
+
+    @field_validator("capabilities")
+    @classmethod
+    def capabilities_must_be_non_empty(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        stripped = [v.strip().lower() for v in value if v.strip()]
+        if not stripped:
+            raise ValueError("capabilities must not be empty")
+        return stripped
+
+
+class ModelCatalogEntryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str
+    provider_slug: str
+    model: str
+    capabilities: list[str]
+    priority: int
+    cost_input_1k: float
+    cost_output_1k: float
+    is_local: bool
+    is_managed: bool
+    is_enabled: bool
+    source_version: str
+    created_at: str
 
 
 class ProviderConfigWrite(BaseModel):
@@ -1398,6 +1590,7 @@ class SMTPConfigRead(BaseModel):
     username: str
     has_password: bool
     from_email: str
+    is_app_password: bool
 
 
 class SMTPConfigWrite(BaseModel):
@@ -1407,6 +1600,7 @@ class SMTPConfigWrite(BaseModel):
     username: str = Field(min_length=1, max_length=500)
     password: str = Field(default="", max_length=2000)  # empty = keep existing
     from_email: str = Field(min_length=1, max_length=500)
+    is_app_password: int | None = Field(default=None, ge=0, le=1)
 
 
 class SMTPTestResponse(BaseModel):
@@ -1425,6 +1619,7 @@ class EmailAccountCreate(BaseModel):
     auth_type: str = Field(default="password", max_length=20)
     read_only: int = Field(default=1, ge=0, le=1)
     is_default: int = Field(default=0, ge=0, le=1)
+    is_app_password: int = Field(default=1, ge=0, le=1)
 
     @field_validator("auth_type")
     @classmethod
@@ -1453,14 +1648,15 @@ class EmailAccountCreate(BaseModel):
 class EmailAccountWrite(BaseModel):
     label: str = Field(default="", max_length=200)
     provider: str = Field(default="imap", max_length=50)
-    host: str = Field(min_length=1, max_length=500)
-    port: int = Field(ge=1, le=65535)
-    username: str = Field(min_length=1, max_length=500)
+    host: str = Field(default="", max_length=500)
+    port: int = Field(default=993, ge=1, le=65535)
+    username: str = Field(default="", max_length=500)
     password: str = Field(default="", max_length=2000)  # empty = keep existing
     folders_json: str = Field(default='["INBOX"]', max_length=2000)
     auth_type: str = Field(default="password", max_length=20)
     read_only: int = Field(default=1, ge=0, le=1)
     is_default: int = Field(default=0, ge=0, le=1)
+    is_app_password: int | None = Field(default=None, ge=0, le=1)
 
     @field_validator("auth_type")
     @classmethod
@@ -1486,6 +1682,10 @@ class EmailAccountWrite(BaseModel):
         return stripped
 
 
+class EmailAccountRotateRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=2000)
+
+
 class EmailAccountRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -1503,6 +1703,8 @@ class EmailAccountRead(BaseModel):
     auth_type: str
     read_only: int
     is_default: int
+    is_app_password: int
+    rotated_at: str | None = None
     schema_version: int
     source_version: str | None = None
     created_at: str
@@ -1515,6 +1717,7 @@ class WorkspaceEmailSignatureUpdate(BaseModel):
 
 class FeaturesRead(BaseModel):
     email_connector_enabled: bool
+    shared_instance: bool
 
 
 # -----------------------------------------------------------------------------

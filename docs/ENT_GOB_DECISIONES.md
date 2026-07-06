@@ -1,10 +1,10 @@
 # ENT_GOB_DECISIONES — Registro de Decisiones Arquitectónicas y Estratégicas
 id: ENT_GOB_DECISIONES
-version: 2.3
+version: 2.2
 status: VIGENTE
 visibility: [INTERNAL]
 domain: Gobernanza (IDX_GOBERNANZA)
-stamp: VIGENTE — 2026-06-30
+stamp: VIGENTE 2026-05-07
 classification: ENTITY — Registro centralizado de decisiones que trascienden un sprint
 aplica_a: [MWT]
 
@@ -148,32 +148,14 @@ Cada decisión registra: contexto, alternativas evaluadas, decisión tomada, con
 - **Reversible:** SÍ — gates se pueden ajustar si CEO decide acelerar (ej. contratando dev dedicado a Engine runtime). La decisión NO descarta Jarvis, solo difiere el build con criterios objetivos. Two-way door.
 - **Ref:** ENT_GOB_PENDIENTES CEO-36 + CEO-37 · MANIFIESTO_APPEND_20260428_JARVIS_IDEA · SPEC_ACTION_ENGINE v1.2 §Roadmap · ENT_PLAT_ACTION_REGISTRY v1.1 · ENT_PLAT_MEMORY_STACK · ARCH_AGENT_PRINCIPLES P3/P4/P9/P13/P14
 
-### DEC-011: SpaceLoom Spike E1 — track canónico único Foundation Beta, spike como dogfood interno
-- **Fecha:** 2026-06-30
-- **Aprobador:** CEO
-- **Contexto:** Se construyó un artefacto ejecutable (FastAPI + SQLite + pywebview + .exe) sobre `PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md` que comparte nombre "FaberLoom" con el track canónico firmado `PLB_FB_FOUNDATION_BETA_v1.md` (Postgres + RLS + Next.js + 13 sprints). Esto genera una colisión de marca y arquitectura (STACK-01). El spike tiene 221 tests verdes y cerró SL0–SL4, pero no es multi-tenant, no cumple TIER 1 Foundation Beta y no está indexado en la KB.
-- **Alternativas evaluadas:**
-  - (a) **Spike de validación / dogfood interno** — elegido: se registra como no canónico, se mantienen aprendizajes, se archiva cuando Foundation Beta entregue reemplazo funcional para MWT.
-  - (b) **Pivote desktop-first** — descartado: contradice la inversión y plan firmado en Foundation Beta v1.3.1.
-  - (c) **Etapa incremental definitiva** — descartado: el stack SQLite/pywebview no escala al canon Postgres/RLS; no se justifica convertirlo en producto.
-- **Decisión:** El spike se trata como **(A) spike de validación con matiz operativo**: es dogfood interno de MWT mientras Foundation Beta no tenga reemplazo funcional, pero su destino final es archivarse. El track de ejecución canónico único es **FaberLoom Foundation Beta v1.3.1**. El spike se etiqueta como artefacto "SpaceLoom Spike E1", se despliega bajo `spike.faberloom.ai` y se registra en `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md`. El repo de trabajo (`Ale241302/faber_loom_local_v2`) **se mantiene con su nombre actual**; solo cambia la etiqueta/concepto del spike.
-- **Consecuencias:**
-  - No se mergea código SQLite/pywebview al canon.
-  - SpaceLoom se reserva como pilar de marca (home cognitivo / canvas), no como nombre de prototipo.
-  - Los aprendizajes validados (`edit_pct ≤ 0.2` para gold, gate Owner/Admin shadow→active, `confirmation_token + idempotency_key`, provider allowlist/budget/fallback, workspace sealing, versionado routine/skill/source) se portan a los specs de Foundation Beta.
-  - SL5 (correo) del spike queda diferido; el flag `email_connector_enabled=false` se documenta explícitamente.
-  - Acciones de rename/repo/domain son tracking interno del spike, no entran como CEO-XX.
-- **Reversible:** SÍ — se puede ajustar la fecha de sunset o acelerar el archivado si Foundation Beta avanza más rápido. La decisión de no canonizar el spike es reversible mientras no se mergee con Foundation Beta.
-- **Ref:** `MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md` · `PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md` · `PLB_FB_FOUNDATION_BETA_v1.md` · `IDX_FB_FOUNDATION_BETA.md`
-
 ---
 
 ## C. Estadísticas
 | Métrica | Valor |
 |---------|-------|
-| Total decisiones registradas | 11 |
+| Total decisiones registradas | 10 |
 | Irreversibles (one-way doors) | 2 (DEC-001, DEC-004) |
-| Reversibles (two-way doors) | 8 (DEC-002, DEC-005, DEC-006, DEC-007, DEC-009, DEC-010, DEC-011, futuras) |
+| Reversibles (two-way doors) | 7 (DEC-002, DEC-005, DEC-006, DEC-007, DEC-009, DEC-010, futuras) |
 | Parcialmente reversibles | 2 (DEC-003, DEC-008) |
 
 ---
@@ -182,4 +164,3 @@ Changelog:
 - v2.0 (2026-04-21): +DEC-006 (FaberLoom F1 tiered hardcoded routing) +DEC-007 (Arena Mode descartado F1) +DEC-008 (Adaptive Routing postpuesto F2 gated 5K×3t×3m). Trigger: Kimi Swarm #4 validación LOW confidence (verbatim archivado en docs/archivo/kimi_swarm_4_adaptive_routing.md). Canoniza el downgrade post-validación. Renumera antiguo DEC-006 stub a DEC-009.
 - v2.1 (2026-04-28): +DEC-010 (Jarvis Orchestrator diferido — gates G1-G4 antes de build). Decisión arquitecto Cowork delegada por CEO sesión 2026-04-28. Two-way door. Refuerzo: CEO-37 captura rutinas mentales como precondición intermedia.
 - v2.2 (2026-05-07): DEC-009 completado -- Prompt Cache Discipline reemplaza placeholder. Stats actualizados: total 9 (mal contado pre-DEC-010) corregido a 10; reversibles 6 -> 7 (suma DEC-009). Origen: HANDOFF Cowork 28-abr actualizado post Sprint 0.
-- v2.3 (2026-06-30): +DEC-011 (SpaceLoom Spike E1 — track canónico único Foundation Beta, spike como dogfood interno). Resuelve STACK-01. Stats actualizados: total 10 -> 11; reversibles 7 -> 8.

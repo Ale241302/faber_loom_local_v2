@@ -22,7 +22,7 @@ from typing import Any
 import openpyxl
 import pdfplumber
 
-from .context import Context
+from .context import Context, enforce_tenant_scoped
 from .db import new_id, record_editorial_event, row_to_dict, transaction, utc_now, workspace_seal_id
 from .kb_extractors import extract_document
 from .models import SCHEMA_VERSION
@@ -272,6 +272,8 @@ def ingest_kb_source(
     Either *content_text* (for text/csv) or *content_blob* (for binary files)
     must be provided.
     """
+
+    enforce_tenant_scoped(ctx)
 
     if source_type not in {"md", "txt", "csv", "xlsx", "pdf"}:
         raise ValueError(f"Unsupported KB source type: {source_type}")

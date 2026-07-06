@@ -456,3 +456,41 @@ class AnthropicProvider(Provider):
         except Exception as exc:
             logger.exception("Anthropic provider failed", extra={"provider": self.provider_slug})
             raise ProviderError(self.provider_slug, "provider_request_failed", detail=_error_detail(exc)) from exc
+
+
+class StubImageProvider(Provider):
+    """Fake image-generation provider for E2-4 testing and demos.
+
+    Requires no API key and always returns a deterministic placeholder URL.
+    """
+
+    requires_api_key = False
+
+    def __init__(self, config: ProviderConfig):
+        super().__init__(config)
+        self._image_counter = 0
+
+    def is_available(self) -> bool:
+        return self.config.is_enabled
+
+    def complete(self, request: CompletionRequest) -> CompletionResult:
+        import uuid
+
+        start = time.time()
+        model = request.model or self.config.model_default or "fake-image-gen"
+        prompt = "\n".join(
+            str(m.get("content", "")) for m in request.messages if m.get("role") == "user"
+        )[:200]
+        self._image_counter += 1
+        content = f"stub://image/{uuid.uuid4().hex}?prompt={prompt.replace(' ', '_')}"
+        input_tokens = 0
+        output_tokens = 0
+        return CompletionResult(
+            content=content,
+            model=model,
+            provider_slug=self.provider_slug,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=estimate_cost(model, input_tokens, output_tokens),
+            duration_ms=_duration_ms(start),
+        )

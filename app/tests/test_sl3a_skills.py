@@ -107,12 +107,11 @@ def _create_routine(client: TestClient, workspace_id: str, skill_md: str) -> dic
 def _approve_routine(
     client: TestClient, workspace_id: str, routine_id: str, approved_by: str | None = None
 ) -> dict[str, Any]:
-    params = {}
-    if approved_by is not None:
-        params["approved_by"] = approved_by
+    # E2-0: approved_by is resolved from the authenticated Context; the legacy
+    # query parameter is kept in the signature for call-site compatibility but
+    # is intentionally not forwarded to the API.
     response = client.post(
         f"/api/workspaces/{workspace_id}/routines/{routine_id}/approve",
-        params=params,
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -483,7 +482,7 @@ def test_approve_routine_then_run(client: TestClient, monkeypatch: pytest.Monkey
     routine = _create_routine(client, workspace_id, SKILL_MD)
 
     approved = _approve_routine(client, workspace_id, routine["id"], approved_by="human@test")
-    assert approved["approved_by"] == "human@test"
+    assert approved["approved_by"] == "local"
 
     response = client.post(
         f"/api/workspaces/{workspace_id}/routines/{routine['id']}/run",
@@ -579,7 +578,7 @@ def test_approval_invalidated_by_sensitive_field_change(client: TestClient) -> N
     workspace_id = _demo_workspace_id(client)
     routine = _create_routine(client, workspace_id, SKILL_MD)
     approved = _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
-    assert approved["approved_by"] == "tester"
+    assert approved["approved_by"] == "local"
 
     response = client.patch(
         f"/api/workspaces/{workspace_id}/routines/{routine['id']}",
@@ -591,7 +590,7 @@ def test_approval_invalidated_by_sensitive_field_change(client: TestClient) -> N
     _approve_routine(client, workspace_id, routine["id"], approved_by="tester")
     response = client.get(f"/api/workspaces/{workspace_id}/routines/{routine['id']}")
     assert response.status_code == 200, response.text
-    assert response.json()["approved_by"] == "tester"
+    assert response.json()["approved_by"] == "local"
 
     response = client.patch(
         f"/api/workspaces/{workspace_id}/routines/{routine['id']}",
@@ -698,7 +697,7 @@ def test_skill_authoring_hitl_end_to_end(
 
     # HITL approves.
     approved = _approve_routine(client, workspace_id, routine["id"], approved_by="hitl@test")
-    assert approved["approved_by"] == "hitl@test"
+    assert approved["approved_by"] == "local"
 
     # Skill runs and produces real output.
     response = client.post(

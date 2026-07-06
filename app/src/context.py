@@ -80,6 +80,18 @@ class Context:
         )
 
 
+def enforce_tenant_scoped(ctx: Context) -> None:
+    """Fail closed if the context lacks a concrete tenant and workspace.
+
+    This is the SQLite-side enforcement seam that mirrors the Postgres RLS
+    policies: workspace-owned reads/writes must be scoped to a real tenant and
+    a real workspace. Call at the top of repository helpers.
+    """
+
+    ctx.require_scoped_workspace()
+    ctx.require_tenant()
+
+
 def system_context(
     *,
     tenant_id: str | None = None,

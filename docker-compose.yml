@@ -5,9 +5,36 @@
 #
 # The mwt nginx proxy routes app.faberloom.ai to the faberloom-api
 # container on the shared mwt_default network.
+#
+# E2-0: a PostgreSQL service is included for migration rehearsal and the
+# eventual E2-1 Postgres runtime. SQLite remains the active runtime until
+# E2-1 is explicitly enabled via DATABASE_URL.
 # ════════════════════════════════════════════════════════════════════
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: faberloom-postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-faberloom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-faberloom}
+      POSTGRES_DB: ${POSTGRES_DB:-faberloom}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - mwt_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-faberloom} -d $${POSTGRES_DB:-faberloom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   api:
     build:
       context: .
@@ -28,6 +55,9 @@ services:
       - "8200:8000"
     networks:
       - mwt_default
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
@@ -35,6 +65,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+volumes:
+  postgres_data:
 
 networks:
   mwt_default:

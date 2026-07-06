@@ -1,12 +1,12 @@
 ---
 id: IDX_GOBERNANZA
-version: 1.6
+version: 1.5
 status: VIGENTE
 visibility: [INTERNAL]
 domain: GOBERNANZA
 tipo: index
-last_review: 2026-06-30
-stamp: VIGENTE — 2026-06-30
+last_review: 2026-06-15
+stamp: VIGENTE - 2026-06-15
 aplica_a: [SHARED]
 ---
 
@@ -14,8 +14,7 @@ aplica_a: [SHARED]
 
 > **Health:** 34 POLs (+3 AI_GOV +3 routing core) · 12 PLBs (+1 AI_GOV dual review) · 15 ENTs (gob, +ENT_GOB_SOCIEDAD DRAFT CEO-ONLY no_pgvector hub legal+EEFF + Agent Builder + Competencias + Team Inventory) · 1 SKILL · 4 SCHs (gob, +1 AI_GOV handoff +1 AI_GOV dual review output) · 16 AUDIT_FABERLOOM pre-build · 1 archivo Kimi Swarm #4 (LLM Orchestration) · 1 reporte AUDIT_KB_INTEGRAL 7-alcance · 3 ENTs insights Kimi FaberLoom · ARCH/SPEC fundacional ahora ruteado via IDX_ARQUITECTURA_FUNDACIONAL.md
 > **Stubs:** 3 (ENT_GOB_ALERTAS, ENT_GOB_ACCESO, PLB_AUDIT_VISUAL) · **Deprecated:** 1 (SCH_SKILL)
-> **Última revisión:** 2026-06-30 (+1 MANIFIESTO_APPEND SpaceLoom Spike E1 · v1.5 -> v1.6)
-> **Revisión anterior:** 2026-06-15 (AUDIT-ROUTING-2026-06-14 · fix huérfanos gobernanza: indexa ENT_FABERLOOM_AGENT_BUILDER_v1, ENT_GOB_ENGINEERING_COMPETENCIES, ENT_GOB_TEAM_INVENTORY_FULL; indexa POL_BRANCH_PR_v1, POL_ROOT_FILE_CLASSIFICATION_v1, POL_OUTAGE_CANONICAL_MIRROR_v1; corrige IDs inconsistentes · v1.4 -> v1.5)
+> **Última revisión:** 2026-06-15 (AUDIT-ROUTING-2026-06-14 · fix huérfanos gobernanza: indexa ENT_FABERLOOM_AGENT_BUILDER_v1, ENT_GOB_ENGINEERING_COMPETENCIES, ENT_GOB_TEAM_INVENTORY_FULL; indexa POL_BRANCH_PR_v1, POL_ROOT_FILE_CLASSIFICATION_v1, POL_OUTAGE_CANONICAL_MIRROR_v1; corrige IDs inconsistentes · v1.4 -> v1.5)
 > **Revisión anterior:** 2026-05-04d (RETRIEVAL OPTIMIZATION post audit golden-set 10q — descongestion §Arquitectura Fundacional movida a IDX_ARQUITECTURA_FUNDACIONAL.md · SPEC_/ARCH_ ya no se rutean desde aqui · IDX_GOBERNANZA conserva solo POLs + PLBs + ENTs gob + AUDITs FB pre-build + insights Kimi · descongestion sin mover archivos fisicamente · v1.3 -> v1.4)
 > **Revisión anterior:** 2026-05-04c (INDEXA ENT_GOB_SOCIEDAD v1.0 DRAFT CEO-ONLY EXPANDIDO — supersede in-place del 2026-05-04b: hub canónico societario + financiero MWT con 12 secciones (A propósito · B identificación legal · C actividad económica + código Hacienda 4641.1 · D capital · E administración · F equipo profesional CPI/notario/banco · G EEFF cierre 2025 con marco NIIF PYMES · H partes relacionadas · I indicadores 2025 · J docs fuente · K reglas de uso · L pendientes L1-L4) · refs cruzadas a ENT_MARCA_MW_IDENTIDAD/ENT_PLAT_LEGAL_ENTITY/ENT_GOB_PROVEEDORES/ENT_COMERCIAL_CLIENTES/SCH_PROFORMA_MWT · marcado no_pgvector · status DRAFT pendiente firma EEFF + cierre L1-L4)
 > **Revisión anterior:** 2026-05-01b (INDEXA AI_GOV Dual Review — PLB_AI_GOV_DUAL_REVIEW v1.0 + SCH_AI_GOV_DUAL_REVIEW_OUTPUT v1.0 · SPEC_AI_GOV_GOVERNANCE_AND_ROUTING v1.0→v1.1 +Componente 6 Dual Review · regla familias distintas inquebrantable · caps anti-teatro)
@@ -109,11 +108,6 @@ aplica_a: [SHARED]
 | SKILL_RUNTIME | SKILL_RUNTIME.md | VIGENTE v1.0 |
 | SCH_AI_GOV_HANDOFF_DRAFT | SCH_AI_GOV_HANDOFF_DRAFT.md | VIGENTE v1.0 (handoff carpintero → final pass) |
 | SCH_AI_GOV_DUAL_REVIEW_OUTPUT | SCH_AI_GOV_DUAL_REVIEW_OUTPUT.md | VIGENTE v1.0 (veredicto final del Dual Review) |
-
-## Manifiestos / Appends
-| Manifiesto | Archivo | Status |
-|------------|---------|--------|
-| SpaceLoom Spike E1 — registro de spike no canónico | MANIFIESTO_APPEND_20260630_SPACELOOM_SPIKE_E1.md | VIGENTE v1.0 |
 
 ## Arquitectura Fundacional
 

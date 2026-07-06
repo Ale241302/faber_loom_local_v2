@@ -1,11 +1,11 @@
 # PLAN_DESARROLLO_SPACELOOM_ETAPA2_v1 -- Plan de Build SpaceLoom Etapa 2 (multi-usuario interno)
 id: PLAN_DESARROLLO_SPACELOOM_ETAPA2_v1
-version: 1.4
+version: 1.6
 status: DRAFT
 visibility: [INTERNAL]
 domain: FaberLoom (docs/faberloom/)
 type: PLB
-stamp: DRAFT -- 2026-07-05 -- plan de build Etapa 2; v1.4: todos los pendientes resueltos por mandato CEO (decisiones del arquitecto, Sec.6)
+stamp: DRAFT -- 2026-07-06 -- plan de build Etapa 2; v1.6: herencia E1 (Sec.8) — todos los gaps/parciales/pendientes de Etapa 1 cerrados por decision
 aprobador: CEO
 aplica_a: [FaberLoom, MWT]
 relacionado: PLAN_DESARROLLO_SPACELOOM_ETAPA1_v1.md - SPEC_SPACELOOM_ETAPA1_v1.md - ENT_FB_RFQ_REPLAY_SET_v1.md - SPEC_FB_ROUTING_PRESETS_v1.md - SCH_FB_SKILL_MANIFEST_v2.md - EVAL_PLAN_SPACELOOM_FUGU_ULTRA.md - EVAL_PLAN_SPACELOOM_KIMI.md
@@ -134,10 +134,10 @@ a **proactiva acotada** — un ciclo de revision continuo sobre todo el sitio:
 
 | Hito | Objetivo | Entregable | Can-start-when | Gate / DoD | Talla |
 |---|---|---|---|---|---|
-| E2-0 | Activar costuras | Context(workspace, tenant, user) real en toda query; migracion datos E1; AuditWriter a tabla; login local | Etapa 1 DONE + gate adopcion pasado | app E1 corre identica con usuario autenticado; audit por actor | M |
+| E2-0 | Activar costuras + higiene E1 | Context(workspace, tenant, user) real en toda query; migracion datos E1; AuditWriter a tabla; login local; lote higiene herencia E1 (Sec.8: H6 runtime unico, H7 DEC promocion spike, H8 lessons learned, H9 LICENSE, sl1b json) | Etapa 1 DONE + gate adopcion pasado | app E1 corre identica con usuario autenticado; audit por actor; lote higiene commiteado | M |
 | E2-1 | Servidor compartido | instancia self-hosted LAN/VPN; N usuarios concurrentes; decision motor DB ejecutada (Sec.4) | E2-0 | 2+ usuarios trabajan a la vez sin pisarse | L |
 | E2-2 | Roles + HITL multi-user | roles AM/curador/CEO; WorkLoom cola compartida con asignacion; segundo gate gold | E2-1 | un draft creado por A es aprobado por B con rol registrado | M |
-| E2-3 | KB compartida + sellado por rol | herencia org->equipo->workspace; sellado por rol sobre la costura de SL3.5; gold loop capa 2 (comite, k-anon) | E2-2 | test de fuga cross-rol y cross-workspace = 0 | L |
+| E2-3 | KB compartida + sellado por rol | herencia org->equipo->workspace; sellado por rol sobre la costura de SL3.5; gold loop capa 2 (comite, k-anon) | E2-2 | test de fuga cross-rol y cross-workspace = 0, **incluido tenant canario** (Sec.7.3): M16 con 2do tenant sembrado = 0 filas cruzadas en ambas direcciones | L |
 | E2-4 | Routing gestionado + catalogo + modo auto | keys admin; budget por usuario/equipo; catalogo multi-proveedor/local con tags de capacidad; selector manual en chat; dispatcher modo auto con guardrails; presets con ledger real | E2-1 | caso canonico end-to-end: PDF -> resumen (modelo barato) -> imagen (modelo image_gen), UI muestra solo el modelo final y el ledger muestra la cadena completa | L |
 | E2-5 | Entidad viva | ciclo ambiental con limites duros (Sec.1.7); items proactivos en WorkLoom | E2-2 + E2-3 | la entidad detecta y propone (0 acciones irreversibles); el equipo acepta >=1 propuesta util/semana | L |
 | E2-6 | Ingesta universal + MinIO | MinIO en compose faber_loom; subida de cualquier tipo en chat; pipelines por tipo; objetos generados por IA persistidos; sellado por workspace a nivel objeto | E2-1 (MinIO) / E2-4 (pipelines con modo auto) | subir archivo de cualquier tipo soportado -> objeto en MinIO sellado -> modelo lo procesa respetando allowlist; test de fuga de objetos = 0; canaries de ingesta pasan | L |
@@ -234,6 +234,71 @@ E2-3/E2-5. Compromiso: el calendario corto; el largo es el techo honesto.
 4. **Dedicacion y calendario: 1 dev full-time (Alejandro), calendario dos vias de
    Sec.2** — compromiso sobre el corto (7-9 semanas a dogfood multi-usuario),
    techo honesto 14-18 para Etapa 2 completa. Arranque: al commitear E2-0.
+
+---
+
+## 7. Tenant: evidencia de linea base y test canario
+
+### 7.1 Bootstrap del tenant (hecho, 2026-07-05)
+
+El tenant MWT existe por **seed de instalacion**, no por UI: slug `mwt`, ACTIVE,
+plan BETA, 3 usuarios, creado/activado 7/5/2026 ~10:28 (owner:
+alejandro@muitowork.com). Es deliberado que NO exista pantalla de "crear empresa":
+en Etapa 2 hay UN tenant y crear mas es la frontera con Etapa 3 (el flujo
+signup -> tenant -> owner es el primer hito de esa etapa, no un faltante de esta).
+Settings JSON del tenant aplicados conforme a Sec.6: timezone America/Bogota,
+budget 5 USD/dia (2 por usuario, 5% ciclo ambiental), router manual con max 4
+pasos, `ambient.enabled: false`, HITL irreversibles NEVER + segundo gate gold,
+storage minio.faberloom.ai con buckets fl-uploads/fl-generated. Ambient y modo
+auto se encienden solo al pasar los gates de E2-5 y E2-4 respectivamente.
+
+### 7.2 M16 linea base (verde, 2026-07-05)
+
+Reporte "Aislamiento multi-tenant (M16)": 21 tablas `fnd_*`, scoping OK en todas,
+0 filas de otros tenants (pobladas: audit_log 52, events 29, sessions 22, roles 4,
+users 3, user_roles 3; el resto en 0 por modulos aun sin uso).
+**Lectura honesta:** con un solo tenant en la base, "0 filas de otros tenants" es
+verdad por definicion. Este verde prueba que el scoping esta CABLEADO en las 21
+tablas (linea base valiosa), pero NO prueba el filtro bajo presion. Por si solo
+NO cierra el gate de fuga de E2-3.
+
+### 7.3 Tenant canario (obligatorio en gate E2-3)
+
+Prueba real del aislamiento: un segundo tenant `canary` sembrado con filas basura
+reconocibles (prefijo `CANARY_`) en TODAS las tablas `fnd_*`. El gate exige:
+- M16 desde sesion MWT: 0 filas del canario visibles.
+- M16 desde sesion canary: 0 filas de MWT visibles (ambas direcciones).
+- Cualquier query que olvide el filtro `tenant_id` la delata el canario al instante.
+El canario es **permanente**: no se borra al pasar el gate; M16-contra-canario se
+corre en cada despliegue como test de regresion. Sus filas se excluyen de
+dashboards y del gold loop (flag `is_canary`). Al migrar a Postgres+RLS (E2-0/E2-1),
+el mismo canario valida que las policies RLS filtran, no solo la capa de app.
+
+---
+
+## 8. Herencia de Etapa 1: gaps, parciales y pendientes — CERRADOS POR DECISION
+
+Fuente: estado de avance 2026-07-06 (spike E1 SL0-SL4 cerrados, SL5 parcial, SPINE
+Camino B verde en Django/Postgres + 14/14 modulos M07-M20 portados a app/ FastAPI,
+294 tests, v0.2.0). Nada de esta lista queda como gap: cada item tiene decision y
+hito donde aterriza.
+
+| # | Item heredado de E1 | Estado E1 | DECISION (arquitecto, 2026-07-06) | Aterriza en |
+|---|---|---|---|---|
+| H1 | SL5 correo sin cierre formal (PRC-09 diferido) | Parcial | SL5 se declara **cerrado tecnico** (connector + flag + canaries + outbox ya testeados: test_sl5_*). El cierre FORMAL es parte del gate de E2-2: activar flag en instancia compartida + 1 correo real end-to-end (recibir -> draft -> aprobar -> enviar) | E2-2 |
+| H2 | PRC-09 credenciales de correo + rotacion IMAP Kimi Work | Bloqueo | Rotar credenciales IMAP Kimi Work como PRIMERA tarea de E2-2 (30 min, la hace el dev); cada AM conecta sus cuentas propias via app-password — no hay credencial compartida, asi que PRC-09 deja de ser procurement y pasa a ser onboarding por usuario | E2-2 |
+| H3 | PRC-01/02 datos reales MWT en KB | Gap | La carga de KB real (catalogo, listas de precios Marluvas/Tecmater, fichas) es entregable de E2-1: la instancia compartida arranca CON datos reales, no seed. Responsable: Alejandro carga, un AM verifica citas | E2-1 |
+| H4 | PRC-03 criterio de adopcion: N sin fijar | Pendiente CEO | **N = 10 casos reales voluntarios en 14 dias corridos por usuario activo** (calibrado con el dogfood SL1b: 10 drafts, edit_pct 3.66%). "Friccion que mata" = tener que salir de la app para terminar el caso (copiar/pegar manual, recalcular afuera); 3 casos consecutivos con friccion = alto y diagnostico | gate E2-2 |
+| H5 | PRC-05/06/07 certificados firma Win/Mac + llave update publicable | Bloqueo | **No bloquean Etapa 2.** Para equipo interno (LAN/VPN, <10 maquinas conocidas) el self-signed + Ed25519 actual es suficiente y el riesgo es aceptable. Certificados comerciales (cert OV Windows + Apple Developer USD 99) se compran al ARRANCAR E2-6, para que la salida distribuible no espere; presupuesto aprobado por esta decision | compra en E2-6; uso post-E2 |
+| H6 | Doble stack: SPINE Django/Postgres (canonico) vs port FastAPI/SQLite (app/) | Ambiguedad | **UN solo runtime: app/ FastAPI** (294 tests, 14/14 modulos, ya es lo que el equipo usa). El SPINE Django/Postgres NO se mantiene como codigo vivo: pasa a ser CONTRATO DE REFERENCIA — sus gates (RLS FORCE, hash chain, fail-closed) son la definicion de verde que el port debe igualar sobre Postgres en E2-0/E2-1. Coherente con el principio E1 "una entidad, sin runtimes paralelos". El repo Django se archiva con tag, no se borra | E2-0 |
+| H7 | Deploy del spike en VPS (/opt/faber_loom, app.faberloom.ai) — manifiesto pedia renombrar a spike | Pendiente | **Se PROMUEVE, no se renombra**: ese deploy (Docker+nginx+JWT multi-user, ya corriendo) es la base fisica de la instancia compartida de E2-1. Renombrarlo para luego levantar otro identico seria trabajo doble. La promocion se documenta en DEC_FB_SPIKE_PROMOTION (E2-0) que supersede la instruccion de renombre del manifiesto 2026-06-30 | E2-0/E2-1 |
+| H8 | SPEC_FB_SPIKE_E1_LESSONS_LEARNED + portar 7 aprendizajes a specs canonicos | Pendiente | Se escribe en E2-0 como parte de la higiene de arranque (mismo lote que sl1b_dogfood_prompts.json y DEC_FB_SPIKE_PROMOTION). Es 1 documento, no un proyecto | E2-0 |
+| H9 | Licencia FSL sin confirmar | Pendiente legal | **FSL 1.1 adoptada** (era la recomendada del plan E1 y nadie presento alternativa en 2 revisiones). Registro de marca FaberLoom arranca en paralelo; ninguno de los dos bloquea build interno | E2-0 (aplicar LICENSE al repo) |
+| H10 | Calendario Foundation Beta 8-10 vs 14-18 + sunset del spike | Pendiente CEO | Ya resuelto en v1.4 (Sec.6 #4): dos vias, compromiso 7-9 semanas dogfood / techo 14-18. El "sunset del spike" queda SIN OBJETO por H7: el spike no muere, se promueve — lo que hace sunset es el stack Django (H6) | Sec.6 |
+
+Regla de esta seccion: si durante el build un H# resulta mal decidido, se cambia con
+changelog — pero nunca vuelve a estado "pendiente/gap". Toda re-decision reemplaza,
+no reabre.
 
 ---
 
@@ -413,3 +478,20 @@ Changelog:
   (Tunnel post-E2-6); TLS certbot; puertos 9100/9101 fijados; proxy_pass via puerto
   publicado; secrets via .env no versionado. Sec.6 pasa de "Pendientes CEO" a
   "Decisiones tomadas". SL5 confirmado DENTRO de E1 (flag).
+- v1.5 (2026-07-05): Nueva Sec.7 (tenant): 7.1 evidencia de bootstrap del tenant MWT
+  por seed + settings aplicados (sin UI de crear empresas: eso es Etapa 3); 7.2 M16
+  linea base verde en 21 tablas fnd_* con lectura honesta (single-tenant = verde
+  trivial, no cierra gate); 7.3 tenant canario permanente con filas CANARY_ en todas
+  las tablas, bidireccional, como requisito del gate E2-3 y regresion en cada
+  despliegue. Gate E2-3 actualizado en la tabla de Sec.2.
+- v1.6 (2026-07-06): Nueva Sec.8 — herencia de Etapa 1 cerrada por decision (mandato
+  CEO: nada queda como gap/parcial/bloqueo): H1 SL5 cierre formal en gate E2-2;
+  H2 rotacion IMAP Kimi Work primera tarea E2-2 + cuentas por usuario; H3 KB real
+  MWT entregable de E2-1; H4 adopcion N=10 casos/14 dias + definicion de friccion;
+  H5 certs de firma no bloquean (self-signed interno; compra al arrancar E2-6);
+  H6 runtime unico app/ FastAPI, SPINE Django pasa a contrato de referencia
+  (archivado con tag); H7 deploy del spike se PROMUEVE a instancia E2-1
+  (DEC_FB_SPIKE_PROMOTION supersede renombre del manifiesto); H8 lessons learned
+  en E2-0; H9 licencia FSL 1.1 adoptada; H10 sunset del spike sin objeto (muere el
+  stack Django, no el spike). E2-0 ampliado con lote de higiene. Regla: re-decidir
+  reemplaza, nunca reabre.
