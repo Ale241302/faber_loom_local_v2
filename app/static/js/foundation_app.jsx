@@ -72,7 +72,9 @@ function FoundationSection({ initialView, activeWorkspace }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 4, overflow: "auto", paddingRight: 4 }}>
         <div style={{ padding: "10px 10px 12px" }}>
           <div style={{ fontWeight: 650, fontSize: 13 }}>Tenant</div>
-          <div style={{ color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)", marginTop: 2 }}>{status.tenant ? status.tenant.name : ""}</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)", marginTop: 2 }}>
+            {(me && me.tenant_name) || (status.tenant ? status.tenant.name : "")}
+          </div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
             <FndBadge tone="ok">{me.email}</FndBadge>
             {(me.roles || []).map((r) => <FndBadge key={r}>{r}</FndBadge>)}
