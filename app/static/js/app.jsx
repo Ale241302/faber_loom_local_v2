@@ -89,9 +89,11 @@ function readBootstrap() {
 }
 
 function authHeaders() {
-  const token = localStorage.getItem("faberloom_token");
-  if (token) return { "Authorization": `Bearer ${token}` };
-  return { "x-user-id": "local" };
+  // Auth basada en cookie HttpOnly `faberloom_at`, enviada automáticamente en
+  // requests same-origin. Ya no se manda un Bearer desde localStorage (el login
+  // ya no devuelve el token en el body; enviarlo producía `Bearer undefined` →
+  // 401 "Invalid token").
+  return {};
 }
 
 async function apiGet(path) {
@@ -2569,7 +2571,8 @@ function LoginScreen({ onLogin }) {
     setError(null);
     try {
       const res = await apiPost("/api/auth/login", { email, password });
-      onLogin(res.email, res.access_token);
+      // El login setea la cookie HttpOnly `faberloom_at`; el body solo trae el email.
+      onLogin(res.email);
     } catch (err) {
       setError("Correo o contraseña incorrectos");
     }
@@ -2653,28 +2656,27 @@ function AuthGate() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("faberloom_token");
-    const email = localStorage.getItem("faberloom_user");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    // Sesión basada en cookie HttpOnly: no podemos leerla desde JS, así que
+    // probamos la sesión llamando a la API. Limpiamos el token legacy de
+    // localStorage que ya no se usa (y que producía `Bearer undefined`).
+    localStorage.removeItem("faberloom_token");
     apiGet("/api/workspaces")
-      .then(() => setUser({ email }))
+      .then(() => setUser({ email: localStorage.getItem("faberloom_user") || "" }))
       .catch(() => {
-        localStorage.removeItem("faberloom_token");
         localStorage.removeItem("faberloom_user");
+        setUser(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const handleLogin = (email, token) => {
-    localStorage.setItem("faberloom_token", token);
+  const handleLogin = (email) => {
     localStorage.setItem("faberloom_user", email);
     setUser({ email });
   };
 
   const logout = () => {
+    // Revoca la cookie HttpOnly server-side (JS no puede borrarla).
+    apiPost("/api/auth/logout").catch(() => {});
     localStorage.removeItem("faberloom_token");
     localStorage.removeItem("faberloom_user");
     setUser(null);

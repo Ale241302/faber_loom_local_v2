@@ -147,6 +147,14 @@ def test_sso_bridge_main_jwt_to_foundation(tmp_path: Path, monkeypatch: pytest.M
         assert me["roles"] == ["owner"]
         assert "*" in me["permissions"]
 
+        # Mismo resultado vía cookie HttpOnly `faberloom_at` (lo que envía el
+        # navegador same-origin; el shell ya no manda Authorization Bearer).
+        client.cookies.set("faberloom_at", jwt_token)
+        resp = client.get("/api/foundation/auth/me")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["email"] == OWNER["email"]
+        client.cookies.clear()
+
         # Guard de seguridad: un JWT válido de un email SIN usuario Foundation
         # NO obtiene sesión — no se reabre el bypass de permisos '*' sintéticos.
         intruder = create_access_token("intruder@acme.test")

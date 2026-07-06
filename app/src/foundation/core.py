@@ -519,9 +519,10 @@ def _bootstrap_jwt_context(request: Request, conn: sqlite3.Connection) -> Sessio
         return None
 
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth.startswith("Bearer fnds_"):
-        return None
+    if auth.startswith("Bearer fnds_"):
+        return None  # es un token Foundation, no el JWT principal
     try:
+        # Acepta el JWT principal por cookie HttpOnly `faberloom_at` o por Bearer.
         jwt_user = get_current_user(request)
     except HTTPException:
         return None

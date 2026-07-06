@@ -20,16 +20,13 @@
 
   function headers(extra) {
     const h = Object.assign({}, extra || {});
-    // Foundation ahora se sirve con la sesión principal de FaberLoom; ya no
-    // exige un login propio. Si hay JWT principal lo enviamos; si no, seguimos
-    // usando la sesión Foundation legacy (p. ej. durante bootstrap offline).
-    const appToken = localStorage.getItem("faberloom_token");
-    if (appToken) {
-      h["Authorization"] = `Bearer ${appToken}`;
-    } else {
-      const token = getSession();
-      if (token) h["X-Fnd-Session"] = token;
-    }
+    // Foundation reutiliza la sesión principal de FaberLoom (cookie HttpOnly
+    // `faberloom_at`, enviada automáticamente same-origin); ya no exige login
+    // propio. No se manda un Bearer desde localStorage (producía
+    // `Bearer undefined` → 401). Durante bootstrap offline todavía puede usarse
+    // una sesión Foundation legacy vía X-Fnd-Session.
+    const token = getSession();
+    if (token) h["X-Fnd-Session"] = token;
     return h;
   }
 
