@@ -556,6 +556,46 @@ def _bootstrap_jwt_context(request: Request, conn: sqlite3.Connection) -> Sessio
     return ctx
 
 
+def _sso_jwt_context(request: Request, conn: sqlite3.Connection) -> SessionContext | None:
+    """SSO local-first: un JWT principal de FaberLoom válido (cookie HttpOnly
+    ``faberloom_at`` o ``Authorization: Bearer``) cuyo ``sub`` (email) coincide
+    con un usuario Foundation ACTIVO del tenant establece una sesión Foundation
+    real, con los permisos REALES de ese usuario.
+
+    El shell (foundation_app.jsx) no tiene login propio: reutiliza la sesión
+    principal. Este puente lo hace posible tras el bootstrap sin reabrir el
+    bypass cerrado en el hardening P0: no crea un usuario sintético ni concede
+    ``*``; exige que el email exista como usuario Foundation activo y la
+    autorización sigue gobernada por los roles reales de ese usuario.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer fnds_"):
+        return None  # es un token Foundation, no un JWT principal
+    tenant = get_active_tenant(conn)
+    if tenant is None or tenant["status"] != "active":
+        return None
+    try:
+        jwt_user = get_current_user(request)
+    except HTTPException:
+        return None
+    email = (jwt_user.get("sub") or "").strip().lower()
+    if not email or email == "local" or "@" not in email:
+        return None
+    user = conn.execute(
+        "SELECT * FROM fnd_users WHERE tenant_id = ? AND email = ? AND status = 'active'",
+        (tenant["id"], email),
+    ).fetchone()
+    if user is None:
+        return None
+    synthetic_session = {
+        "id": f"sso_{user['id']}",
+        "tenant_id": tenant["id"],
+        "user_id": user["id"],
+        "stage": "full",
+    }
+    return SessionContext(conn, synthetic_session, user)  # type: ignore[arg-type]
+
+
 def require_session(
     request: Request, conn: sqlite3.Connection = Depends(get_conn)
 ) -> SessionContext:
@@ -575,8 +615,13 @@ def require_session(
             )
             return SessionContext(conn, session, user)
 
-    # Bridge temporal solo durante bootstrap inicial.
+    # Bridge temporal solo durante bootstrap inicial (tenant aún no activo).
     ctx = _bootstrap_jwt_context(request, conn)
+    if ctx is not None:
+        return ctx
+
+    # SSO local-first: sesión principal de FaberLoom → sesión Foundation real.
+    ctx = _sso_jwt_context(request, conn)
     if ctx is not None:
         return ctx
 

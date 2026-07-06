@@ -115,6 +115,48 @@ def test_bootstrap_flow_login_and_me(client: TestClient):
     assert client.get("/api/foundation/auth/me", headers=_h(token)).status_code == 401
 
 
+def test_sso_bridge_main_jwt_to_foundation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """SSO local-first: con el tenant ya bootstrapeado, un JWT principal de
+    FaberLoom válido cuyo ``sub`` (email) coincide con un usuario Foundation
+    activo autentica los endpoints Foundation SIN sesión ``fnds_`` propia.
+
+    Regresión cubierta: el hardening P0 restringió el puente JWT a las rutas
+    ``/bootstrap/*``, dejando el shell (que reusa la sesión principal, sin login
+    propio) colgado en 401 "Foundation session required" tras el bootstrap.
+    """
+    monkeypatch.setenv("FABERLOOM_FOUNDATION_DB", str(tmp_path / "fnd.sqlite3"))
+    monkeypatch.setenv("FABERLOOM_DB_PATH", str(tmp_path / "faberloom.sqlite3"))
+    monkeypatch.setenv("FABERLOOM_USERS", '{"owner@acme.test": "pw"}')
+    monkeypatch.setenv("FABERLOOM_SECRET_KEY", "test-secret-key-sso-at-least-32-bytes-long")
+    monkeypatch.delenv("FABERLOOM_AUTH_DISABLED", raising=False)
+
+    from app.src.auth import create_access_token
+
+    with TestClient(_make_app()) as client:
+        _bootstrap(client)  # crea owner@acme.test + activa el tenant
+
+        # JWT principal del owner, SIN X-Fnd-Session: el shell solo tiene esto.
+        jwt_token = create_access_token(OWNER["email"])
+        resp = client.get(
+            "/api/foundation/auth/me",
+            headers={"Authorization": f"Bearer {jwt_token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        me = resp.json()
+        assert me["email"] == OWNER["email"]
+        assert me["roles"] == ["owner"]
+        assert "*" in me["permissions"]
+
+        # Guard de seguridad: un JWT válido de un email SIN usuario Foundation
+        # NO obtiene sesión — no se reabre el bypass de permisos '*' sintéticos.
+        intruder = create_access_token("intruder@acme.test")
+        resp = client.get(
+            "/api/foundation/auth/me",
+            headers={"Authorization": f"Bearer {intruder}"},
+        )
+        assert resp.status_code == 401, resp.text
+
+
 def test_login_lockout_after_five_failures(client: TestClient):
     _bootstrap(client)
     for i in range(4):
