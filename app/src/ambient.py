@@ -635,7 +635,8 @@ class AmbientOrchestrator:
                 utility_score_pct=int(utility),
                 evidence_json=json.dumps(evidence, ensure_ascii=False),
             )
-            self._write_cycle_audit(conn, tenant_id, workspace_id, cycle_id, stats, utility)
+            workspace_ids = [ws["id"] for ws in workspaces]
+            self._write_cycle_audit(conn, tenant_id, workspace_ids, cycle_id, stats, utility)
             return closed or cycle
         except Exception as exc:
             logger.exception("Ambient cycle failed")
@@ -846,31 +847,32 @@ class AmbientOrchestrator:
         self,
         conn: sqlite3.Connection,
         tenant_id: str,
-        workspace_id: str | None,
+        workspace_ids: list[str],
         cycle_id: str,
         stats: dict[str, Any],
         utility: float,
     ) -> None:
-        ctx = ambient_context(tenant_id=tenant_id, workspace_id=workspace_id or SYSTEM_WORKSPACE_ID)
-        audit_writer.write(
-            ctx,
-            conn,
-            action="ambient_cycle.completed",
-            payload={
-                "cycle_id": cycle_id,
-                "tenant_id": tenant_id,
-                "workspace_id": workspace_id,
-                "detectors_run": stats["detectors_run"],
-                "detectors_failed": stats["detectors_failed"],
-                "proposals_created": stats["proposals_created"],
-                "proposals_visible": stats["proposals_visible"],
-                "proposals_dark": stats["proposals_dark"],
-                "cost_usd": round(stats["cost_usd"], 6),
-                "utility_score_pct": int(utility),
-            },
-            correlation_id=cycle_id,
-            mirror_jsonl=False,
-        )
+        for ws_id in workspace_ids:
+            ctx = ambient_context(tenant_id=tenant_id, workspace_id=ws_id)
+            audit_writer.write(
+                ctx,
+                conn,
+                action="ambient_cycle.completed",
+                payload={
+                    "cycle_id": cycle_id,
+                    "tenant_id": tenant_id,
+                    "workspace_id": ws_id,
+                    "detectors_run": stats["detectors_run"],
+                    "detectors_failed": stats["detectors_failed"],
+                    "proposals_created": stats["proposals_created"],
+                    "proposals_visible": stats["proposals_visible"],
+                    "proposals_dark": stats["proposals_dark"],
+                    "cost_usd": round(stats["cost_usd"], 6),
+                    "utility_score_pct": int(utility),
+                },
+                correlation_id=cycle_id,
+                mirror_jsonl=False,
+            )
 
 
 # Global orchestrator instance
