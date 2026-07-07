@@ -48,7 +48,7 @@ dig +short console.minio.faberloom.ai
 
 ## 4. Configuración de `mwt-nginx`
 
-Agregar dos server blocks en `/etc/nginx/sites-available/` (o el path que use el host) y habilitarlos con `ln -s`.
+En este host el proxy es el contenedor `mwt-nginx` del stack `/opt/mwt`. Agregar `/opt/mwt/nginx/faberloom-minio.conf` y montarlo en el servicio `nginx` del `docker-compose.yml` de MWT, luego `docker compose up -d nginx`.
 
 ### S3 API
 
@@ -115,8 +115,11 @@ server {
 Recargar:
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
+cd /opt/mwt
+docker compose up -d nginx
 ```
+
+Nota: si el certificado es self-signed (`/etc/nginx/ssl/nginx.crt`), los navegadores mostrarán advertencia hasta que se configure Let’s Encrypt u otro emisor.
 
 ---
 
@@ -204,16 +207,19 @@ Policy `faberloom-api-policy.json`:
     {
       "Effect": "Allow",
       "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
         "s3:PutObject",
         "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
+        "s3:DeleteObject"
       ],
       "Resource": [
-        "arn:aws:s3:::fl-uploads/*",
+        "arn:aws:s3:::*",
         "arn:aws:s3:::fl-uploads",
-        "arn:aws:s3:::fl-generated/*",
-        "arn:aws:s3:::fl-generated"
+        "arn:aws:s3:::fl-uploads/*",
+        "arn:aws:s3:::fl-generated",
+        "arn:aws:s3:::fl-generated/*"
       ]
     }
   ]
