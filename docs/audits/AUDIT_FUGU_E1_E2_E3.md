@@ -205,3 +205,68 @@ catalogo, policy) pero requiere scoping por tenant y presets builder UI.
 
 Changelog:
 - v1.0 (2026-07-07): Auditoria estatica inicial E1/E2/E3 por fugu. Sin ejecucion de suite ni graphify.
+
+
+---
+
+## 5. AVANCES POST-AUDITORIA (2026-07-07)
+
+### 5.1 P0 header-trust mitigado
+
+- `FABERLOOM_DEV_TRUST_HEADERS` ahora solo tiene efecto cuando `PYTEST_CURRENT_TEST`
+  está presente (`app/src/api.py`). En producción los headers `x-tenant-id`,
+  `x-user-id`, `x-actor-id`, `x-actor-role` son ignorados.
+
+### 5.2 E3-1 Postgres+RLS verificado
+
+- Corregido `SET LOCAL app.current_tenant/workspace/tenant_id` en
+  `app/src/db_adapter.py` usando interpolación segura con `psycopg.sql`.
+- Corregidas políticas y placeholders en tests E3-1.
+- RLS probado con rol `faberloom_app` (NOBYPASSRLS) en VPS Postgres:
+  **19 passed** (`test_e3_1_*`).
+- VPS Postgres tiene esquema migrado, RLS aplicado y rol `faberloom_app`
+  configurado.
+- Documentado cutover en `Plan/E3_CUTOVER_POSTGRES_RLS.md`.
+
+### 5.3 E3-0 cimientos de seguridad
+
+- Creado `app/src/security/secrets.py` con `TenantDataKey`, envelope encryption,
+  rotación de data keys; tests `test_e3_0_secrets.py`.
+- Creado `app/src/connectors/smtp.py` con `SMTPConfig`, `send_email`,
+  `confirmation_token`, `verify_smtp_config`; tests `test_e3_0_smtp_hitl.py`.
+
+### 5.4 E3-2 backend de tenant lifecycle
+
+- Agregado `platform_admin` a `SYSTEM_ROLES` en `app/src/foundation/core.py`.
+- Creado `app/src/plans.py` con planes `starter`/`growth`/`enterprise` y
+  enforcement fail-closed; tests `test_e3_2_plans.py`.
+- Creado `app/src/config_cascade.py` con resolución
+  `user > workspace > tenant > default`; tests `test_e3_2_config_cascade.py`.
+- Creado endpoint `POST /api/public/signup` en `app/src/auth.py` que crea tenant
+  `pending_approval`, owner y roles; tests `test_e3_2_signup.py`.
+
+### 5.5 E3-3 sello criptográfico (cimientos)
+
+- Creado `app/src/entity_identity.py` con identidad inmutable por tenant,
+  versionado y cambio solo por owner con confirmación; tests
+  `test_e3_3_identity.py`.
+- Creado `app/src/key_broker.py` con llave graduada
+  (`closed`/`index`/`content`) y políticas CEO-only; tests
+  `test_e3_3_key_broker.py`.
+- Creado `app/src/crypto/envelope.py` sobre `security/secrets.py`; tests
+  `test_e3_3_envelope.py`.
+
+### 5.6 Tests representativos verdes
+
+- Suite local representativa (E3 + E2 + E1): **57 passed**.
+- Suite Postgres E3-1 contra VPS: **19 passed**.
+- Tests de seguridad/auth/foundation: **26 passed**.
+
+### 5.7 Pendiente explicito
+
+- Corte real del VPS a Postgres+RLS (checklist listo, no ejecutado).
+- Aprobación/suspensión de tenants por `platform_admin` (endpoint pendiente).
+- Integrar `security/secrets.py` con `router/config_store.py` y `storage.py`.
+- Whisper (`faster-whisper`) en `ingest.py`.
+- `ACTA_ETAPA2_TERMINADA`.
+- E3-4, E3-5, E3-6 no iniciados.
