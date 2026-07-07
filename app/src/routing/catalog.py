@@ -21,9 +21,9 @@ from ..router.registry import build_router
 
 
 DEFAULT_MODEL_CAPABILITIES: dict[str, list[str]] = {
-    "gpt-4o-mini": ["text", "cheap"],
-    "gpt-4o": ["text"],
-    "claude-3-5-sonnet": ["text"],
+    "gpt-4o-mini": ["text", "cheap", "vision"],
+    "gpt-4o": ["text", "vision"],
+    "claude-3-5-sonnet": ["text", "vision"],
     "gemini-1.5-pro": ["text", "vision"],
     "moonshot-v1-8k": ["text"],
     "moonshot-v1-32k": ["text"],
@@ -37,6 +37,50 @@ DEFAULT_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "kimi-k2.6": ["text", "code"],
     "llama3.1": ["text", "local_only"],
 }
+
+
+# Nivel de capacidad aproximado por modelo (3 = frontier, 2 = medio, 1 = básico).
+# Determinista y versionado en git — contrato F1 tiered (ENT_PLAT_LLM_ROUTING §F,
+# DEC-006): los niveles cambian por decisión humana con commit explícito.
+MODEL_QUALITY: dict[str, int] = {
+    "gpt-4o": 3,
+    "gpt-4o-mini": 1,
+    "claude-3-5-sonnet": 3,
+    "gemini-1.5-pro": 3,
+    "moonshot-v1-8k": 1,
+    "moonshot-v1-32k": 2,
+    "moonshot-v1-128k": 2,
+    "kimi-for-coding": 3,
+    "kimi-latest": 2,
+    "kimi-k2.5": 3,
+    "kimi-k2-thinking": 3,
+    "kimi-k2-turbo-preview": 2,
+    "kimi-k2-0905-preview": 2,
+    "kimi-k2.6": 3,
+    "llama3.1": 1,
+}
+DEFAULT_MODEL_QUALITY = 2
+
+# Ventana de contexto aproximada (tokens) por modelo, para descartar candidatos
+# que no aguantan el input estimado de un paso (tareas largas / PDFs).
+MODEL_CONTEXT_TOKENS: dict[str, int] = {
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+    "claude-3-5-sonnet": 200_000,
+    "gemini-1.5-pro": 1_000_000,
+    "moonshot-v1-8k": 8_000,
+    "moonshot-v1-32k": 32_000,
+    "moonshot-v1-128k": 128_000,
+    "kimi-for-coding": 256_000,
+    "kimi-latest": 128_000,
+    "kimi-k2.5": 256_000,
+    "kimi-k2-thinking": 256_000,
+    "kimi-k2-turbo-preview": 256_000,
+    "kimi-k2-0905-preview": 256_000,
+    "kimi-k2.6": 256_000,
+    "llama3.1": 8_000,
+}
+DEFAULT_MODEL_CONTEXT_TOKENS = 32_000
 
 
 def seed_workspace_catalog(
@@ -173,16 +217,21 @@ def resolve_model_for_capability(
     local_only: bool = False,
     preferred_provider: str | None = None,
     complexity: str = "medium",
+    estimated_input_tokens: int = 0,
 ) -> dict[str, Any]:
     """Pick the best catalog entry for a capability and task complexity.
 
-    Selection balances user priority, cost, and estimated task complexity:
-      - low complexity  -> strongly prefer cheaper models
-      - high complexity -> strongly prefer higher-priority (more capable) models
-      - medium          -> balanced trade-off
+    Contrato F1 tiered (ENT_PLAT_LLM_ROUTING §D/§F, DEC-006): en modo auto la
+    prioridad manual del provider NO participa; la decisión es determinista por
+    complejidad de la tarea, calidad del modelo, costo, tokens y budget:
+      - low complexity  -> CHEAPEST_FIRST: el más barato que cumpla
+      - high complexity -> BEST_FIRST: el de mayor calidad dentro del budget
+      - medium          -> mejor valor (costo/calidad)
+    Los modelos cuya ventana de contexto no aguanta ``estimated_input_tokens``
+    se descartan (tareas largas van a modelos de contexto grande).
 
     Fail-closed: raises ValueError if no entry matches capability, allowlist,
-    budget, or isolation constraints.
+    budget, context or isolation constraints.
     """
 
     if policy is None:
@@ -206,19 +255,19 @@ def resolve_model_for_capability(
     if complexity not in {"low", "medium", "high"}:
         complexity = "medium"
 
-    def _score(entry: dict[str, Any]) -> float:
-        """Lower score is better. Priority is ascending (smaller = user prefers);
-        cost is ascending (smaller = cheaper). Complexity shifts the weight."""
+    def _score(entry: dict[str, Any]) -> tuple[float, float]:
+        """Lower tuple sorts first. La prioridad manual del admin NO participa:
+        el modo auto decide por calidad del modelo y costo según complejidad."""
         cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
-        priority = entry["priority"]
-        if capability == "cheap":
-            # Explicit cheap request: optimize purely for cost.
-            return cost_per_1k
-        if complexity == "low":
-            return priority * 0.3 + cost_per_1k * 2.0
+        quality = MODEL_QUALITY.get(entry["model"], DEFAULT_MODEL_QUALITY)
+        if capability == "cheap" or complexity == "low":
+            # CHEAPEST_FIRST: el más barato; a igual costo, el de más calidad.
+            return (cost_per_1k, -quality)
         if complexity == "high":
-            return priority * 2.0 + cost_per_1k * 0.3
-        return priority * 1.0 + cost_per_1k * 1.0
+            # BEST_FIRST: el de más calidad; a igual calidad, el más barato.
+            return (-quality, cost_per_1k)
+        # medium: mejor valor — costo por unidad de calidad.
+        return (cost_per_1k / max(quality, 1), cost_per_1k)
 
     for entry in sorted(candidates, key=_score):
         if provider_allowlist and entry["provider_slug"] not in provider_allowlist:
@@ -228,8 +277,15 @@ def resolve_model_for_capability(
             continue
         if preferred_provider and entry["provider_slug"] != preferred_provider:
             continue
-        # Budget check: rough estimate for 1K input / 1K output.
-        estimated_cost = (entry["cost_input_1k"] + entry["cost_output_1k"]) / 1000
+        # Context-window check: descarta modelos que no aguantan el input estimado
+        # (margen 20% + espacio para el output).
+        if estimated_input_tokens:
+            context_limit = MODEL_CONTEXT_TOKENS.get(entry["model"], DEFAULT_MODEL_CONTEXT_TOKENS)
+            if estimated_input_tokens * 1.2 + 1024 > context_limit:
+                continue
+        # Budget check: estimación con los tokens reales del paso cuando se conocen.
+        est_input = max(estimated_input_tokens, 1000)
+        estimated_cost = (entry["cost_input_1k"] / 1000) * est_input + (entry["cost_output_1k"] / 1000) * 1024
         if estimated_cost > budget_remaining:
             continue
         return entry

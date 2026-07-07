@@ -60,8 +60,14 @@ def run_auto_chain(
     user_request: str,
     attachments: list[dict[str, Any]] | None = None,
     policy: dict[str, Any] | None = None,
+    image_attachment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run an auto-routed chain for a chat request.
+
+    ``image_attachment`` is an optional multimodal part
+    ``{"type": "image", "mime_type": ..., "data_b64": ..., "file_name": ...}``;
+    when present the chain starts with a vision-capable step that actually
+    sees the image.
 
     Returns a dict with:
         - content: final assistant content
@@ -102,15 +108,37 @@ def run_auto_chain(
             pdf_image_count += len(extracted.get("page_images", []))
 
     combined_context = "\n\n".join(pdf_texts).strip()
-    plan = _build_plan(
-        ctx,
-        conn,
-        user_request=user_request,
-        pdf_context=combined_context,
-        pdf_image_count=pdf_image_count,
-        policy=policy,
-        budget_cap=budget_cap,
-    )
+
+    if image_attachment is not None:
+        # Imagen adjunta: plan determinista que arranca con un paso de visión.
+        if not has_catalog_capability(ctx, conn, "vision", local_only=policy.get("require_local_only", False)):
+            raise NoCapacityError("No vision model available in workspace catalog")
+        plan = [{
+            "capability": "vision",
+            "task": "analyze_image",
+            "prompt": user_request,
+            "complexity": _estimate_complexity(user_request),
+        }]
+        wants_image = any(
+            k in user_request.lower() for k in ("genera una imagen", "generame una imagen", "dibuja", "crea una imagen")
+        )
+        if wants_image and has_catalog_capability(ctx, conn, "image_gen", local_only=policy.get("require_local_only", False)):
+            plan.append({
+                "capability": "image_gen",
+                "task": "generate_image",
+                "prompt": "Generate an image based on the analysis.",
+                "complexity": "medium",
+            })
+    else:
+        plan = _build_plan(
+            ctx,
+            conn,
+            user_request=user_request,
+            pdf_context=combined_context,
+            pdf_image_count=pdf_image_count,
+            policy=policy,
+            budget_cap=budget_cap,
+        )
 
     if len(plan) > max_steps:
         plan = plan[:max_steps]
@@ -132,6 +160,13 @@ def run_auto_chain(
         if remaining <= 0:
             raise NoCapacityError(f"Budget cap ${budget_cap:.2f} exceeded after {step_index} steps")
 
+        step_input = _render_step_input(
+            step=step,
+            user_request=user_request,
+            pdf_context=combined_context,
+            previous_result=last_result,
+        )
+
         entry = resolve_model_for_capability(
             ctx,
             conn,
@@ -139,13 +174,7 @@ def run_auto_chain(
             budget_remaining=remaining,
             policy=policy,
             complexity=complexity,
-        )
-
-        step_input = _render_step_input(
-            step=step,
-            user_request=user_request,
-            pdf_context=combined_context,
-            previous_result=last_result,
+            estimated_input_tokens=max(1, len(step_input) // 4),
         )
 
         result = _execute_step(
@@ -154,6 +183,7 @@ def run_auto_chain(
             entry=entry,
             step_input=step_input,
             policy=policy,
+            image_part=image_attachment if capability == "vision" else None,
         )
 
         # Enforce workspace budget against actual step cost.
@@ -324,6 +354,9 @@ def _planner_prompt(user_request: str, pdf_context: str, pdf_image_count: int) -
             "Use capability 'image_gen' only if the user explicitly asks for an image. "
             "Set complexity to 'low' for greetings, short factual answers or simple chat. "
             "Set complexity to 'high' for analysis, comparison, reasoning, code, design or long documents. "
+            "For multi-step plans, mark intermediate extraction/summarization steps as complexity 'low' "
+            "(they run on cheaper models) and give the final synthesis/answer step the real task complexity "
+            "(it runs on a more capable model and is the one that answers the user). "
             "Use at most 3 steps. Do not include explanations outside the JSON."
         ),
         f"User request: {user_request}",
@@ -376,6 +409,8 @@ def _render_step_input(
     pdf_context: str,
     previous_result: dict[str, Any] | None,
 ) -> str:
+    if step["task"] == "analyze_image":
+        return f"User request: {user_request}\n\nResponde considerando la imagen adjunta."
     if step["task"] == "summarize_pdf" and pdf_context:
         return f"Summarize the following PDF text in one paragraph:\n\n{pdf_context[:6000]}"
     if step["task"] == "generate_image" and previous_result:
@@ -393,9 +428,15 @@ def _execute_step(
     entry: dict[str, Any],
     step_input: str,
     policy: dict[str, Any],
+    image_part: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     provider_slug = entry["provider_slug"]
     model = entry["model"]
+
+    # Contenido multimodal cuando el paso lleva imagen (capability vision).
+    step_content: Any = step_input
+    if image_part is not None:
+        step_content = [{"type": "text", "text": step_input}, image_part]
 
     if provider_slug == "stub":
         provider = StubImageProvider(
@@ -408,7 +449,7 @@ def _execute_step(
             )
         )
         request = CompletionRequest(
-            messages=[{"role": "user", "content": step_input}],
+            messages=[{"role": "user", "content": step_content}],
             model=model,
             provider_slug=provider_slug,
             temperature=0.7,
@@ -439,7 +480,7 @@ def _execute_step(
     spent = sum_workspace_usage_cost(ctx, conn)
     budget_cap = policy.get("budget_cap_usd", 5.0)
     request = CompletionRequest(
-        messages=[{"role": "user", "content": step_input}],
+        messages=[{"role": "user", "content": step_content}],
         model=model,
         provider_slug=provider_slug,
         temperature=0.7,

@@ -524,8 +524,9 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     }
     if (attachment) {
       options.attachment_object_id = attachment.object_id;
+      options.attachment_file_name = attachment.file_name;
     }
-    onSend(text, options);
+    onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
     clearAttachment();
   };
@@ -557,16 +558,18 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         </div>
         <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto" disabled={uploading}><Icon name="x" size={14}/></button>
       </div>}
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
-      <div className="composer-actions">
-        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
-        <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
-          <Icon name="paperclip" size={16}/>
-        </button>
-        <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
-          <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
-        </button>
-        <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
+      <div className="composer-input-row">
+        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
+        <div className="composer-actions">
+          <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
+          <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
+            <Icon name="paperclip" size={16}/>
+          </button>
+          <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
+            <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
+          </button>
+          <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
+        </div>
       </div>
     </div>
     {showModelPicker && <div className="composer-picker">
@@ -815,7 +818,7 @@ function SpaceView({ activeWorkspace }) {
       const tempMessage = {
         id: tempId,
         role: "user",
-        content: text,
+        content: options.attachment_file_name ? `${text}\n\n[Imagen adjunta: ${options.attachment_file_name}]` : text,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, tempMessage]);
@@ -824,6 +827,9 @@ function SpaceView({ activeWorkspace }) {
       if (options.provider_slug && options.model) {
         body.provider_slug = options.provider_slug;
         body.model = options.model;
+      }
+      if (options.attachment_object_id) {
+        body.attachment_object_id = options.attachment_object_id;
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
       if (completion && completion.message) {

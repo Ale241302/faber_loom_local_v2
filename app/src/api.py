@@ -131,7 +131,7 @@ from .gold import (
     list_gold_candidates,
     promote_gold_candidate,
 )
-from .ingest import IngestError, extract_text_from_object
+from .ingest import IngestError, extract_text_from_object, load_image_attachment
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
@@ -784,12 +784,36 @@ def _build_user_message_with_attachment(
     ctx: Context,
     conn: sqlite3.Connection,
     payload: ChatCompletionRequest,
-) -> str:
-    """Return the user message text, optionally appending extracted attachment text."""
+) -> tuple[str, dict[str, Any] | None]:
+    """Return ``(user_message_text, image_part | None)``.
+
+    For image attachments the image is loaded from storage as base64 so it can
+    be sent as multimodal content to vision-capable models; the stored text
+    gets a ``[Imagen adjunta: …]`` marker. For other attachments the extracted
+    text is appended to the message (existing behaviour).
+    """
 
     text = payload.message
     if not payload.attachment_object_id:
-        return text
+        return text, None
+
+    obj = get_object(ctx, conn, payload.attachment_object_id)
+    mime = ((obj or {}).get("mime_type") or "").lower()
+    if mime.startswith("image/"):
+        image = load_image_attachment(ctx, conn, payload.attachment_object_id)
+        if image.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Attachment could not be ingested: {image['error']}",
+            )
+        file_name = image.get("file_name") or "imagen"
+        return f"{text}\n\n[Imagen adjunta: {file_name}]", {
+            "type": "image",
+            "mime_type": image["mime_type"],
+            "data_b64": image["data_b64"],
+            "file_name": file_name,
+        }
+
     result = extract_text_from_object(ctx, conn, payload.attachment_object_id)
     if result.get("error"):
         raise HTTPException(
@@ -799,8 +823,11 @@ def _build_user_message_with_attachment(
     attachment_text = result.get("text", "").strip()
     file_name = result.get("file_name") or "adjunto"
     if not attachment_text:
-        return f"{text}\n\n[Adjunto: {file_name} — texto no extraído]"
-    return f"{text}\n\n--- Contenido del adjunto {file_name} ---\n{attachment_text}\n--- Fin del adjunto ---"
+        return f"{text}\n\n[Adjunto: {file_name} — texto no extraído]", None
+    return (
+        f"{text}\n\n--- Contenido del adjunto {file_name} ---\n{attachment_text}\n--- Fin del adjunto ---",
+        None,
+    )
 
 
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/completions", response_model=ChatCompletionResponse)
@@ -817,7 +844,7 @@ def api_create_completion(
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    user_message = _build_user_message_with_attachment(ctx, conn, payload)
+    user_message, attachment_image = _build_user_message_with_attachment(ctx, conn, payload)
 
     mention_match = _AT_MENTION_RE.match(payload.message.strip())
     if mention_match and payload.attachment_object_id:
@@ -970,6 +997,7 @@ def api_create_completion(
                     conn,
                     chat_id=chat_id,
                     user_request=user_message,
+                    image_attachment=attachment_image,
                 )
                 insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
                 route = {
@@ -1056,6 +1084,18 @@ def api_create_completion(
 
     history = [{"role": "system", "content": _SYSTEM_PROMPT}]
     history.extend(get_message_history(ctx, conn, chat_id))
+
+    # Vision: replace the freshly persisted user message (last in history) with
+    # multimodal content so vision-capable models actually see the image. The
+    # DB keeps the text marker only; past images are not re-sent in later turns.
+    if attachment_image is not None and history and history[-1].get("role") == "user":
+        history[-1] = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_message},
+                attachment_image,
+            ],
+        }
 
     # Snapshot accumulated spend; the router evaluates budget per-candidate,
     # allowing fallback to a cheaper provider when the preferred one would
