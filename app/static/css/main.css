@@ -863,3 +863,8 @@ button { background: none; border: none; cursor: pointer; }
   .login-card { padding: 34px 26px 30px; }
   .login-title { font-size: 30px; }
 }
+
+.composer-attachment { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 10px; border-radius: var(--r-md); background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; }
+.composer-attachment button { width: 22px; height: 22px; padding: 0; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
+.composer-attachment button:hover { color: var(--text-primary); }
+.composer-drag-over .composer { border-color: var(--coral); box-shadow: 0 0 0 3px var(--coral-soft); }

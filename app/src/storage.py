@@ -173,11 +173,28 @@ class ObjectStore:
     """High-level object store with workspace-scoped keys."""
 
     def __init__(self, backend: str | None = None) -> None:
-        backend = (backend or os.getenv("FL_STORAGE_BACKEND", "minio")).lower()
+        backend_env = os.getenv("FL_STORAGE_BACKEND")
+        backend = (backend or backend_env or "minio").lower()
         if backend == "memory":
             self._backend: _MinioStoreBackend | _MemoryStoreBackend = _MemoryStoreBackend()
         elif backend == "minio":
-            self._backend = _MinioStoreBackend()
+            try:
+                self._backend = _MinioStoreBackend()
+            except ObjectStoreError:
+                # If the operator did not explicitly request MinIO and no
+                # credentials are configured, fall back to an in-memory store so
+                # local tests and dev runs keep working without a MinIO server.
+                if backend_env is None:
+                    import warnings
+
+                    warnings.warn(
+                        "MinIO credentials not configured; falling back to memory object store",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                    self._backend = _MemoryStoreBackend()
+                else:
+                    raise
         else:
             raise ObjectStoreError(f"Unsupported storage backend: {backend}")
 

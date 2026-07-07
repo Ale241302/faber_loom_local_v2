@@ -139,4 +139,15 @@ def assert_safe_kb_source(source_type: str, content_text: str) -> None:
             "extracted text after sandboxed parsing."
         )
 
+    # E2-6: extracted text from docx/json/sql and transcribed audio/video can
+    # carry hidden instruction overrides or embedded HTML/JS snippets.
+    if source_type in {"docx", "json", "sql", "image", "audio", "video"}:
+        html_errors = validate_html_basic(content_text)
+        if html_errors:
+            raise ValueError("Unsafe extracted content: " + "; ".join(html_errors))
+        hidden_errors = validate_hidden_instructions(content_text)
+        if hidden_errors:
+            raise ValueError("Unsafe extracted content: " + "; ".join(hidden_errors))
+        return
+
     # Unknown type: let the caller decide.

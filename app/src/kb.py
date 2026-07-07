@@ -23,7 +23,16 @@ import openpyxl
 import pdfplumber
 
 from .context import Context, enforce_tenant_scoped
-from .db import new_id, record_editorial_event, row_to_dict, transaction, utc_now, workspace_seal_id
+from .db import (
+    get_object,
+    new_id,
+    record_editorial_event,
+    row_to_dict,
+    transaction,
+    utc_now,
+    workspace_seal_id,
+)
+from .ingest import extract_text_from_blob, extract_text_from_object
 from .kb_extractors import extract_document
 from .models import SCHEMA_VERSION
 from .seal import (
@@ -259,6 +268,7 @@ def ingest_kb_source(
     source_type: str,
     content_text: str | None = None,
     content_blob: bytes | None = None,
+    object_id: str | None = None,
     source_version: str = "v1",
     level: int = 0,
     approved_by: str | None = None,
@@ -275,7 +285,8 @@ def ingest_kb_source(
 
     enforce_tenant_scoped(ctx)
 
-    if source_type not in {"md", "txt", "csv", "xlsx", "pdf"}:
+    supported_types = {"md", "txt", "csv", "xlsx", "pdf", "docx", "json", "sql", "image", "audio", "video"}
+    if source_type not in supported_types:
         raise ValueError(f"Unsupported KB source type: {source_type}")
 
     workspace_id = ctx.require_scoped_workspace()
@@ -287,6 +298,22 @@ def ingest_kb_source(
     extraction_warnings: list[str] | None = None
     extraction_method = source_type
     parser_version = PARSER_VERSIONS.get(source_type, "unknown")
+
+    # -----------------------------------------------------------------------
+    # Resolve binary content and metadata for object-backed sources.
+    # -----------------------------------------------------------------------
+    if object_id is not None and content_blob is None:
+        # Read object from MinIO and derive metadata from its metadata row.
+        obj = get_object(ctx, conn, object_id)
+        if obj is None:
+            raise ValueError(f"Object {object_id} not found")
+        from .storage import get_object_store
+
+        store = get_object_store()
+        content_blob = store.get_object(obj["bucket"], obj["object_key"])
+        file_name = file_name or obj.get("file_name")
+        mime_type = mime_type or obj.get("mime_type")
+        file_size = file_size or obj.get("size_bytes")
 
     if source_type in {"md", "txt", "csv"}:
         if content_text is None:
@@ -325,6 +352,29 @@ def ingest_kb_source(
         extraction_method = f"{source_type}_extractor"
         if file_size is None:
             file_size = len(content_blob)
+    elif source_type in {"docx", "json", "sql", "image", "audio", "video"}:
+        if object_id:
+            result = extract_text_from_object(ctx, conn, object_id)
+            if result.get("error"):
+                raise ValueError(f"Ingestion failed for {source_type}: {result['error']}")
+            extracted_text = result["text"]
+        else:
+            if content_blob is None:
+                raise ValueError(f"content_blob or object_id required for source type {source_type}")
+            from .db import get_routing_policy
+            require_local = bool(get_routing_policy(ctx, conn).get("require_local_only", 0))
+            try:
+                extracted_text = extract_text_from_blob(
+                    blob=content_blob,
+                    ingest_type=source_type,
+                    require_local=require_local,
+                )
+            except Exception as exc:
+                raise ValueError(f"Ingestion failed for {source_type}: {exc}") from exc
+        assert_safe_kb_source(source_type, extracted_text)
+        extraction_method = f"{source_type}_extractor"
+        if file_size is None and content_blob is not None:
+            file_size = len(content_blob)
     else:
         raise ValueError(f"Unsupported KB source type: {source_type}")
 
@@ -335,6 +385,8 @@ def ingest_kb_source(
         "extraction_method": extraction_method,
         "parser_version": parser_version,
     }
+    if object_id:
+        meta["object_id"] = object_id
     with transaction(conn):
         conn.execute(
             f"""

@@ -29,6 +29,7 @@ from .db import (
     approve_routine_run,
     create_chat,
     create_email_account,
+    create_generated_object,
     create_mail_message,
     create_object,
     create_or_get_mail_outbox,
@@ -130,6 +131,7 @@ from .gold import (
     list_gold_candidates,
     promote_gold_candidate,
 )
+from .ingest import IngestError, extract_text_from_object
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
@@ -778,6 +780,29 @@ def api_list_messages(
     return [_serialize_message(row) for row in get_messages(ctx, conn, chat_id)]
 
 
+def _build_user_message_with_attachment(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    payload: ChatCompletionRequest,
+) -> str:
+    """Return the user message text, optionally appending extracted attachment text."""
+
+    text = payload.message
+    if not payload.attachment_object_id:
+        return text
+    result = extract_text_from_object(ctx, conn, payload.attachment_object_id)
+    if result.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Attachment could not be ingested: {result['error']}",
+        )
+    attachment_text = result.get("text", "").strip()
+    file_name = result.get("file_name") or "adjunto"
+    if not attachment_text:
+        return f"{text}\n\n[Adjunto: {file_name} — texto no extraído]"
+    return f"{text}\n\n--- Contenido del adjunto {file_name} ---\n{attachment_text}\n--- Fin del adjunto ---"
+
+
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/completions", response_model=ChatCompletionResponse)
 def api_create_completion(
     workspace_id: str,
@@ -792,7 +817,14 @@ def api_create_completion(
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
+    user_message = _build_user_message_with_attachment(ctx, conn, payload)
+
     mention_match = _AT_MENTION_RE.match(payload.message.strip())
+    if mention_match and payload.attachment_object_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attachments are not supported with @routine mentions",
+        )
     if mention_match:
         routine_name = mention_match.group(1)
         user_request = (mention_match.group(2) or "").strip()
@@ -937,9 +969,9 @@ def api_create_completion(
                     ctx,
                     conn,
                     chat_id=chat_id,
-                    user_request=payload.message,
+                    user_request=user_message,
                 )
-                insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.message)
+                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
                 route = {
                     "chain_id": auto_result["chain_id"],
                     "steps": auto_result["steps"],
@@ -1003,7 +1035,7 @@ def api_create_completion(
             attempts_json=[{"provider": "router", "status": "failed", "reason": "no_providers_configured"}],
             request_json={
                 "chat_id": chat_id,
-                "message_chars": len(payload.message),
+                "message_chars": len(user_message),
                 "provider_slug": payload.provider_slug,
                 "model": payload.model,
                 "max_tokens": payload.max_tokens,
@@ -1020,7 +1052,7 @@ def api_create_completion(
 
     # Persist the user message first so the completion history includes it.
     with transaction(conn):
-        insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.message)
+        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
 
     history = [{"role": "system", "content": _SYSTEM_PROMPT}]
     history.extend(get_message_history(ctx, conn, chat_id))
@@ -1063,7 +1095,7 @@ def api_create_completion(
             attempts_json=attempts,
             request_json={
                 "chat_id": chat_id,
-                "message_chars": len(payload.message),
+                "message_chars": len(user_message),
                 "provider_slug": payload.provider_slug,
                 "model": payload.model,
                 "max_tokens": payload.max_tokens,
@@ -1106,7 +1138,7 @@ def api_create_completion(
                     attempts_json=attempts,
                     request_json={
                         "chat_id": chat_id,
-                        "message_chars": len(payload.message),
+                        "message_chars": len(user_message),
                         "provider_slug": payload.provider_slug,
                         "model": payload.model,
                         "max_tokens": payload.max_tokens,
@@ -1166,7 +1198,7 @@ def api_create_completion(
                 attempts_json=attempts,
                 request_json={
                     "chat_id": chat_id,
-                    "message_chars": len(payload.message),
+                    "message_chars": len(user_message),
                     "provider_slug": payload.provider_slug,
                     "model": payload.model,
                     "max_tokens": payload.max_tokens,
@@ -2224,6 +2256,7 @@ def api_create_kb_source(
             title=payload.title,
             source_type=payload.type,
             content_text=payload.content_text,
+            object_id=payload.object_id,
             source_version=payload.source_version,
             level=payload.level,
         )
@@ -2242,6 +2275,27 @@ def _extension_to_type(filename: str) -> str | None:
         "xls": "xlsx",
         "xlsm": "xlsx",
         "pdf": "pdf",
+        "docx": "docx",
+        "doc": "docx",
+        "json": "json",
+        "sql": "sql",
+        "png": "image",
+        "jpg": "image",
+        "jpeg": "image",
+        "gif": "image",
+        "webp": "image",
+        "bmp": "image",
+        "tiff": "image",
+        "mp3": "audio",
+        "m4a": "audio",
+        "wav": "audio",
+        "ogg": "audio",
+        "weba": "audio",
+        "mp4": "video",
+        "webm": "video",
+        "ogv": "video",
+        "mov": "video",
+        "mkv": "video",
     }
     return mapping.get(ext)
 
@@ -2277,13 +2331,30 @@ def api_upload_kb_source(
     finally:
         file.file.close()
 
+    object_id = new_id("obj")
+    key = object_key(workspace_id, "upload", file.filename, object_id)
     try:
+        with transaction(conn):
+            create_object(
+                ctx,
+                conn,
+                origin="upload",
+                bucket=UPLOAD_BUCKET,
+                object_key=key,
+                file_name=file.filename,
+                mime_type=file.content_type or "application/octet-stream",
+                size_bytes=len(content_blob),
+                source_type=source_type,
+                object_id=object_id,
+            )
+        store = get_object_store()
+        store.put_object(UPLOAD_BUCKET, key, content_blob, file.content_type or "application/octet-stream")
         created = ingest_kb_source(
             ctx,
             conn,
             title=title,
             source_type=source_type,
-            content_blob=content_blob,
+            object_id=object_id,
             source_version=source_version,
             level=level,
             file_name=file.filename,
@@ -2891,6 +2962,7 @@ def api_export_draft(
     draft_id: str,
     request: Request,
     confirmed: bool = False,
+    persist_object: bool = False,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> DraftExportRead:
     ctx = context_from_request(request, workspace_id=workspace_id)
@@ -2903,11 +2975,24 @@ def api_export_draft(
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found")
 
+    object_id: str | None = None
+    if persist_object:
+        markdown_bytes = draft["body_md"].encode("utf-8")
+        obj = create_generated_object(
+            ctx,
+            conn,
+            data=markdown_bytes,
+            file_name=f"{draft.get('subject') or 'draft'}_{draft_id}.md",
+            mime_type="text/markdown",
+            source_type="draft_export",
+        )
+        object_id = obj["id"]
+
     audit_event = audit_writer.write(
         ctx,
         conn,
         action="draft.exported",
-        payload={"draft_id": draft_id, "subject": draft["subject"]},
+        payload={"draft_id": draft_id, "subject": draft["subject"], "object_id": object_id},
         mirror_jsonl=False,
     )
     _mirror_audit(audit_event)
@@ -2915,6 +3000,7 @@ def api_export_draft(
         markdown=draft["body_md"],
         subject=draft.get("subject"),
         exported_at=draft["exported_at"],
+        object_id=object_id,
     )
 
 

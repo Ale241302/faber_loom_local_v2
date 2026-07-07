@@ -435,27 +435,86 @@ function ThinkingSteps({ stepIndex }) {
   </span>;
 }
 
-function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder }) {
+function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder, activeWorkspace }) {
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
   const [mode, setMode] = useState("manual");
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [attachment, setAttachment] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
 
   const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
   const availableModels = modelAllowlist[provider] || [];
 
+  const uploadFile = async (file) => {
+    if (!activeWorkspace) return;
+    setUploading(true);
+    try {
+      const presigned = await apiPost(`/api/workspaces/${activeWorkspace.id}/objects/presigned-upload`, {
+        file_name: file.name,
+        mime_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+        origin: "upload",
+      });
+      const putRes = await fetch(presigned.upload_url, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/objects/confirm`, {
+        object_id: presigned.object_id,
+        etag: putRes.headers.get("ETag") || "",
+        size_bytes: file.size,
+      });
+      setAttachment({ object_id: presigned.object_id, file_name: file.name });
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (file) uploadFile(file);
+  };
+
+  const clearAttachment = () => setAttachment(null);
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setIsDragging(false);
+    const file = event.dataTransfer.files[0];
+    if (file) uploadFile(file);
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => setIsDragging(false);
+
   const submit = (event) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || disabled) return;
+    if ((!text && !attachment) || disabled || uploading) return;
     const options = { mode };
     if (mode === "manual" && provider && model) {
       options.provider_slug = provider;
       options.model = model;
     }
+    if (attachment) {
+      options.attachment_object_id = attachment.object_id;
+    }
     onSend(text, options);
     setDraft("");
+    setAttachment(null);
   };
 
   const handleProviderChange = (p) => {
@@ -473,16 +532,25 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder 
     submit(event);
   };
 
-  return <form className="composer-shell" onSubmit={submit} aria-label="Composer de chat">
+  return <form className={cx("composer-shell", isDragging && "composer-drag-over")} onSubmit={submit} aria-label="Composer de chat" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
     <div className="composer">
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled}/>
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled || uploading}/>
       <div className="composer-actions">
-        <button type="button" className="composer-tool" disabled={disabled} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
+        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading}/>
+        <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
+          <Icon name="paperclip" size={16}/>
+        </button>
+        <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
           <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
         </button>
-        <button type="submit" className="send-button" disabled={disabled || !draft.trim()}><Icon name="send" size={16}/>Enviar</button>
+        <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
       </div>
     </div>
+    {attachment && <div className="composer-attachment">
+      <Icon name="file" size={14}/>
+      <span>{attachment.file_name}</span>
+      <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto"><Icon name="x" size={14}/></button>
+    </div>}
     {showModelPicker && <div className="composer-picker">
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ ...S.label, margin: 0, fontSize: 12 }}>
@@ -813,7 +881,7 @@ function SpaceView({ activeWorkspace }) {
           <div className="message-content"><ThinkingSteps stepIndex={thinkingStepIndex}/></div>
         </div>}
       </div>
-      <Composer onSend={sendMessage} disabled={busy} placeholder={activeChat ? undefined : "Escribe para crear un chat nuevo…"} routerStatus={routerStatus} modelAllowlist={modelAllowlist}/>
+      <Composer onSend={sendMessage} disabled={busy} placeholder={activeChat ? undefined : "Escribe para crear un chat nuevo…"} routerStatus={routerStatus} modelAllowlist={modelAllowlist} activeWorkspace={activeWorkspace}/>
     </section>
     <SeamPanel/>
   </div>;

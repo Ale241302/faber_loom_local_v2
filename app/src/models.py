@@ -1603,6 +1603,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=1024, gt=0, le=4096)
     mode: Literal["manual", "auto"] = "manual"
+    attachment_object_id: str | None = Field(default=None, max_length=120)
 
 
 class ChatCompletionResponse(BaseModel):
@@ -1939,10 +1940,11 @@ class FeaturesRead(BaseModel):
 
 class KBSourceCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
-    type: Literal["md", "txt", "csv", "xlsx", "pdf"] = "md"
+    type: Literal["md", "txt", "csv", "xlsx", "pdf", "docx", "json", "sql", "image", "audio", "video"] = "md"
     content_text: str = Field(default="", min_length=0, max_length=500000)
     source_version: str = Field(default="v1", min_length=1, max_length=120)
     level: int = Field(default=0, ge=0, le=4)
+    object_id: str | None = Field(default=None, max_length=120)
     file_name: str | None = Field(default=None, max_length=500)
     mime_type: str | None = Field(default=None, max_length=200)
     file_size: int | None = Field(default=None, ge=0)
@@ -2174,3 +2176,4 @@ class DraftExportRead(BaseModel):
     markdown: str
     subject: str | None = None
     exported_at: str
+    object_id: str | None = None
