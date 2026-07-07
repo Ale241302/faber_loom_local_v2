@@ -96,8 +96,40 @@ function authHeaders() {
   return {};
 }
 
+// Sesión: el access token (cookie HttpOnly, corta) puede expirar en medio del
+// trabajo. Ante un 401 intentamos renovar con el refresh token (cookie de 7
+// días, rotativa) y reintentamos el request una vez. Si el refresh también
+// falla, recargamos la página para que AuthGate muestre el login.
+let _refreshingSession = null;
+function _refreshSession() {
+  if (!_refreshingSession) {
+    _refreshingSession = fetch("/api/auth/refresh", { method: "POST" })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => { _refreshingSession = null; });
+  }
+  return _refreshingSession;
+}
+
+function _sessionLost() {
+  if (window.__faberloomSessionLost) return;
+  window.__faberloomSessionLost = true;
+  localStorage.removeItem("faberloom_user");
+  window.location.reload();
+}
+
+async function apiFetch(path, options = {}) {
+  let res = await fetch(path, options);
+  if (res.status === 401 && !String(path).startsWith("/api/auth/")) {
+    const refreshed = await _refreshSession();
+    if (refreshed) res = await fetch(path, options);
+    if (res.status === 401) _sessionLost();
+  }
+  return res;
+}
+
 async function apiGet(path) {
-  const res = await fetch(path, { headers: authHeaders() });
+  const res = await apiFetch(path, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -106,7 +138,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -116,7 +148,7 @@ async function apiPost(path, body) {
 }
 
 async function apiPut(path, body) {
-  const res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -126,7 +158,7 @@ async function apiPut(path, body) {
 }
 
 async function apiPatch(path, body) {
-  const res = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -135,7 +167,7 @@ async function apiPatch(path, body) {
 }
 
 async function apiDelete(path) {
-  const res = await fetch(path, { method: "DELETE", headers: authHeaders() });
+  const res = await apiFetch(path, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
