@@ -114,6 +114,10 @@ function _refreshSession() {
 function _sessionLost() {
   if (window.__faberloomSessionLost) return;
   window.__faberloomSessionLost = true;
+  // Solo recargamos si había una sesión previa (para que AuthGate muestre el
+  // login). Sin sesión previa (ya estamos en el login) recargar produciría un
+  // bucle infinito: /api/me 401 -> refresh 401 -> reload -> ...
+  if (!localStorage.getItem("faberloom_user")) return;
   localStorage.removeItem("faberloom_user");
   window.location.reload();
 }
