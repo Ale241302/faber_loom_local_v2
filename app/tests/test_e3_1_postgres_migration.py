@@ -190,7 +190,7 @@ def test_dry_run_recreates_unique_constraints(sample_sqlite: Path) -> None:
 
     # workspace.slug and object.id are primary keys; gold_candidate.run_id is a
     # unique constraint that must survive the migration.
-    assert 'UNIQUE INDEX "public"."sqlite_autoindex_gold_candidate_2"' in result.stdout, (
+    assert 'CREATE UNIQUE INDEX IF NOT EXISTS "sqlite_autoindex_gold_candidate_2" ON "public"."gold_candidate" ("run_id")' in result.stdout, (
         "Unique constraint on gold_candidate.run_id should be recreated as a unique index"
     )
 
