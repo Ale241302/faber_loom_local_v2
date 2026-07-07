@@ -30,6 +30,7 @@ from .db import (
     create_chat,
     create_email_account,
     create_mail_message,
+    create_object,
     create_or_get_mail_outbox,
     create_model_catalog_entry,
     create_routine,
@@ -38,11 +39,13 @@ from .db import (
     delete_chat,
     delete_email_account,
     delete_model_catalog_entry,
+    delete_object,
     delete_routine,
     get_chat,
     get_database_path,
     get_db,
     get_default_email_account,
+    get_object,
     get_email_account,
     get_mail_message,
     get_mail_outbox,
@@ -67,11 +70,13 @@ from .db import (
     list_email_accounts,
     list_mail_messages,
     list_model_catalog,
+    list_objects,
     list_routine_runs,
     rotate_email_account_credentials,
     list_routines,
     list_usage_records,
     list_workspaces,
+    new_id,
     record_editorial_event,
     record_routine_run_edit,
     reject_routine_run,
@@ -85,6 +90,7 @@ from .db import (
     update_mail_message_status,
     update_mail_outbox_status,
     update_model_catalog_entry,
+    update_object,
     update_routine,
     update_routine_run_output,
     update_routing_policy,
@@ -146,6 +152,12 @@ from .models import (
     HealthRead,
     KBSourceCreate,
     KBSourceRead,
+    ObjectCreate,
+    ObjectRead,
+    ObjectUpdate,
+    PresignedDownloadResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
     EmailAccountCreate,
     EmailAccountRead,
     EmailAccountRotateRequest,
@@ -191,6 +203,13 @@ from .router.config_store import ProviderConfigStore, mask_key
 from .router.engine import NoAllowedModel
 from .router.models import CompletionRequest
 from .seal import compute_workspace_hmac
+from .storage import (
+    GENERATED_BUCKET,
+    UPLOAD_BUCKET,
+    get_object_store,
+    object_key,
+    sha256_bytes,
+)
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
 from .ambient import (
     ambient_metrics,
@@ -2325,6 +2344,281 @@ def api_delete_kb_source(
             conn,
             action="kb_source.deleted",
             payload={"source_id": source_id, "confirmed_by": ctx.resolved_actor_id()},
+            mirror_jsonl=False,
+        )
+    _mirror_audit(audit_event)
+
+
+# -----------------------------------------------------------------------------
+# E2-6: Object storage endpoints
+# -----------------------------------------------------------------------------
+
+
+_MAX_UPLOAD_SIZE_BYTES = int(os.getenv("FL_MAX_UPLOAD_SIZE_BYTES", "524288000"))  # 500 MB
+_MAX_GENERATED_SIZE_BYTES = int(os.getenv("FL_MAX_GENERATED_SIZE_BYTES", "2147483648"))  # 2 GB
+
+
+_EXECUTABLE_MIME_PREFIXES = {
+    "application/x-dosexec",
+    "application/x-executable",
+    "application/x-msdownload",
+    "application/javascript",
+    "text/javascript",
+    "application/x-sh",
+    "application/x-csh",
+    "application/x-python-code",
+    "application/x-php",
+}
+
+
+_UPLOAD_MIME_ALLOWLIST = {
+    "application/pdf",
+    "application/json",
+    "application/sql",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+}
+
+
+_GENERATED_MIME_ALLOWLIST = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/markdown",
+    "text/plain",
+}
+
+
+def _is_executable_mime(mime_type: str) -> bool:
+    lowered = mime_type.lower()
+    for prefix in _EXECUTABLE_MIME_PREFIXES:
+        if lowered.startswith(prefix):
+            return True
+    return False
+
+
+def _is_mime_allowed(origin: str, mime_type: str) -> bool:
+    lowered = mime_type.lower()
+    if _is_executable_mime(lowered):
+        return False
+    if origin == "upload":
+        if lowered in _UPLOAD_MIME_ALLOWLIST:
+            return True
+        if lowered.startswith(("image/", "audio/", "video/", "text/")):
+            return True
+        return False
+    if origin == "generated":
+        if lowered in _GENERATED_MIME_ALLOWLIST:
+            return True
+        if lowered.startswith("image/"):
+            return True
+        return False
+    return False
+
+
+def _max_size_for_origin(origin: str) -> int:
+    return _MAX_UPLOAD_SIZE_BYTES if origin == "upload" else _MAX_GENERATED_SIZE_BYTES
+
+
+def _validate_object_upload(payload: PresignedUploadRequest) -> None:
+    max_size = _max_size_for_origin(payload.origin)
+    if payload.size_bytes > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Object size {payload.size_bytes} exceeds limit {max_size} for origin {payload.origin}",
+        )
+    if not _is_mime_allowed(payload.origin, payload.mime_type):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"MIME type {payload.mime_type} not allowed for origin {payload.origin}",
+        )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/objects/presigned-upload",
+    response_model=PresignedUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def api_presigned_upload(
+    workspace_id: str,
+    request: Request,
+    payload: PresignedUploadRequest,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PresignedUploadResponse:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    _validate_object_upload(payload)
+
+    bucket = UPLOAD_BUCKET if payload.origin == "upload" else GENERATED_BUCKET
+    object_id = new_id("obj")
+    key = object_key(workspace_id, payload.origin, payload.file_name, object_id)
+
+    with transaction(conn):
+        create_object(
+            ctx,
+            conn,
+            origin=payload.origin,
+            bucket=bucket,
+            object_key=key,
+            file_name=payload.file_name,
+            mime_type=payload.mime_type,
+            size_bytes=payload.size_bytes,
+            source_type=payload.mime_type,
+            object_id=object_id,
+        )
+
+    store = get_object_store()
+    upload_url = store.presigned_upload_url(
+        bucket, key, payload.mime_type, expires=3600
+    )
+    return PresignedUploadResponse(
+        object_id=object_id,
+        upload_url=upload_url,
+        bucket=bucket,
+        object_key=key,
+        fields={"x-amz-meta-workspace-id": workspace_id},
+        expires_in_seconds=3600,
+    )
+
+
+class ObjectConfirmRequest(BaseModel):
+    object_id: str
+    etag: str | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
+
+
+@router.post("/workspaces/{workspace_id}/objects/confirm", response_model=ObjectRead)
+def api_confirm_object_upload(
+    workspace_id: str,
+    request: Request,
+    payload: ObjectConfirmRequest,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> ObjectRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    obj = get_object(ctx, conn, payload.object_id)
+    if obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+
+    if obj.get("ingest_status") != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Object has already been confirmed",
+        )
+
+    store = get_object_store()
+    if not store.object_exists(obj["bucket"], obj["object_key"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Object not found in storage",
+        )
+
+    updates: dict[str, Any] = {"ingest_status": "validating"}
+    if payload.size_bytes is not None:
+        updates["meta"] = {**(json.loads(obj.get("meta_json") or "{}")), "confirmed_size_bytes": payload.size_bytes}
+    if payload.sha256:
+        updates["sha256"] = payload.sha256
+
+    with transaction(conn):
+        updated = update_object(ctx, conn, payload.object_id, **updates)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+    return ObjectRead(**updated)
+
+
+@router.get("/workspaces/{workspace_id}/objects", response_model=list[ObjectRead])
+def api_list_objects(
+    workspace_id: str,
+    request: Request,
+    origin: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[ObjectRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    objects = list_objects(ctx, conn, origin=origin)
+    return [ObjectRead(**obj) for obj in objects]
+
+
+@router.get("/workspaces/{workspace_id}/objects/{object_id}", response_model=ObjectRead)
+def api_get_object(
+    workspace_id: str,
+    object_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> ObjectRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    obj = get_object(ctx, conn, object_id)
+    if obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+    return ObjectRead(**obj)
+
+
+@router.get(
+    "/workspaces/{workspace_id}/objects/{object_id}/url",
+    response_model=PresignedDownloadResponse,
+)
+def api_get_object_url(
+    workspace_id: str,
+    object_id: str,
+    request: Request,
+    expires_seconds: int = 300,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PresignedDownloadResponse:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    obj = get_object(ctx, conn, object_id)
+    if obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+
+    store = get_object_store()
+    url = store.presigned_download_url(
+        obj["bucket"], obj["object_key"], expires=max(60, min(expires_seconds, 3600))
+    )
+    return PresignedDownloadResponse(download_url=url, expires_in_seconds=expires_seconds)
+
+
+@router.delete("/workspaces/{workspace_id}/objects/{object_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_object(
+    workspace_id: str,
+    object_id: str,
+    request: Request,
+    confirmation_token: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> None:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    obj = get_object(ctx, conn, object_id)
+    if obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+
+    _require_confirmation(object_id, confirmation_token)
+
+    store = get_object_store()
+    with transaction(conn):
+        store.delete_object(obj["bucket"], obj["object_key"])
+        deleted = delete_object(ctx, conn, object_id)
+        if not deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="object.deleted",
+            payload={"object_id": object_id, "bucket": obj["bucket"], "object_key": obj["object_key"]},
             mirror_jsonl=False,
         )
     _mirror_audit(audit_event)

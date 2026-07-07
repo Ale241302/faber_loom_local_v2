@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1108,6 +1108,39 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS ix_ambient_proposal_target
         ON ambient_proposal(target_type, target_id);
     """,
+    29: """
+    -- E2-6: object storage metadata for MinIO-backed uploads and generated objects.
+    CREATE TABLE IF NOT EXISTS object (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT,
+        user_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        origin TEXT NOT NULL CHECK (origin IN ('upload', 'generated')),
+        bucket TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        file_name TEXT,
+        mime_type TEXT,
+        size_bytes INTEGER,
+        sha256 TEXT,
+        meta_json TEXT NOT NULL DEFAULT '{}',
+        ingest_status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (ingest_status IN ('pending', 'validating', 'extracting', 'indexed', 'error', 'quarantined')),
+        ingest_error TEXT,
+        source_type TEXT,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        workspace_hmac TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 29,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_object_workspace
+        ON object(workspace_id, tenant_id);
+    CREATE INDEX IF NOT EXISTS ix_object_ingest_status
+        ON object(ingest_status);
+    """,
 }
 
 
@@ -1937,6 +1970,81 @@ class KBSourceRead(BaseModel):
     level: int = 0
     approved_by: str | None = None
     created_at: str
+
+
+# -----------------------------------------------------------------------------
+# E2-6: Object storage models
+# -----------------------------------------------------------------------------
+
+
+class ObjectOrigin(str):
+    pass
+
+
+class ObjectRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    user_id: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    origin: Literal["upload", "generated"]
+    bucket: str
+    object_key: str
+    file_name: str | None = None
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
+    meta_json: str
+    ingest_status: Literal[
+        "pending", "validating", "extracting", "indexed", "error", "quarantined"
+    ] = "pending"
+    ingest_error: str | None = None
+    source_type: str | None = None
+    source_version: str | None = None
+    schema_version: int
+    created_at: str
+    updated_at: str
+
+
+class ObjectCreate(BaseModel):
+    origin: Literal["upload", "generated"] = "upload"
+    file_name: str = Field(min_length=1, max_length=500)
+    mime_type: str = Field(min_length=1, max_length=200)
+    size_bytes: int = Field(ge=0)
+    source_type: str | None = Field(default=None, max_length=120)
+    source_version: str = Field(default="v1", min_length=1, max_length=120)
+
+
+class ObjectUpdate(BaseModel):
+    ingest_status: Literal[
+        "pending", "validating", "extracting", "indexed", "error", "quarantined"
+    ] | None = None
+    ingest_error: str | None = Field(default=None, max_length=4000)
+    sha256: str | None = Field(default=None, max_length=64)
+
+
+class PresignedUploadRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=500)
+    mime_type: str = Field(min_length=1, max_length=200)
+    size_bytes: int = Field(ge=0)
+    origin: Literal["upload", "generated"] = "upload"
+
+
+class PresignedUploadResponse(BaseModel):
+    object_id: str
+    upload_url: str
+    bucket: str
+    object_key: str
+    fields: dict[str, str]
+    expires_in_seconds: int
+
+
+class PresignedDownloadResponse(BaseModel):
+    download_url: str
+    expires_in_seconds: int
 
 
 class KBFactRead(BaseModel):

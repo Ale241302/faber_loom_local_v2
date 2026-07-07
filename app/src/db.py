@@ -3284,3 +3284,203 @@ def set_workspace_email_signature(
             (signature, utc_now(), workspace_id, ctx.tenant_id),
         )
     return get_workspace(ctx, conn)
+
+# -----------------------------------------------------------------------------
+# E2-6: Object storage metadata CRUD
+# -----------------------------------------------------------------------------
+
+
+def create_object(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    origin: str,
+    bucket: str,
+    object_key: str,
+    file_name: str,
+    mime_type: str,
+    size_bytes: int,
+    sha256: str | None = None,
+    source_type: str | None = None,
+    source_version: str = "v1",
+    meta: dict[str, Any] | None = None,
+    object_id: str | None = None,
+) -> dict[str, Any]:
+    """Insert an object metadata row for a workspace-scoped MinIO object.
+
+    The caller is responsible for committing the transaction.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    tenant_id = ctx.tenant_id
+    object_id = object_id or new_id("obj")
+    now = utc_now()
+    seal_id = workspace_seal_id(ctx, conn)
+
+    hmac_row = {
+        "id": object_id,
+        "workspace_id": workspace_id,
+        "bucket": bucket,
+        "object_key": object_key,
+        "source_version": source_version,
+    }
+    hmac = compute_workspace_hmac_for_row(seal_id, hmac_row, "object")
+
+    conn.execute(
+        """
+        INSERT INTO object (
+            id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
+            origin, bucket, object_key, file_name, mime_type, size_bytes, sha256,
+            meta_json, ingest_status, source_type, source_version, workspace_hmac,
+            schema_version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            object_id,
+            workspace_id,
+            tenant_id,
+            ctx.user_id,
+            ctx.resolved_actor_id(),
+            ctx.actor_role_at_decision,
+            origin,
+            bucket,
+            object_key,
+            file_name,
+            mime_type,
+            size_bytes,
+            sha256,
+            json.dumps(meta or {}, ensure_ascii=False, sort_keys=True),
+            "pending",
+            source_type,
+            source_version,
+            hmac,
+            SCHEMA_VERSION,
+            now,
+            now,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM object WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+        (object_id, workspace_id, tenant_id),
+    ).fetchone()
+    return row_to_dict(row)
+
+
+def get_object(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    object_id: str,
+) -> dict[str, Any] | None:
+    """Return an object metadata row if it belongs to the scoped workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        """
+        SELECT * FROM object
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+        """,
+        (object_id, workspace_id, ctx.tenant_id),
+    ).fetchone()
+    if row is None:
+        return None
+    result = row_to_dict(row)
+    seal_id = workspace_seal_id(ctx, conn)
+    assert_workspace_hmac_for_row(seal_id, result, "object")
+    return result
+
+
+def list_objects(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    origin: str | None = None,
+    ingest_status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List object metadata rows for the scoped workspace."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    query = "SELECT * FROM object WHERE workspace_id = ? AND tenant_id = ?"
+    params: list[Any] = [workspace_id, ctx.tenant_id]
+    if origin:
+        query += " AND origin = ?"
+        params.append(origin)
+    if ingest_status:
+        query += " AND ingest_status = ?"
+        params.append(ingest_status)
+    query += " ORDER BY created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    seal_id = workspace_seal_id(ctx, conn)
+    results = []
+    for row in rows:
+        result = row_to_dict(row)
+        assert_workspace_hmac_for_row(seal_id, result, "object")
+        results.append(result)
+    return results
+
+
+def update_object(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    object_id: str,
+    *,
+    ingest_status: str | None = None,
+    ingest_error: str | None = None,
+    sha256: str | None = None,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Update mutable fields of an object metadata row."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        """
+        SELECT * FROM object
+        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+        """,
+        (object_id, workspace_id, ctx.tenant_id),
+    ).fetchone()
+    if row is None:
+        return None
+
+    fields: list[str] = []
+    params: list[Any] = []
+    if ingest_status is not None:
+        fields.append("ingest_status = ?")
+        params.append(ingest_status)
+    if ingest_error is not None:
+        fields.append("ingest_error = ?")
+        params.append(ingest_error)
+    if sha256 is not None:
+        fields.append("sha256 = ?")
+        params.append(sha256)
+    if meta is not None:
+        fields.append("meta_json = ?")
+        params.append(json.dumps(meta, ensure_ascii=False, sort_keys=True))
+    if not fields:
+        return row_to_dict(row)
+
+    fields.append("updated_at = ?")
+    params.append(utc_now())
+    params.extend([object_id, workspace_id, ctx.tenant_id])
+
+    with transaction(conn):
+        conn.execute(
+            f"UPDATE object SET {', '.join(fields)} WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+            params,
+        )
+    return get_object(ctx, conn, object_id)
+
+
+def delete_object(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    object_id: str,
+) -> bool:
+    """Delete an object metadata row. The caller must delete the MinIO object."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    with transaction(conn):
+        cursor = conn.execute(
+            "DELETE FROM object WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+            (object_id, workspace_id, ctx.tenant_id),
+        )
+    return cursor.rowcount > 0

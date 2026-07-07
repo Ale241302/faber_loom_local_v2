@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 from urllib.parse import urlparse
 
 from .ambient import start_ambient_scheduler, stop_ambient_scheduler
+from .storage import get_object_store
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .foundation import foundation_router, init_foundation_db
@@ -62,6 +63,11 @@ async def lifespan(app: FastAPI):
             seed_ambient_for_all_tenants(conn)
     init_foundation_db()
     load_trusted_update_keys()
+    try:
+        get_object_store().ensure_buckets()
+    except Exception as exc:
+        # Log but do not crash startup; object storage is optional until configured.
+        print(f"WARNING: object storage not available: {exc}")
     start_ambient_scheduler()
     try:
         yield
