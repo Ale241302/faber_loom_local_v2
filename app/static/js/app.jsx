@@ -477,7 +477,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         etag: putRes.headers.get("ETag") || "",
         size_bytes: file.size,
       });
-      setAttachment({ object_id: presigned.object_id, file_name: file.name });
+      setAttachment({ object_id: presigned.object_id, file_name: file.name, mime_type: file.type || "application/octet-stream" });
       setAttachmentPreview((prev) => prev && { ...prev, uploading: false });
     } catch (err) {
       alert(err.message);
@@ -525,6 +525,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     if (attachment) {
       options.attachment_object_id = attachment.object_id;
       options.attachment_file_name = attachment.file_name;
+      options.attachment_mime_type = attachment.mime_type;
     }
     onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
@@ -602,6 +603,44 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     </div>}
     <div className="composer-note"><Icon name="shield" size={16}/>Las acciones destructivas requieren HITL y doble confirmación.</div>
   </form>;
+}
+
+function MessageAttachment({ workspaceId, attachment }) {
+  const [imgUrl, setImgUrl] = useState(null);
+  const isImage = (attachment.mime_type || "").startsWith("image/");
+  useEffect(() => {
+    let alive = true;
+    if (isImage && attachment.object_id) {
+      apiGet(`/api/workspaces/${workspaceId}/objects/${attachment.object_id}/url?expires_seconds=3600`)
+        .then((r) => { if (alive) setImgUrl(r.download_url); })
+        .catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [attachment.object_id]);
+  const ext = ((attachment.file_name || "").split(".").pop() || "file").toUpperCase().slice(0, 4);
+  if (isImage) {
+    return <div className="message-attachment">
+      {imgUrl
+        ? <img className="message-attachment-img" src={imgUrl} alt={attachment.file_name}/>
+        : <div className="message-attachment-img message-attachment-img-loading"><Icon name="file" size={18}/></div>}
+      <span className="message-attachment-caption">{attachment.file_name}</span>
+    </div>;
+  }
+  return <div className="message-attachment message-attachment-doc">
+    <span className={`file-ext-badge file-ext-${ext.toLowerCase()}`}>{ext}</span>
+    <div className="message-attachment-meta">
+      <span className="message-attachment-name">{attachment.file_name}</span>
+      {attachment.size_bytes ? <span className="message-attachment-size">{(attachment.size_bytes / 1024).toFixed(1)} KB</span> : null}
+    </div>
+  </div>;
+}
+
+function stripAttachmentMarkers(content) {
+  return String(content || "")
+    .replace(/\n*\[Imagen adjunta:[^\]]*\]/g, "")
+    .replace(/\n*--- Contenido del adjunto[\s\S]*?--- Fin del adjunto ---/g, "")
+    .replace(/\n*\[Adjunto:[^\]]*\]/g, "")
+    .trim();
 }
 
 function SeamPanel() {
@@ -818,7 +857,8 @@ function SpaceView({ activeWorkspace }) {
       const tempMessage = {
         id: tempId,
         role: "user",
-        content: options.attachment_file_name ? `${text}\n\n[Imagen adjunta: ${options.attachment_file_name}]` : text,
+        content: text,
+        route: options.attachment_object_id ? { attachment: { object_id: options.attachment_object_id, file_name: options.attachment_file_name, mime_type: options.attachment_mime_type } } : null,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, tempMessage]);
@@ -876,7 +916,11 @@ function SpaceView({ activeWorkspace }) {
         {messages.map((msg) => (
           <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
             <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
-            <div className="message-content">{msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content}</div>
+            {msg.route && msg.route.attachment && <MessageAttachment workspaceId={activeWorkspace.id} attachment={msg.route.attachment}/>}
+            <div className="message-content">{(() => {
+              const raw = msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content;
+              return msg.route && msg.route.attachment ? stripAttachmentMarkers(raw) : raw;
+            })()}</div>
             {msg.role === "assistant" && msg.route && (() => {
               const r = msg.route;
               const requested = r.requested_provider_slug || r.requested_model

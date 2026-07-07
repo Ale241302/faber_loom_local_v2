@@ -846,6 +846,21 @@ def api_create_completion(
 
     user_message, attachment_image = _build_user_message_with_attachment(ctx, conn, payload)
 
+    # Meta del adjunto para que la UI muestre thumbnail/tarjeta (se guarda en
+    # el campo route del mensaje de usuario; no viaja al modelo).
+    attachment_route: dict[str, Any] | None = None
+    if payload.attachment_object_id:
+        _att_obj = get_object(ctx, conn, payload.attachment_object_id)
+        if _att_obj is not None:
+            attachment_route = {
+                "attachment": {
+                    "object_id": payload.attachment_object_id,
+                    "file_name": _att_obj.get("file_name"),
+                    "mime_type": _att_obj.get("mime_type"),
+                    "size_bytes": _att_obj.get("size_bytes"),
+                }
+            }
+
     mention_match = _AT_MENTION_RE.match(payload.message.strip())
     if mention_match and payload.attachment_object_id:
         raise HTTPException(
@@ -999,7 +1014,7 @@ def api_create_completion(
                     user_request=user_message,
                     image_attachment=attachment_image,
                 )
-                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
+                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
                 route = {
                     "chain_id": auto_result["chain_id"],
                     "steps": auto_result["steps"],
@@ -1080,7 +1095,7 @@ def api_create_completion(
 
     # Persist the user message first so the completion history includes it.
     with transaction(conn):
-        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
+        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
 
     history = [{"role": "system", "content": _SYSTEM_PROMPT}]
     history.extend(get_message_history(ctx, conn, chat_id))
