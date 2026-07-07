@@ -498,15 +498,16 @@ def system_list_workspaces(ctx: Context, conn: sqlite3.Connection) -> list[dict[
     """List visible workspaces from the explicit bootstrap/system scope."""
 
     ctx.require_system()
-    rows = conn.execute(
-        f"""
-        SELECT {WORKSPACE_COLUMNS}
-        FROM workspace
-        WHERE tenant_id = ?
-        ORDER BY created_at ASC, name ASC
-        """,
-        (ctx.tenant_id,),
-    ).fetchall()
+    with transaction(conn, ctx=ctx):
+        rows = conn.execute(
+            f"""
+            SELECT {WORKSPACE_COLUMNS}
+            FROM workspace
+            WHERE tenant_id = ?
+            ORDER BY created_at ASC, name ASC
+            """,
+            (ctx.tenant_id,),
+        ).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
@@ -519,14 +520,15 @@ def get_workspace(ctx: Context, conn: sqlite3.Connection) -> dict[str, Any] | No
     """Read the workspace in ``ctx``; never read an arbitrary workspace id."""
 
     workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        f"""
-        SELECT {WORKSPACE_COLUMNS}
-        FROM workspace
-        WHERE id = ? AND tenant_id = ?
-        """,
-        (workspace_id, ctx.tenant_id),
-    ).fetchone()
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            f"""
+            SELECT {WORKSPACE_COLUMNS}
+            FROM workspace
+            WHERE id = ? AND tenant_id = ?
+            """,
+            (workspace_id, ctx.tenant_id),
+        ).fetchone()
     return row_to_dict(row) if row else None
 
 
