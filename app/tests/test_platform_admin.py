@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 from pathlib import Path
@@ -147,6 +148,10 @@ def _signup_pending_tenant(client: TestClient, slug: str) -> str:
     return resp.json()["tenant_id"]
 
 
+def _confirmation_token(resource_id: str) -> str:
+    return hashlib.sha256(resource_id.encode("utf-8")).hexdigest()[:16]
+
+
 def test_admin_can_list_tenants(client: TestClient) -> None:
     _bootstrap_platform_admin_tenant(client)
     pending_id = _signup_pending_tenant(client, "list-pending")
@@ -167,7 +172,10 @@ def test_admin_can_approve_pending_tenant(client: TestClient) -> None:
     pending_id = _signup_pending_tenant(client, "approve-me")
     _login(client, "admin@platform.test", "admin-pass")
 
-    resp = client.post(f"/api/admin/tenants/{pending_id}/approve", json={"reason": "Looks legit"})
+    resp = client.post(
+        f"/api/admin/tenants/{pending_id}/approve",
+        json={"reason": "Looks legit", "confirmation_token": _confirmation_token(pending_id)},
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["status"] == "active"
@@ -197,11 +205,17 @@ def test_admin_can_suspend_active_tenant(client: TestClient) -> None:
     pending_id = _signup_pending_tenant(client, "suspend-me")
     _login(client, "admin@platform.test", "admin-pass")
 
-    client.post(f"/api/admin/tenants/{pending_id}/approve")
+    client.post(
+        f"/api/admin/tenants/{pending_id}/approve",
+        json={"confirmation_token": _confirmation_token(pending_id)},
+    )
 
     resp = client.post(
         f"/api/admin/tenants/{pending_id}/suspend",
-        json={"reason": "Billing dispute"},
+        json={
+            "reason": "Billing dispute",
+            "confirmation_token": _confirmation_token(pending_id),
+        },
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -268,9 +282,15 @@ def test_approve_non_pending_fails(client: TestClient) -> None:
     pending_id = _signup_pending_tenant(client, "bad-approve")
     _login(client, "admin@platform.test", "admin-pass")
 
-    client.post(f"/api/admin/tenants/{pending_id}/approve")
+    client.post(
+        f"/api/admin/tenants/{pending_id}/approve",
+        json={"confirmation_token": _confirmation_token(pending_id)},
+    )
 
-    resp = client.post(f"/api/admin/tenants/{pending_id}/approve")
+    resp = client.post(
+        f"/api/admin/tenants/{pending_id}/approve",
+        json={"confirmation_token": _confirmation_token(pending_id)},
+    )
     assert resp.status_code == 409, resp.text
 
 
@@ -279,8 +299,21 @@ def test_suspend_non_active_fails(client: TestClient) -> None:
     pending_id = _signup_pending_tenant(client, "bad-suspend")
     _login(client, "admin@platform.test", "admin-pass")
 
-    resp = client.post(f"/api/admin/tenants/{pending_id}/suspend")
+    resp = client.post(
+        f"/api/admin/tenants/{pending_id}/suspend",
+        json={"confirmation_token": _confirmation_token(pending_id)},
+    )
     assert resp.status_code == 409, resp.text
+
+
+def test_approve_requires_confirmation_token(client: TestClient) -> None:
+    _bootstrap_platform_admin_tenant(client)
+    pending_id = _signup_pending_tenant(client, "confirm-approve")
+    _login(client, "admin@platform.test", "admin-pass")
+
+    resp = client.post(f"/api/admin/tenants/{pending_id}/approve", json={})
+    assert resp.status_code == 409, resp.text
+    assert "confirmation_token" in resp.text
 
 
 def test_approve_unknown_tenant_404(client: TestClient) -> None:

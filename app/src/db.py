@@ -30,7 +30,7 @@ from .db_adapter import (
     transaction as adapter_transaction,
 )
 from .models import MIGRATIONS, SCHEMA_VERSION, RoutineCreate, WorkspaceCreate
-from .plans import enforce_workspace_creation
+from .plans import enforce_budget, enforce_workspace_creation
 from .router import cost as router_cost
 from .router.config_store import decrypt_value, encrypt_value
 
@@ -1562,6 +1562,7 @@ def insert_usage_record(
 ) -> dict[str, Any]:
     with transaction(conn, ctx=ctx):
         workspace_id = ctx.require_scoped_workspace()
+        enforce_budget(ctx, conn, cost_usd)
         record_id = new_id("use")
         now = utc_now()
 

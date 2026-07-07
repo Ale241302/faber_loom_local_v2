@@ -1,5 +1,8 @@
 """E3-2 platform_admin endpoints for tenant lifecycle and metrics.
 
+All destructive tenant lifecycle actions require a deterministic confirmation
+token echoed back by the caller (HITL gate).
+
 These endpoints are intentionally separate from workspace-scoped API routes:
 platform_admin manages Foundation tenants across workspaces and must never
 access tenant content. All state changes are audited in Foundation's immutable
@@ -9,6 +12,7 @@ lifecycle events.
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -37,14 +41,32 @@ platform_admin_router = APIRouter(
 
 class SuspendRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
+    confirmation_token: str | None = Field(default=None, max_length=64)
 
 
 class ApproveRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
+    confirmation_token: str | None = Field(default=None, max_length=64)
 
 
 class UpdatePlanRequest(BaseModel):
     plan: str = Field(min_length=1, max_length=50)
+
+
+def _confirmation_token(resource_id: str) -> str:
+    """Deterministic token the UI must echo before destructive lifecycle actions."""
+    return hashlib.sha256(resource_id.encode("utf-8")).hexdigest()[:16]
+
+
+def _require_confirmation(resource_id: str, confirmation_token: str | None) -> None:
+    """Raise 409 if the caller has not echoed the required confirmation token."""
+
+    expected = _confirmation_token(resource_id)
+    if confirmation_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Action requires explicit confirmation; provide confirmation_token={expected}",
+        )
 
 
 def _require_platform_admin(request: Request) -> dict[str, Any]:
@@ -167,6 +189,8 @@ def approve_tenant(
         if tenant is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
 
+        _require_confirmation(tenant_id, body.confirmation_token)
+
         if tenant["status"] not in {"pending_approval", "provisioning"}:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
@@ -227,6 +251,8 @@ def suspend_tenant(
         ).fetchone()
         if tenant is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
+
+        _require_confirmation(tenant_id, body.confirmation_token)
 
         if tenant["status"] != "active":
             raise HTTPException(

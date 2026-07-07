@@ -30,6 +30,7 @@ from .core import (
     user_role_names,
     utcnow,
 )
+from ..plans import PlanError, enforce_user_creation
 
 router = APIRouter(prefix="/rbac", tags=["m09-rbac"])
 
@@ -340,6 +341,11 @@ def create_user(
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese email")
     if "owner" in body.roles and "owner" not in ctx.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo un owner puede crear otro owner")
+
+    try:
+        enforce_user_creation(ctx.tenant_id)
+    except PlanError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
     user_id = new_id("usr")
     conn.execute(

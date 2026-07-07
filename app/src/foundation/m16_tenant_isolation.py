@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
+from ..plans import PlanError, enforce_user_creation
 from .core import (
     SessionContext,
     audit_log,
@@ -439,6 +440,10 @@ def create_user_in_tenant(
     ctx: SessionContext = Depends(require_permission("tenants.manage")),
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict[str, Any]:
+    try:
+        enforce_user_creation(tenant_id)
+    except PlanError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     _get_tenant_or_404(conn, tenant_id)
     user_id = _create_user_in_tenant(
         conn, tenant_id,

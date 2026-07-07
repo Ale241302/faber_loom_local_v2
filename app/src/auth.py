@@ -523,6 +523,8 @@ def public_signup(
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
+        from .plans import enforce_user_creation
+
         # Slug uniqueness across tenants.
         existing = conn.execute(
             "SELECT id FROM fnd_tenants WHERE slug = ?", (slug,)
@@ -540,6 +542,8 @@ def public_signup(
             (tenant_id, company, slug, plan, now),
         )
         seed_system_roles(conn, tenant_id)
+
+        enforce_user_creation(tenant_id)
 
         conn.execute(
             """INSERT INTO fnd_users

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -176,8 +177,79 @@ def get_tenant_plan_name(tenant_id: str) -> str:
         conn.close()
 
 
+def _foundation_conn() -> sqlite3.Connection:
+    from .foundation.core import get_foundation_db_path
+
+    db_path = get_foundation_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=20.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _count_tenant_users_foundation(tenant_id: str) -> int:
+    """Count active/pending-verification Foundation users for a tenant."""
+
+    conn = _foundation_conn()
+    try:
+        row = conn.execute(
+            """SELECT COUNT(*) AS n FROM fnd_users
+               WHERE tenant_id = ? AND status IN ('active', 'pending_verification')""",
+            (tenant_id,),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+    finally:
+        conn.close()
+
+
+def enforce_user_creation(tenant_id: str) -> None:
+    """Fail if creating one more user would exceed the tenant plan."""
+
+    plan_name = get_tenant_plan_name(tenant_id)
+    current = _count_tenant_users_foundation(tenant_id)
+    limit = get_plan(plan_name).max_users
+    if limit is not None and current + 1 > limit:
+        raise PlanError(
+            f"Plan '{plan_name}' users limit exceeded: {current + 1} > {limit}"
+        )
+
+
 def enforce_workspace_creation(ctx: Context, conn: Any) -> None:
     """Fail if creating one more workspace would exceed the tenant plan."""
 
     plan_name = get_tenant_plan_name(ctx.tenant_id)
     check_plan_limit(conn, ctx.tenant_id, plan_name, "workspaces", 1)
+
+
+def sum_tenant_usage_cost(conn: Any, tenant_id: str, since: str | None = None) -> float:
+    """Return accumulated cost_usd for a tenant across all workspaces."""
+
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        params: list[Any] = [tenant_id]
+        sql = """
+            SELECT COALESCE(SUM(cost_usd), 0.0) AS total
+            FROM usage_record
+            WHERE tenant_id = ? AND status = 'succeeded'
+        """
+        if since:
+            sql += " AND created_at >= ?"
+            params.append(since)
+        row = conn.execute(sql, params).fetchone()
+    return float(row["total"]) if row and row["total"] is not None else 0.0
+
+
+def enforce_budget(ctx: Context, conn: Any, cost_usd: float) -> None:
+    """Fail if recording ``cost_usd`` would exceed the tenant monthly budget."""
+
+    plan_name = get_tenant_plan_name(ctx.tenant_id)
+    limit = get_plan(plan_name).max_monthly_budget_usd
+    if limit is None:
+        return
+
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    current = sum_tenant_usage_cost(conn, ctx.tenant_id, since=month_start)
+    if current + cost_usd > limit:
+        raise PlanError(
+            f"Plan '{plan_name}' monthly budget exceeded: {current + cost_usd:.4f} > {limit:.4f}"
+        )

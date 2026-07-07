@@ -20,11 +20,13 @@ from .ambient import start_ambient_scheduler, stop_ambient_scheduler
 from .storage import get_object_store
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
+from .e3_3_router import e3_3_router, me_router
 from .foundation import foundation_router, init_foundation_db
 from .platform_admin import platform_admin_router
 from .db import db_session, initialize_database, transaction
 from .features import is_email_connector_enabled, is_shared_instance
 from .models import FeaturesRead
+from .plans import PlanError
 from .router.config_store import load_env_file
 from .seed import (
     seed_ambient_for_all_tenants,
@@ -144,6 +146,8 @@ def create_app() -> FastAPI:
     # por eso no lleva la dependencia JWT global.
     app.include_router(foundation_router, prefix="/api")
     app.include_router(platform_admin_router, prefix="/api")
+    app.include_router(e3_3_router, prefix="/api", dependencies=[Depends(get_current_user)])
+    app.include_router(me_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(api_router, dependencies=[Depends(get_current_user)])
 
     @app.exception_handler(PermissionError)
@@ -151,6 +155,13 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=403,
             content={"detail": "Workspace seal verification failed"},
+        )
+
+    @app.exception_handler(PlanError)
+    def plan_error_handler(request, exc):  # noqa: ARG001
+        return JSONResponse(
+            status_code=422,
+            content={"detail": str(exc)},
         )
 
     @app.get("/api/features", response_model=FeaturesRead)
