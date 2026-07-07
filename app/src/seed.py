@@ -111,6 +111,22 @@ TEL-DEMO-003,Gabardina stretch,15.75,USD,85,2026-06-01,2026-09-30
     return created
 
 
+def seed_ambient_for_all_tenants(conn: sqlite3.Connection) -> None:
+    """Ensure every tenant with a workspace has ambient config and detectors.
+
+    This is idempotent: seed_ambient_config skips tenants that are already
+    configured. It runs after workspace seeding so new tenants created during
+    bootstrap get ambient coverage immediately.
+    """
+
+    tenant_ids = {
+        row[0]
+        for row in conn.execute("SELECT DISTINCT tenant_id FROM workspace")
+    }
+    for tenant_id in tenant_ids:
+        seed_ambient_config(conn, tenant_id)
+
+
 def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
     """Seed a recognizable canary tenant/workspace for isolation regression tests.
 

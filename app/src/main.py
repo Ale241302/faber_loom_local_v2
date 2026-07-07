@@ -24,7 +24,11 @@ from .db import db_session, initialize_database
 from .features import is_email_connector_enabled, is_shared_instance
 from .models import FeaturesRead
 from .router.config_store import load_env_file
-from .seed import seed_canary_workspace, seed_demo_workspace
+from .seed import (
+    seed_ambient_for_all_tenants,
+    seed_canary_workspace,
+    seed_demo_workspace,
+)
 from .update import load_trusted_update_keys
 
 
@@ -54,6 +58,7 @@ async def lifespan(app: FastAPI):
         initialize_database(conn)
         seed_demo_workspace(conn)
         seed_canary_workspace(conn)
+        seed_ambient_for_all_tenants(conn)
     init_foundation_db()
     load_trusted_update_keys()
     start_ambient_scheduler()
