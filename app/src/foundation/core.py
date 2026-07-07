@@ -500,6 +500,13 @@ SYSTEM_ROLES: dict[str, dict[str, Any]] = {
             "tenants.read",
         ],
     },
+    "platform_admin": {
+        "description": "Plataforma: aprueba/suspende tenants y lee métricas agregadas; nunca contenido",
+        "permissions": [
+            "platform.tenants.approve", "platform.tenants.suspend",
+            "platform.tenants.read", "platform.metrics.read", "platform.audit.read",
+        ],
+    },
 }
 
 

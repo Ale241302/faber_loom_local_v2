@@ -25,7 +25,7 @@ from typing import Any
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .context import DEFAULT_TENANT_ID
 from .db import get_db
@@ -341,3 +341,139 @@ def api_logout(
     response.delete_cookie(key="faberloom_at", **cookie_opts)
     response.delete_cookie(key="faberloom_rt", **cookie_opts)
     return {"detail": "Sesión cerrada"}
+
+
+# ---------------------------------------------------------------------------
+# E3-2 public signup
+# ---------------------------------------------------------------------------
+
+
+class PublicSignupRequest(BaseModel):
+    company_name: str
+    slug: str
+    owner_email: str
+    owner_password: str = Field(min_length=8)
+    plan: str = "starter"
+
+
+class PublicSignupResponse(BaseModel):
+    tenant_id: str
+    status: str
+    message: str
+
+
+@auth_router.post("/public/signup", response_model=PublicSignupResponse)
+def public_signup(body: PublicSignupRequest) -> PublicSignupResponse:
+    """Create a new tenant pending platform_admin approval.
+
+    This endpoint is intentionally public and unauthenticated, but rate-limiting
+    should be added at the reverse-proxy / WAF layer before production use.
+    """
+
+    import re
+
+    import sqlite3
+
+    from .foundation.core import (
+        audit_log,
+        get_foundation_db_path,
+        hash_password,
+        new_id,
+        seed_system_roles,
+        utcnow,
+    )
+
+    _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$")
+
+    email = body.owner_email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid owner email")
+
+    password = body.owner_password
+    if len(password) < 8:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password too short")
+
+    slug = body.slug.strip().lower()
+    if not _SLUG_RE.match(slug):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Slug must be 3-40 lowercase chars, digits or hyphens",
+        )
+
+    company = body.company_name.strip()
+    if not company or len(company) > 120:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid company name")
+
+    plan = body.plan.strip().lower()
+    if plan not in {"starter", "growth", "enterprise"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid plan")
+
+    db_path = get_foundation_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        # Slug uniqueness across tenants.
+        existing = conn.execute(
+            "SELECT id FROM fnd_tenants WHERE slug = ?", (slug,)
+        ).fetchone()
+        if existing is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Slug already taken")
+
+        tenant_id = new_id("tnt")
+        user_id = new_id("usr")
+        now = utcnow()
+
+        conn.execute(
+            """INSERT INTO fnd_tenants (id, name, slug, status, plan, created_at)
+               VALUES (?, ?, ?, 'pending_approval', ?, ?)""",
+            (tenant_id, company, slug, plan, now),
+        )
+        seed_system_roles(conn, tenant_id)
+
+        conn.execute(
+            """INSERT INTO fnd_users
+               (id, tenant_id, email, display_name, password_hash, status, created_at)
+               VALUES (?, ?, ?, ?, ?, 'active', ?)""",
+            (
+                user_id,
+                tenant_id,
+                email,
+                email.split("@")[0],
+                hash_password(password),
+                now,
+            ),
+        )
+
+        owner_role = conn.execute(
+            "SELECT id FROM fnd_roles WHERE tenant_id = ? AND name = 'owner'",
+            (tenant_id,),
+        ).fetchone()
+        if owner_role is None:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Owner role missing")
+
+        conn.execute(
+            """INSERT INTO fnd_user_roles (tenant_id, user_id, role_id, assigned_by, assigned_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (tenant_id, user_id, owner_role["id"], user_id, now),
+        )
+
+        audit_log(
+            conn,
+            tenant_id,
+            "tenant.signup",
+            actor_id=user_id,
+            actor_email=email,
+            resource_type="tenant",
+            resource_id=tenant_id,
+            payload={"plan": plan, "slug": slug},
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return PublicSignupResponse(
+        tenant_id=tenant_id,
+        status="pending_approval",
+        message="Tenant registered and pending platform_admin approval.",
+    )
