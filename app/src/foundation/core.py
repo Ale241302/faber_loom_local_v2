@@ -38,6 +38,13 @@ from typing import Any, Callable, Iterator
 from fastapi import Depends, HTTPException, Request, status
 
 from ..auth import get_current_user
+from ..db_adapter import (
+    _PostgresConnectionWrapper,
+    connect as adapter_connect,
+    db_session as adapter_db_session,
+    is_postgres_connection,
+    transaction as adapter_transaction,
+)
 
 # ---------------------------------------------------------------------------
 # Rutas de base de datos
@@ -170,14 +177,23 @@ def register_seed(fn: Callable[[sqlite3.Connection], None]) -> None:
 _BUSY_TIMEOUT_MS = int(os.getenv("FABERLOOM_FND_BUSY_TIMEOUT_MS", "20000"))
 
 
-def connect() -> sqlite3.Connection:
-    # Long timeout for production concurrency; busy_timeout gives SQLite time to
-    # acquire locks instead of raising "database is locked" immediately.
+def connect() -> Any:
+    """Return a foundation database connection for the configured engine."""
+
+    if _foundation_db_engine() == "postgres":
+        # Foundation gets its own database on the same Postgres server by default.
+        url = os.environ.get(
+            "FABERLOOM_POSTGRES_FOUNDATION_URL",
+            os.environ.get("FABERLOOM_POSTGRES_URL", "postgresql://localhost:5432/faberloom_foundation"),
+        )
+        # The generic adapter connect uses FABERLOOM_POSTGRES_URL. For foundation
+        # we override the URL temporarily via a thread-local adapter instance.
+        return _connect_foundation_postgres(url)
+
+    # Default SQLite foundation database.
     conn = sqlite3.connect(get_foundation_db_path(), timeout=20.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    # Only switch to WAL once. Re-running PRAGMA journal_mode under concurrency
-    # can itself contend for the lock and is unnecessary once WAL is active.
     current_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     if current_mode != "wal":
         conn.execute("PRAGMA journal_mode = WAL")
@@ -186,9 +202,35 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def _foundation_db_engine() -> str:
+    return os.environ.get("FABERLOOM_FOUNDATION_DB_ENGINE", os.environ.get("FABERLOOM_DB_ENGINE", "sqlite")).lower()
+
+
+_foundation_pg_pool: Any = None
+
+
+def _connect_foundation_postgres(url: str) -> Any:
+    global _foundation_pg_pool
+    if _foundation_pg_pool is None:
+        from psycopg_pool import ConnectionPool
+        from psycopg.rows import dict_row
+
+        _foundation_pg_pool = ConnectionPool(
+            url,
+            min_size=1,
+            max_size=int(os.environ.get("FABERLOOM_POSTGRES_POOL_SIZE", "10")),
+            kwargs={"row_factory": dict_row},
+        )
+        _foundation_pg_pool.wait()
+    return _PostgresConnectionWrapper(_foundation_pg_pool.getconn(), pool=_foundation_pg_pool)
+
+
 @contextmanager
-def fnd_db() -> Iterator[sqlite3.Connection]:
+def fnd_db() -> Iterator[Any]:
+    """Foundation database session with commit/rollback semantics."""
+
     conn = connect()
+    engine = _foundation_db_engine()
     try:
         yield conn
         conn.commit()
@@ -201,14 +243,33 @@ def fnd_db() -> Iterator[sqlite3.Connection]:
 
 def init_foundation_db() -> None:
     with fnd_db() as conn:
-        conn.executescript(CORE_SCHEMA)
+        if _foundation_db_engine() == "postgres":
+            # Postgres foundation schema is idempotent raw DDL split into statements.
+            for statement in _split_postgres_schema(CORE_SCHEMA):
+                if statement.strip():
+                    conn.execute(statement)
+        else:
+            conn.executescript(CORE_SCHEMA)
         for ddl in _MODULE_SCHEMAS:
-            conn.executescript(ddl)
+            if _foundation_db_engine() == "postgres":
+                for statement in _split_postgres_schema(ddl):
+                    if statement.strip():
+                        conn.execute(statement)
+            else:
+                conn.executescript(ddl)
         for hook in _SEED_HOOKS:
             hook(conn)
 
 
-def get_conn(request: Request) -> Iterator[sqlite3.Connection]:
+def _split_postgres_schema(ddl: str) -> list[str]:
+    """Split SQLite-specific executescript DDL into Postgres-safe statements."""
+
+    from ..db_adapter import _split_sql_statements
+
+    return _split_sql_statements(ddl)
+
+
+def get_conn(request: Request) -> Iterator[Any]:
     """Dependencia FastAPI: conexión con commit/rollback por request."""
     with fnd_db() as conn:
         yield conn

@@ -67,3 +67,6 @@ harness/state.json
 harness/loop_state.json
 harness/reports/
 harness/delegated/
+
+# Agent/tmp reports
+**/.tmp/

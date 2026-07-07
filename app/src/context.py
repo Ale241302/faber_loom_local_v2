@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 
 SYSTEM_WORKSPACE_ID = "__system__"
@@ -78,6 +79,23 @@ class Context:
             actor_id=self.actor_id,
             actor_role_at_decision=self.actor_role_at_decision,
         )
+
+    def apply_to_connection(self, conn: Any) -> None:
+        """Set Postgres session variables used by RLS policies.
+
+        This is a convenience wrapper around the adapter's tenant-scoped
+        transaction setup. Callers should prefer ``transaction(conn, ctx)``.
+        """
+
+        from .db_adapter import is_postgres_connection
+
+        if not is_postgres_connection(conn):
+            return
+        tenant_id = self.tenant_id or ""
+        workspace_id = self.workspace_id or ""
+        conn.execute("SET LOCAL app.current_tenant = %s", (tenant_id,))
+        conn.execute("SET LOCAL app.current_workspace = %s", (workspace_id,))
+        conn.execute("SET LOCAL app.tenant_id = %s", (tenant_id,))
 
 
 def enforce_tenant_scoped(ctx: Context) -> None:

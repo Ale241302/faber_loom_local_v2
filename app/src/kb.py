@@ -387,7 +387,7 @@ def ingest_kb_source(
     }
     if object_id:
         meta["object_id"] = object_id
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         conn.execute(
             f"""
             INSERT INTO kb_source (
@@ -554,7 +554,7 @@ def get_kb_source(
 
 def delete_kb_source(ctx: Context, conn: sqlite3.Connection, source_id: str) -> bool:
     workspace_id = ctx.require_scoped_workspace()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         cursor = conn.execute(
             "DELETE FROM kb_source WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
             (source_id, workspace_id, ctx.tenant_id),
@@ -569,37 +569,57 @@ def search_kb_chunks(
     *,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Keyword retrieval via FTS5, scoped to the current workspace and its inherited KB."""
+    """Keyword retrieval via FTS5 (SQLite) or tsvector/GIN (Postgres)."""
 
     scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    # Escape FTS5 special chars conservatively and OR the terms so any hit
-    # returns evidence (we re-rank/filter downstream).
     terms = [term.strip() for term in query.split() if term.strip()]
     if not terms:
         return []
-    safe_query = " OR ".join(
-        f'"{term.replace('"', '""')}"'
-        for term in terms
-    )
 
-    rows = conn.execute(
-        f"""
-        SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
-               c.source_locator, c.source_version, c.created_at
-        FROM kb_chunk_fts f
-        JOIN kb_chunk c ON c.rowid = f.rowid
-        JOIN kb_source s ON s.id = c.source_id
-        WHERE kb_chunk_fts MATCH ?
-          AND c.workspace_id IN ({placeholders})
-          AND s.workspace_id IN ({placeholders})
-          AND c.tenant_id = ?
-          AND s.tenant_id = ?
-        ORDER BY rank
-        LIMIT ?
-        """,
-        (safe_query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, limit),
-    ).fetchall()
+    placeholders = ",".join("?" for _ in scope)
+    engine = getattr(conn, "engine", "sqlite")
+
+    if engine == "postgres":
+        # Postgres path: plainto_tsquery handles escaping and OR semantics.
+        rows = conn.execute(
+            f"""
+            SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
+                   c.source_locator, c.source_version, c.created_at
+            FROM kb_chunk c
+            JOIN kb_source s ON s.id = c.source_id
+            WHERE to_tsvector('simple', c.content_text) @@ plainto_tsquery('simple', ?)
+              AND c.workspace_id IN ({placeholders})
+              AND s.workspace_id IN ({placeholders})
+              AND c.tenant_id = ?
+              AND s.tenant_id = ?
+            ORDER BY ts_rank(to_tsvector('simple', c.content_text), plainto_tsquery('simple', ?)) DESC
+            LIMIT ?
+            """,
+            (query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, query, limit),
+        ).fetchall()
+    else:
+        # SQLite path: FTS5 virtual table.
+        safe_query = " OR ".join(
+            f'"{term.replace('"', '""')}"'
+            for term in terms
+        )
+        rows = conn.execute(
+            f"""
+            SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
+                   c.source_locator, c.source_version, c.created_at
+            FROM kb_chunk_fts f
+            JOIN kb_chunk c ON c.rowid = f.rowid
+            JOIN kb_source s ON s.id = c.source_id
+            WHERE kb_chunk_fts MATCH ?
+              AND c.workspace_id IN ({placeholders})
+              AND s.workspace_id IN ({placeholders})
+              AND c.tenant_id = ?
+              AND s.tenant_id = ?
+            ORDER BY rank
+            LIMIT ?
+            """,
+            (safe_query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, limit),
+        ).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
@@ -916,7 +936,7 @@ def update_draft(
     # Import is deferred to avoid a circular dependency with draft_engine.
     from .draft_engine import revalidate_draft
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = conn.execute(
             """
             SELECT * FROM draft
@@ -1006,7 +1026,7 @@ def approve_draft(
     urgency: int = 0,
 ) -> dict[str, Any] | None:
     workspace_id = ctx.require_scoped_workspace()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = conn.execute(
             """
             SELECT * FROM draft
@@ -1086,7 +1106,7 @@ def reject_draft(
     reason: str | None = None,
 ) -> dict[str, Any] | None:
     workspace_id = ctx.require_scoped_workspace()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = conn.execute(
             """
             SELECT * FROM draft
@@ -1140,7 +1160,7 @@ def export_draft(
     confirmed: bool = False,
 ) -> dict[str, Any] | None:
     workspace_id = ctx.require_scoped_workspace()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = conn.execute(
             """
             SELECT * FROM draft

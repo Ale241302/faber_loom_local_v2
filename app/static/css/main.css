@@ -544,7 +544,8 @@ button { background: none; border: none; cursor: pointer; }
 .empty-state p { color: var(--text-secondary); font-size: 13px; line-height: 1.55; margin: 0; }
 
 .composer-shell { padding: 0 0 calc(4px + var(--safe-b)); background: linear-gradient(transparent, var(--bg-canvas) 32%); flex-shrink: 0; }
-.composer { background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-lg); padding: 12px 14px; transition: border-color .2s, box-shadow .2s; display: flex; gap: 10px; align-items: flex-end; }
+.composer { background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-lg); padding: 12px 14px; transition: border-color .2s, box-shadow .2s; display: flex; flex-direction: column; align-items: stretch; }
+.composer-input-row { display: flex; gap: 10px; align-items: flex-end; }
 .composer:focus-within { border-color: var(--coral-deep); box-shadow: 0 0 0 3px var(--coral-soft); }
 .composer textarea { flex: 1; background: none; border: none; color: var(--text-primary); font: 14px/1.5 var(--font-ui); outline: none; resize: none; min-height: 24px; max-height: 140px; }
 .composer textarea:disabled { opacity: 0.6; }

@@ -8,6 +8,7 @@ the pipeline returns an honest error instead of leaking content to a cloud model
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import sqlite3
@@ -273,3 +274,68 @@ def extract_text_from_object(
             "text": "",
             "error": f"INGEST_ERROR: {exc}",
         }
+
+
+# Máximo para adjuntos de imagen enviados a modelos con visión.
+# Anthropic acepta hasta ~5 MB por imagen; OpenAI hasta 20 MB en data URL.
+IMAGE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+
+_VISION_MIME_NORMALIZE = {"image/jpg": "image/jpeg"}
+_VISION_SUPPORTED_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+
+def load_image_attachment(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    object_id: str,
+) -> dict[str, Any]:
+    """Read an image object from storage and return it base64-encoded.
+
+    Returns a dict with ``object_id``, ``file_name``, ``mime_type``,
+    ``data_b64`` and ``error`` (None on success). Used to build multimodal
+    completion messages for vision-capable models.
+    """
+
+    obj = get_object(ctx, conn, object_id)
+    if obj is None:
+        return {"object_id": object_id, "error": "Object not found"}
+
+    file_name = obj.get("file_name")
+    mime = (obj.get("mime_type") or "").lower()
+    mime = _VISION_MIME_NORMALIZE.get(mime, mime)
+    if mime not in _VISION_SUPPORTED_MIMES:
+        return {
+            "object_id": object_id,
+            "file_name": file_name,
+            "mime_type": mime,
+            "error": f"Unsupported image type for vision: {mime or 'unknown'}",
+        }
+
+    try:
+        blob = _read_object_blob(ctx, conn, object_id)
+    except IngestError as exc:
+        return {
+            "object_id": object_id,
+            "file_name": file_name,
+            "mime_type": mime,
+            "error": f"INGEST_ERROR: {exc}",
+        }
+
+    if len(blob) > IMAGE_ATTACHMENT_MAX_BYTES:
+        return {
+            "object_id": object_id,
+            "file_name": file_name,
+            "mime_type": mime,
+            "error": (
+                f"Image too large ({len(blob)} bytes; max {IMAGE_ATTACHMENT_MAX_BYTES}). "
+                "Redimensiona la imagen e inténtalo de nuevo."
+            ),
+        }
+
+    return {
+        "object_id": object_id,
+        "file_name": file_name,
+        "mime_type": mime,
+        "data_b64": base64.b64encode(blob).decode("ascii"),
+        "error": None,
+    }

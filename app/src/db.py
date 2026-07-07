@@ -21,6 +21,14 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .context import Context, enforce_tenant_scoped
+from .db_adapter import (
+    connect as adapter_connect,
+    db_session as adapter_db_session,
+    is_postgres_connection,
+    normalize_sql,
+    row_to_dict as adapter_row_to_dict,
+    transaction as adapter_transaction,
+)
 from .models import MIGRATIONS, SCHEMA_VERSION, RoutineCreate, WorkspaceCreate
 from .router import cost as router_cost
 from .router.config_store import decrypt_value, encrypt_value
@@ -118,8 +126,8 @@ def slugify(value: str) -> str:
     return slug or "workspace"
 
 
-def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    return {key: row[key] for key in row.keys()}
+def row_to_dict(row: Any) -> dict[str, Any]:
+    return adapter_row_to_dict(row)
 
 
 def get_database_path() -> Path:
@@ -127,16 +135,10 @@ def get_database_path() -> Path:
     return Path(configured).expanduser().resolve() if configured else DEFAULT_DB_PATH
 
 
-def connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db_path = get_database_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+def connect() -> Any:
+    """Return a database connection for the configured engine (SQLite default)."""
+
+    return adapter_connect()
 
 
 def get_workspace_database_path(
@@ -206,8 +208,8 @@ def _mirror_workspace_to_data_db(
     )
 
 
-def get_db() -> Iterator[sqlite3.Connection]:
-    """FastAPI dependency yielding a configured SQLite connection."""
+def get_db() -> Iterator[Any]:
+    """FastAPI dependency yielding a configured database connection."""
 
     conn = connect()
     try:
@@ -217,28 +219,25 @@ def get_db() -> Iterator[sqlite3.Connection]:
 
 
 @contextmanager
-def db_session() -> Iterator[sqlite3.Connection]:
-    conn = connect()
-    try:
+def db_session() -> Iterator[Any]:
+    """Yield a configured database connection and close it at the end."""
+
+    with adapter_db_session() as conn:
         yield conn
-    finally:
-        conn.close()
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[None]:
-    """Commit/rollback a unit of work unless already inside a transaction."""
+def transaction(conn: Any, ctx: Context | None = None) -> Iterator[None]:
+    """Commit/rollback a unit of work unless already inside a transaction.
 
-    outer_transaction = conn.in_transaction
-    try:
+    When *ctx* is provided and the engine is Postgres, the connection variables
+    used by RLS policies are set via ``SET LOCAL`` at the start of the
+    transaction. This is the only place where tenant/workspace flow into the
+    database connection; they never come from headers.
+    """
+
+    with adapter_transaction(conn, ctx=ctx):
         yield
-    except Exception:
-        if not outer_transaction:
-            conn.rollback()
-        raise
-    else:
-        if not outer_transaction:
-            conn.commit()
 
 
 def recompute_all_workspace_hmacs(conn: sqlite3.Connection) -> None:
@@ -972,7 +971,7 @@ def update_workspace_field_aliases(
     """Replace the workspace field alias map (workspace-scoped)."""
 
     workspace_id = ctx.require_scoped_workspace()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         cursor = conn.execute(
             """
             UPDATE workspace

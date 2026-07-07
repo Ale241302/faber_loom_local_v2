@@ -67,44 +67,112 @@ class Provider(ABC):
         """Run a chat completion or raise ProviderError."""
 
 
+def _is_image_part(part: Any) -> bool:
+    return isinstance(part, dict) and part.get("type") == "image" and bool(part.get("data_b64"))
+
+
 def _content_to_text(content: Any) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
         return content
+    if isinstance(content, list):
+        # Multimodal parts: text parts verbatim, images as a short marker so
+        # token estimates and logs never include base64 payloads.
+        parts: list[str] = []
+        for part in content:
+            if _is_image_part(part):
+                parts.append(f"[imagen: {part.get('file_name') or part.get('mime_type') or 'adjunto'}]")
+            elif isinstance(part, dict) and part.get("type") == "text":
+                parts.append(str(part.get("text") or ""))
+            else:
+                parts.append(_content_to_text(part))
+        return "\n".join(p for p in parts if p)
     try:
         return json.dumps(content, ensure_ascii=False)
     except TypeError:
         return str(content)
 
 
-def _normalize_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    normalized: list[dict[str, str]] = []
+def _openai_content(content: Any) -> Any:
+    """Return OpenAI-compatible content: str, or a parts array when multimodal."""
+
+    if not isinstance(content, list):
+        return _content_to_text(content)
+    parts: list[dict[str, Any]] = []
+    for part in content:
+        if _is_image_part(part):
+            mime = part.get("mime_type") or "image/png"
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{part['data_b64']}"},
+            })
+        else:
+            text = part.get("text") if isinstance(part, dict) else None
+            text = str(text) if text is not None else _content_to_text(part)
+            if text:
+                parts.append({"type": "text", "text": text})
+    return parts or ""
+
+
+def _anthropic_blocks(content: list[Any]) -> list[dict[str, Any]]:
+    """Convert multimodal parts to Anthropic content blocks."""
+
+    blocks: list[dict[str, Any]] = []
+    for part in content:
+        if _is_image_part(part):
+            blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": part.get("mime_type") or "image/png",
+                    "data": part["data_b64"],
+                },
+            })
+        else:
+            text = part.get("text") if isinstance(part, dict) else None
+            text = str(text) if text is not None else _content_to_text(part)
+            if text:
+                blocks.append({"type": "text", "text": text})
+    return blocks or [{"type": "text", "text": ""}]
+
+
+def _normalize_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
     for message in messages:
         role = str(message.get("role") or "user")
-        content = _content_to_text(message.get("content", ""))
+        content = _openai_content(message.get("content", ""))
         normalized.append({"role": role, "content": content})
     return normalized
 
 
-def _split_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, str]]]:
+def _split_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
     system_parts: list[str] = []
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, Any]] = []
 
     for message in messages:
         role = str(message.get("role") or "user")
-        content = _content_to_text(message.get("content", ""))
+        raw = message.get("content", "")
 
         if role == "system":
-            if content:
-                system_parts.append(content)
+            text = _content_to_text(raw)
+            if text:
+                system_parts.append(text)
             continue
 
         if role not in {"user", "assistant"}:
             role = "user"
 
-        if normalized and normalized[-1]["role"] == role:
-            normalized[-1]["content"] = f"{normalized[-1]['content']}\n\n{content}".strip()
+        content: Any = _anthropic_blocks(raw) if isinstance(raw, list) else _content_to_text(raw)
+
+        previous = normalized[-1] if normalized else None
+        if (
+            previous is not None
+            and previous["role"] == role
+            and isinstance(previous["content"], str)
+            and isinstance(content, str)
+        ):
+            previous["content"] = f"{previous['content']}\n\n{content}".strip()
         else:
             normalized.append({"role": role, "content": content})
 

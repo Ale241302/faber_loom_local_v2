@@ -19,6 +19,8 @@ const NAV = {
   admin: [
     { id: "settings", label: "Router / Proveedores", sub: "Modelos, keys y presupuesto", badge: "SL1", icon: "settings" },
     { id: "audit", label: "Auditoría", sub: "JSONL hoy", badge: "SL0", icon: "audit" },
+    { id: "tenant-settings", label: "Config. en cascada", sub: "Tenant / workspace / user", badge: "E3-2", icon: "settings" },
+    { id: "tenant-admin", label: "Admin de plataforma", sub: "Aprobar / suspender tenants", badge: "E3-2", icon: "shield" },
   ],
 };
 
@@ -80,6 +82,13 @@ function isExecutableCategory(category) {
 }
 
 function cx(...parts) { return parts.filter(Boolean).join(" "); }
+
+function isPlatformAdmin(user) {
+  if (!user) return false;
+  if (user.role === "platform_admin") return true;
+  if (Array.isArray(user.roles) && user.roles.includes("platform_admin")) return true;
+  return false;
+}
 
 function readBootstrap() {
   const boot = window.__FABERLOOM_BOOTSTRAP__;
@@ -317,6 +326,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
+            <RailItem label="Config. en cascada" icon="settings" active={nav === "tenant-settings"} onClick={() => setNav("tenant-settings")} />
+            {isPlatformAdmin(user) && <RailItem label="Admin de plataforma" icon="shield" active={nav === "tenant-admin"} onClick={() => setNav("tenant-admin")} />}
             <RailItem label="Tenant" icon="database" active={nav === "foundation"} onClick={() => { setNav("foundation"); setFoundationView("m16-tenant"); }} />
           </> }
         ]} defaultOpen={activeAccordionId === "tenant-acc" ? ["tenant-acc"] : []} />
@@ -524,8 +535,9 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     }
     if (attachment) {
       options.attachment_object_id = attachment.object_id;
+      options.attachment_file_name = attachment.file_name;
     }
-    onSend(text, options);
+    onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
     clearAttachment();
   };
@@ -557,16 +569,18 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         </div>
         <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto" disabled={uploading}><Icon name="x" size={14}/></button>
       </div>}
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
-      <div className="composer-actions">
-        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
-        <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
-          <Icon name="paperclip" size={16}/>
-        </button>
-        <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
-          <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
-        </button>
-        <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
+      <div className="composer-input-row">
+        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
+        <div className="composer-actions">
+          <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
+          <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
+            <Icon name="paperclip" size={16}/>
+          </button>
+          <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
+            <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
+          </button>
+          <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
+        </div>
       </div>
     </div>
     {showModelPicker && <div className="composer-picker">
@@ -815,7 +829,7 @@ function SpaceView({ activeWorkspace }) {
       const tempMessage = {
         id: tempId,
         role: "user",
-        content: text,
+        content: options.attachment_file_name ? `${text}\n\n[Imagen adjunta: ${options.attachment_file_name}]` : text,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, tempMessage]);
@@ -824,6 +838,9 @@ function SpaceView({ activeWorkspace }) {
       if (options.provider_slug && options.model) {
         body.provider_slug = options.provider_slug;
         body.model = options.model;
+      }
+      if (options.attachment_object_id) {
+        body.attachment_object_id = options.attachment_object_id;
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
       if (completion && completion.message) {
@@ -2649,7 +2666,7 @@ function MailView({ activeWorkspace }) {
   </div>;
 }
 
-function Canvas({ nav, activeWorkspace, status, features, foundationView }) {
+function Canvas({ nav, activeWorkspace, status, features, foundationView, user }) {
   return <main className="canvas">
     <ContextStrip activeWorkspace={activeWorkspace}/>
     {status === "error" && <div className="workspace-warning"><Icon/>No se pudo cargar /api/workspaces. El shell sigue disponible para revisar la interfaz.</div>}
@@ -2667,6 +2684,8 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView }) {
      : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
+     : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
+     : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }
@@ -2879,7 +2898,7 @@ function App({ user, onLogout }) {
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
       <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
-      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView}/>
+      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView} user={user}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>
     <ToastContainer toasts={toasts} onDismiss={dismissToast}/>
