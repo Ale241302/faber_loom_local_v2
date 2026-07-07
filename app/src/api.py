@@ -198,7 +198,8 @@ from .models import (
     WorkspaceRoutingPolicyRead,
     WorkspaceRoutingPolicyUpdate,
 )
-from .workloom import list_workloom_items
+from .workloom import assign_workloom_item, list_workloom_items
+from .models import WorkLoomAssignRequest
 from .router import BudgetExceeded, ProviderError, build_router
 from .router import cost as router_cost
 from .router.config_store import ProviderConfigStore, mask_key
@@ -844,7 +845,42 @@ def api_create_completion(
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
+    # E2-4: budget por usuario — se verifica antes de gastar (fail-closed).
+    # get_routing_policy puede INSERTar la fila default: debe ir en su propia
+    # transacción para no dejar la conexión abierta (rompería los commits del
+    # resto del request).
+    with transaction(conn):
+        _policy_for_budget = get_routing_policy(ctx, conn)
+    _user_cap = _policy_for_budget.get("user_budget_cap_usd")
+    if _user_cap is not None and float(_user_cap) > 0:
+        from .db import sum_user_usage_cost
+
+        _user_spent = sum_user_usage_cost(ctx, conn)
+        if _user_spent >= float(_user_cap):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"Presupuesto por usuario agotado: ${_user_spent:.4f} de "
+                    f"${float(_user_cap):.2f}. Pide a un admin ampliar el cap."
+                ),
+            )
+
     user_message, attachment_image = _build_user_message_with_attachment(ctx, conn, payload)
+
+    # Meta del adjunto para que la UI muestre thumbnail/tarjeta (se guarda en
+    # el campo route del mensaje de usuario; no viaja al modelo).
+    attachment_route: dict[str, Any] | None = None
+    if payload.attachment_object_id:
+        _att_obj = get_object(ctx, conn, payload.attachment_object_id)
+        if _att_obj is not None:
+            attachment_route = {
+                "attachment": {
+                    "object_id": payload.attachment_object_id,
+                    "file_name": _att_obj.get("file_name"),
+                    "mime_type": _att_obj.get("mime_type"),
+                    "size_bytes": _att_obj.get("size_bytes"),
+                }
+            }
 
     mention_match = _AT_MENTION_RE.match(payload.message.strip())
     if mention_match and payload.attachment_object_id:
@@ -999,7 +1035,7 @@ def api_create_completion(
                     user_request=user_message,
                     image_attachment=attachment_image,
                 )
-                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
+                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
                 route = {
                     "chain_id": auto_result["chain_id"],
                     "steps": auto_result["steps"],
@@ -1080,7 +1116,7 @@ def api_create_completion(
 
     # Persist the user message first so the completion history includes it.
     with transaction(conn):
-        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message)
+        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
 
     history = [{"role": "system", "content": _SYSTEM_PROMPT}]
     history.extend(get_message_history(ctx, conn, chat_id))
@@ -2166,6 +2202,7 @@ def api_update_routing_policy(
             provider_allowlist=payload.provider_allowlist,
             model_allowlist=payload.model_allowlist,
             budget_cap_usd=payload.budget_cap_usd,
+            user_budget_cap_usd=payload.user_budget_cap_usd,
             auto_mode_enabled=payload.auto_mode_enabled,
             max_auto_steps=payload.max_auto_steps,
             require_local_only=payload.require_local_only,
@@ -3752,6 +3789,63 @@ def api_list_workloom(
         drafts=[DraftRead(**row) for row in items["drafts"]],
         gold_candidates=[GoldCandidateRead(**row) for row in items["gold_candidates"]],
     )
+
+
+@router.get("/workspaces/{workspace_id}/members")
+def api_list_workspace_members(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    """E2-2: lista de usuarios del tenant para asignación en la cola compartida."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if not ctx.tenant_id:
+        return {"members": []}
+    rows = conn.execute(
+        "SELECT id, email, display_name FROM fnd_users "
+        "WHERE tenant_id = ? AND status = 'active' ORDER BY email",
+        (ctx.tenant_id,),
+    ).fetchall()
+    return {
+        "members": [
+            {"id": r["id"], "email": r["email"], "display_name": r["display_name"]}
+            for r in rows
+        ]
+    }
+
+
+@router.post("/workspaces/{workspace_id}/workloom/assign")
+def api_assign_workloom_item(
+    workspace_id: str,
+    payload: WorkLoomAssignRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    """E2-2: asignar/reasignar un item de la cola compartida (con urgencia opcional)."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        with transaction(conn):
+            item = assign_workloom_item(
+                ctx,
+                conn,
+                item_type=payload.item_type,
+                item_id=payload.item_id,
+                assigned_to=payload.assigned_to,
+                urgency=payload.urgency,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return {
+        "item_type": payload.item_type,
+        "item": item,
+        "assigned_by": ctx.resolved_actor_id(),
+    }
 
 
 @router.get("/workspaces/{workspace_id}/routine-runs", response_model=list[RoutineRunRead])

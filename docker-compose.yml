@@ -60,7 +60,10 @@ services:
     ports:
       - "8200:8000"
     networks:
-      - mwt_default
+      mwt_default:
+        # IP fija: mwt-nginx resuelve el nombre solo al recargar config; sin
+        # IP estable cada recreate del contenedor produce 502 (mismo fix que MinIO).
+        ipv4_address: 172.20.0.31
     depends_on:
       postgres:
         condition: service_healthy

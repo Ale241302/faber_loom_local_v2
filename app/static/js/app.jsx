@@ -105,8 +105,44 @@ function authHeaders() {
   return {};
 }
 
+// Sesión: el access token (cookie HttpOnly, corta) puede expirar en medio del
+// trabajo. Ante un 401 intentamos renovar con el refresh token (cookie de 7
+// días, rotativa) y reintentamos el request una vez. Si el refresh también
+// falla, recargamos la página para que AuthGate muestre el login.
+let _refreshingSession = null;
+function _refreshSession() {
+  if (!_refreshingSession) {
+    _refreshingSession = fetch("/api/auth/refresh", { method: "POST" })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => { _refreshingSession = null; });
+  }
+  return _refreshingSession;
+}
+
+function _sessionLost() {
+  if (window.__faberloomSessionLost) return;
+  window.__faberloomSessionLost = true;
+  // Solo recargamos si había una sesión previa (para que AuthGate muestre el
+  // login). Sin sesión previa (ya estamos en el login) recargar produciría un
+  // bucle infinito: /api/me 401 -> refresh 401 -> reload -> ...
+  if (!localStorage.getItem("faberloom_user")) return;
+  localStorage.removeItem("faberloom_user");
+  window.location.reload();
+}
+
+async function apiFetch(path, options = {}) {
+  let res = await fetch(path, options);
+  if (res.status === 401 && !String(path).startsWith("/api/auth/")) {
+    const refreshed = await _refreshSession();
+    if (refreshed) res = await fetch(path, options);
+    if (res.status === 401) _sessionLost();
+  }
+  return res;
+}
+
 async function apiGet(path) {
-  const res = await fetch(path, { headers: authHeaders() });
+  const res = await apiFetch(path, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -115,7 +151,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -125,7 +161,7 @@ async function apiPost(path, body) {
 }
 
 async function apiPut(path, body) {
-  const res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -135,7 +171,7 @@ async function apiPut(path, body) {
 }
 
 async function apiPatch(path, body) {
-  const res = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+  const res = await apiFetch(path, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -144,7 +180,7 @@ async function apiPatch(path, body) {
 }
 
 async function apiDelete(path) {
-  const res = await fetch(path, { method: "DELETE", headers: authHeaders() });
+  const res = await apiFetch(path, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
@@ -488,7 +524,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         etag: putRes.headers.get("ETag") || "",
         size_bytes: file.size,
       });
-      setAttachment({ object_id: presigned.object_id, file_name: file.name });
+      setAttachment({ object_id: presigned.object_id, file_name: file.name, mime_type: file.type || "application/octet-stream" });
       setAttachmentPreview((prev) => prev && { ...prev, uploading: false });
     } catch (err) {
       alert(err.message);
@@ -536,6 +572,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     if (attachment) {
       options.attachment_object_id = attachment.object_id;
       options.attachment_file_name = attachment.file_name;
+      options.attachment_mime_type = attachment.mime_type;
     }
     onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
@@ -613,6 +650,44 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     </div>}
     <div className="composer-note"><Icon name="shield" size={16}/>Las acciones destructivas requieren HITL y doble confirmación.</div>
   </form>;
+}
+
+function MessageAttachment({ workspaceId, attachment }) {
+  const [imgUrl, setImgUrl] = useState(null);
+  const isImage = (attachment.mime_type || "").startsWith("image/");
+  useEffect(() => {
+    let alive = true;
+    if (isImage && attachment.object_id) {
+      apiGet(`/api/workspaces/${workspaceId}/objects/${attachment.object_id}/url?expires_seconds=3600`)
+        .then((r) => { if (alive) setImgUrl(r.download_url); })
+        .catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [attachment.object_id]);
+  const ext = ((attachment.file_name || "").split(".").pop() || "file").toUpperCase().slice(0, 4);
+  if (isImage) {
+    return <div className="message-attachment">
+      {imgUrl
+        ? <img className="message-attachment-img" src={imgUrl} alt={attachment.file_name}/>
+        : <div className="message-attachment-img message-attachment-img-loading"><Icon name="file" size={18}/></div>}
+      <span className="message-attachment-caption">{attachment.file_name}</span>
+    </div>;
+  }
+  return <div className="message-attachment message-attachment-doc">
+    <span className={`file-ext-badge file-ext-${ext.toLowerCase()}`}>{ext}</span>
+    <div className="message-attachment-meta">
+      <span className="message-attachment-name">{attachment.file_name}</span>
+      {attachment.size_bytes ? <span className="message-attachment-size">{(attachment.size_bytes / 1024).toFixed(1)} KB</span> : null}
+    </div>
+  </div>;
+}
+
+function stripAttachmentMarkers(content) {
+  return String(content || "")
+    .replace(/\n*\[Imagen adjunta:[^\]]*\]/g, "")
+    .replace(/\n*--- Contenido del adjunto[\s\S]*?--- Fin del adjunto ---/g, "")
+    .replace(/\n*\[Adjunto:[^\]]*\]/g, "")
+    .trim();
 }
 
 function SeamPanel() {
@@ -830,6 +905,7 @@ function SpaceView({ activeWorkspace }) {
         id: tempId,
         role: "user",
         content: options.attachment_file_name ? `${text}\n\n[Imagen adjunta: ${options.attachment_file_name}]` : text,
+        route: options.attachment_object_id ? { attachment: { object_id: options.attachment_object_id, file_name: options.attachment_file_name, mime_type: options.attachment_mime_type } } : null,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, tempMessage]);
@@ -887,7 +963,11 @@ function SpaceView({ activeWorkspace }) {
         {messages.map((msg) => (
           <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
             <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"} · {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
-            <div className="message-content">{msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content}</div>
+            {msg.route && msg.route.attachment && <MessageAttachment workspaceId={activeWorkspace.id} attachment={msg.route.attachment}/>}
+            <div className="message-content">{(() => {
+              const raw = msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content;
+              return msg.route && msg.route.attachment ? stripAttachmentMarkers(raw) : raw;
+            })()}</div>
             {msg.role === "assistant" && msg.route && (() => {
               const r = msg.route;
               const requested = r.requested_provider_slug || r.requested_model
@@ -1802,8 +1882,26 @@ function RoutinesView({ activeWorkspace }) {
 
 function WorkloomView({ activeWorkspace }) {
   const [data, setData] = useState({ routine_runs: [], drafts: [], gold_candidates: [] });
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const memberLabel = (id) => {
+    const m = members.find((x) => x.id === id);
+    return m ? (m.display_name || m.email) : id;
+  };
+
+  const assignItem = async (itemType, itemId, assignedTo) => {
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/workloom/assign`, {
+        item_type: itemType,
+        item_id: itemId,
+        assigned_to: assignedTo,
+      });
+      await load();
+    } catch (err) { setError(err.message); }
+  };
 
   const load = async () => {
     if (!activeWorkspace) return;
@@ -1812,6 +1910,7 @@ function WorkloomView({ activeWorkspace }) {
     try {
       const r = await apiGet(`/api/workspaces/${activeWorkspace.id}/workloom`);
       setData({ routine_runs: r.routine_runs || [], drafts: r.drafts || [], gold_candidates: r.gold_candidates || [] });
+      apiGet(`/api/workspaces/${activeWorkspace.id}/members`).then((m) => setMembers(m.members || [])).catch(() => {});
     } catch (err) {
       setError(err.message);
     }
@@ -1882,6 +1981,13 @@ function WorkloomView({ activeWorkspace }) {
             <div style={S.cardTitle}>{run.id}</div>
             <div style={S.cardMeta}>routine {run.routine_id}</div>
             <div style={{ marginBottom: 8 }}><span className={statusClass(run.status)}>{run.status}</span></div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Asignado:</span>
+              <select style={S.select} value={run.assigned_to || ""} onChange={(e) => assignItem("routine_run", run.id, e.target.value || null)}>
+                <option value="">— sin asignar —</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
+              </select>
+            </div>
             <Meter value={run.urgency || 0} max={10} label="Urgencia" variant={run.urgency >= 7 ? "vino" : run.urgency >= 4 ? "amber" : "sage"} />
             {run.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{run.reason}</div>}
             <div style={S.inlineGroup}>
@@ -1899,6 +2005,13 @@ function WorkloomView({ activeWorkspace }) {
             <div style={S.cardTitle}>{draft.subject || "(sin asunto)"}</div>
             <div style={S.cardMeta}>{draft.id}</div>
             <div style={{ marginBottom: 8 }}><span className={statusClass(draft.status)}>{draft.status}</span></div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Asignado:</span>
+              <select style={S.select} value={draft.assigned_to || ""} onChange={(e) => assignItem("draft", draft.id, e.target.value || null)}>
+                <option value="">— sin asignar —</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
+              </select>
+            </div>
             <Meter value={draft.urgency || 0} max={10} label="Urgencia" variant={draft.urgency >= 7 ? "vino" : draft.urgency >= 4 ? "amber" : "sage"} />
             {draft.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{draft.reason}</div>}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{draft.body_md.slice(0, 160)}…</div>

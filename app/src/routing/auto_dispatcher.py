@@ -184,6 +184,7 @@ def run_auto_chain(
             step_input=step_input,
             policy=policy,
             image_part=image_attachment if capability == "vision" else None,
+            capability=capability,
         )
 
         # Enforce workspace budget against actual step cost.
@@ -421,6 +422,87 @@ def _render_step_input(
     return f"User request: {user_request}\n\n{step['prompt']}"
 
 
+OPENAI_IMAGE_FLAT_COST_USD = 0.04
+
+
+def _execute_openai_image_step(
+    ctx: Context,
+    conn: Any,
+    *,
+    entry: dict[str, Any],
+    prompt: str,
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """Generate a real image with the OpenAI Images API and persist it to MinIO.
+
+    El objeto queda en fl-generated (sellado ws-{id}); el content del paso es
+    una URL presignada de 1h. Cost ledger usa costo plano por imagen.
+    """
+
+    import base64 as _b64
+    import time as _time
+
+    start = _time.perf_counter()
+    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    provider = router.providers.get("openai")
+    if provider is None or not provider.is_available():
+        raise NoCapacityError("OpenAI image provider is not configured")
+
+    spent = sum_workspace_usage_cost(ctx, conn)
+    budget_cap = policy.get("budget_cap_usd", 5.0)
+    if spent + OPENAI_IMAGE_FLAT_COST_USD > budget_cap:
+        raise NoCapacityError(
+            f"Image step cost would exceed workspace budget cap ${budget_cap:.2f}"
+        )
+
+    try:
+        client = provider._build_client()
+        response = client.images.generate(
+            model=entry["model"],
+            prompt=prompt[:3800],
+            size="1024x1024",
+            n=1,
+        )
+    except Exception as exc:
+        raise NoCapacityError(f"Image generation failed: {exc}") from exc
+
+    datum = response.data[0]
+    b64_payload = getattr(datum, "b64_json", None)
+    remote_url = getattr(datum, "url", None)
+
+    content_url: str
+    object_id: str | None = None
+    if b64_payload:
+        from ..db import create_generated_object
+        from ..storage import get_object_store
+
+        image_bytes = _b64.b64decode(b64_payload)
+        file_name = f"imagen-generada-{int(_time.time())}.png"
+        object_row = create_generated_object(
+            ctx, conn, image_bytes, file_name=file_name, mime_type="image/png"
+        )
+        object_id = object_row["id"]
+        content_url = get_object_store().presigned_download_url(
+            object_row["bucket"], object_row["object_key"], expires=3600
+        )
+    elif remote_url:
+        content_url = str(remote_url)
+    else:
+        raise NoCapacityError("Image generation returned no payload")
+
+    return {
+        "status": "succeeded",
+        "content": content_url,
+        "output": {"image_url": content_url, "object_id": object_id},
+        "provider_slug": "openai",
+        "model": entry["model"],
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": OPENAI_IMAGE_FLAT_COST_USD,
+        "duration_ms": max(0, int((_time.perf_counter() - start) * 1000)),
+    }
+
+
 def _execute_step(
     ctx: Context,
     conn: Any,
@@ -429,9 +511,13 @@ def _execute_step(
     step_input: str,
     policy: dict[str, Any],
     image_part: dict[str, Any] | None = None,
+    capability: str = "text",
 ) -> dict[str, Any]:
     provider_slug = entry["provider_slug"]
     model = entry["model"]
+
+    if capability == "image_gen" and provider_slug == "openai":
+        return _execute_openai_image_step(ctx, conn, entry=entry, prompt=step_input, policy=policy)
 
     # Contenido multimodal cuando el paso lleva imagen (capability vision).
     step_content: Any = step_input

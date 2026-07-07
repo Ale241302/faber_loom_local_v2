@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1141,6 +1141,13 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS ix_object_ingest_status
         ON object(ingest_status);
     """,
+    30: """
+    -- E2-2: WorkLoom cola compartida — asignación de items por usuario.
+    ALTER TABLE routine_run ADD COLUMN assigned_to TEXT;
+    ALTER TABLE draft ADD COLUMN assigned_to TEXT;
+    -- E2-4: budget por usuario (NULL = sin límite individual).
+    ALTER TABLE workspace_routing_policy ADD COLUMN user_budget_cap_usd REAL;
+    """,
 }
 
 
@@ -1298,6 +1305,7 @@ class RoutineRunRead(BaseModel):
     approved_by: str | None = None
     urgency: int = 0
     reason: str | None = None
+    assigned_to: str | None = None
     created_at: str
 
 
@@ -1528,6 +1536,15 @@ class WorkLoomRead(BaseModel):
     gold_candidates: list[GoldCandidateRead]
 
 
+class WorkLoomAssignRequest(BaseModel):
+    """E2-2: asignación/reasignación de items de la cola compartida."""
+
+    item_type: Literal["routine_run", "draft"]
+    item_id: str = Field(min_length=1, max_length=120)
+    assigned_to: str | None = Field(default=None, max_length=120)
+    urgency: int | None = Field(default=None, ge=0, le=10)
+
+
 # -----------------------------------------------------------------------------
 # SL1a: Chat + Router API models
 # -----------------------------------------------------------------------------
@@ -1675,6 +1692,7 @@ class WorkspaceRoutingPolicyUpdate(BaseModel):
     provider_allowlist: list[str] | None = None
     model_allowlist: dict[str, list[str]] | None = None
     budget_cap_usd: float | None = Field(default=None, ge=0.0)
+    user_budget_cap_usd: float | None = Field(default=None, ge=0.0)
     auto_mode_enabled: bool | None = None
     max_auto_steps: int | None = Field(default=None, ge=1, le=10)
     require_local_only: bool | None = None
@@ -1688,6 +1706,7 @@ class WorkspaceRoutingPolicyRead(BaseModel):
     provider_allowlist: list[str]
     model_allowlist: dict[str, list[str]]
     budget_cap_usd: float
+    user_budget_cap_usd: float | None = None
     auto_mode_enabled: bool
     max_auto_steps: int
     require_local_only: bool
@@ -2144,6 +2163,7 @@ class DraftRead(BaseModel):
     original_body_md: str | None = None
     edit_pct: float | None = None
     urgency: int = 0
+    assigned_to: str | None = None
     reason: str | None = None
     created_at: str
     updated_at: str

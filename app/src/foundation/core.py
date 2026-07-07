@@ -473,6 +473,33 @@ SYSTEM_ROLES: dict[str, dict[str, Any]] = {
         "description": "Solo lectura",
         "permissions": ["classifier.read", "outcomes.read", "events.read", "audit.read", "memory.read"],
     },
+    # Roles de dominio Etapa 2 (plan E2 Sec.1.4): mapean la semántica AM/curador/CEO
+    # sobre el mismo vocabulario de permisos del RBAC.
+    "am": {
+        "description": "Account Manager: opera drafts y rutinas de sus clientes; no promueve gold cross-AM",
+        "permissions": [
+            "classifier.run", "classifier.read", "drafts.create", "drafts.review",
+            "drafts.send", "outcomes.read", "outcomes.write", "memory.read",
+            "memory.write", "events.read",
+        ],
+    },
+    "curador": {
+        "description": "Curador: valida KB, revisa gold candidates y ejerce el segundo gate de promoción",
+        "permissions": [
+            "classifier.run", "classifier.read", "drafts.create", "drafts.review",
+            "outcomes.read", "outcomes.write", "memory.read", "memory.write",
+            "events.read", "audit.read", "kb.manage", "gold.promote",
+        ],
+    },
+    "ceo": {
+        "description": "CEO: aprobación final, visibilidad total y gestión de políticas",
+        "permissions": [
+            "users.manage", "roles.manage", "policy.manage", "audit.read",
+            "classifier.manage", "drafts.review", "drafts.send", "outcomes.read",
+            "memory.manage", "events.read", "kb.manage", "gold.promote",
+            "tenants.read",
+        ],
+    },
 }
 
 

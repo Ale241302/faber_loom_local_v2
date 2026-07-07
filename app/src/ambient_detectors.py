@@ -292,8 +292,149 @@ def detect_budget_exhaustion(ctx: Context, conn: sqlite3.Connection) -> list[Amb
     return findings
 
 
+def detect_mail_without_draft(ctx: Context, conn: sqlite3.Connection) -> list[AmbientFinding]:
+    """Detect unread mail_message rows without a draft for more than 4 hours."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    since = _hours_ago(4)
+    rows = conn.execute(
+        """
+        SELECT id, subject, sender, created_at
+        FROM mail_message
+        WHERE workspace_id = ? AND tenant_id = ? AND status = 'unread'
+              AND draft_id IS NULL AND created_at < ?
+        ORDER BY created_at ASC
+        LIMIT 20
+        """,
+        (workspace_id, ctx.tenant_id, since),
+    ).fetchall()
+
+    findings: list[AmbientFinding] = []
+    for row in rows:
+        subject = row["subject"] or "(sin asunto)"
+        findings.append(
+            AmbientFinding(
+                detector_slug="mail_without_draft",
+                target_type="mail_message",
+                target_id=row["id"],
+                severity="medium",
+                title=f"Correo sin draft: {subject[:80]}",
+                description=(
+                    f"El correo de {row['sender'] or 'remitente desconocido'} lleva "
+                    f"{_fmt_delta(row['created_at'])} sin borrador de respuesta."
+                ),
+                suggested_action="Generar un draft de respuesta y enviarlo a aprobación HITL.",
+                evidence_json={
+                    "subject": subject,
+                    "sender": row["sender"],
+                    "received_at": row["created_at"],
+                },
+            )
+        )
+    return findings
+
+
+def detect_stale_sources(ctx: Context, conn: sqlite3.Connection) -> list[AmbientFinding]:
+    """Detect KB sources past their declared validity or older than 180 days."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    now = datetime.now(timezone.utc)
+    age_cutoff = (now - timedelta(days=180)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    rows = conn.execute(
+        """
+        SELECT id, title, type, meta_json, created_at
+        FROM kb_source
+        WHERE workspace_id = ? AND tenant_id = ?
+        ORDER BY created_at ASC
+        LIMIT 200
+        """,
+        (workspace_id, ctx.tenant_id),
+    ).fetchall()
+
+    findings: list[AmbientFinding] = []
+    today = now.date().isoformat()
+    for row in rows:
+        reason = None
+        try:
+            meta = json.loads(row["meta_json"] or "{}")
+        except Exception:
+            meta = {}
+        vigente_hasta = str(meta.get("vigente_hasta") or meta.get("valid_until") or "").strip()
+        if vigente_hasta and vigente_hasta < today:
+            reason = f"vigencia declarada venció el {vigente_hasta}"
+        elif (row["created_at"] or "") < age_cutoff:
+            reason = f"cargada hace más de 180 días ({_fmt_delta(row['created_at'])})"
+        if reason is None:
+            continue
+        findings.append(
+            AmbientFinding(
+                detector_slug="stale_source",
+                target_type="kb_source",
+                target_id=row["id"],
+                severity="medium",
+                title=f"Fuente KB vencida: {row['title'][:80]}",
+                description=f"La fuente '{row['title']}' ({row['type']}) está potencialmente desactualizada: {reason}.",
+                suggested_action="Revisar la fuente, recargar datos vigentes o marcarla como retirada.",
+                evidence_json={
+                    "title": row["title"],
+                    "type": row["type"],
+                    "created_at": row["created_at"],
+                    "vigente_hasta": vigente_hasta or None,
+                    "reason": reason,
+                },
+            )
+        )
+    return findings
+
+
+def detect_unreviewed_gold(ctx: Context, conn: sqlite3.Connection) -> list[AmbientFinding]:
+    """Detect gold_candidate rows waiting for review for more than 48 hours."""
+
+    workspace_id = ctx.require_scoped_workspace()
+    since = _hours_ago(48)
+    rows = conn.execute(
+        """
+        SELECT gc.id, gc.routine_id, gc.edit_pct, gc.created_at, r.name AS routine_name
+        FROM gold_candidate gc
+        LEFT JOIN routine r ON r.id = gc.routine_id
+        WHERE gc.workspace_id = ? AND gc.approved = 0 AND gc.created_at < ?
+        ORDER BY gc.created_at ASC
+        LIMIT 20
+        """,
+        (workspace_id, since),
+    ).fetchall()
+
+    findings: list[AmbientFinding] = []
+    for row in rows:
+        routine_name = row["routine_name"] or "rutina desconocida"
+        findings.append(
+            AmbientFinding(
+                detector_slug="unreviewed_gold",
+                target_type="gold_candidate",
+                target_id=row["id"],
+                severity="low",
+                title=f"Gold candidate sin revisar: {routine_name}",
+                description=(
+                    f"Un gold candidate de '{routine_name}' lleva {_fmt_delta(row['created_at'])} "
+                    f"esperando revisión (edit_pct: {row['edit_pct']})."
+                ),
+                suggested_action="Revisar el candidate y aprobarlo o descartarlo (segundo gate aplica).",
+                evidence_json={
+                    "routine_id": row["routine_id"],
+                    "routine_name": routine_name,
+                    "edit_pct": row["edit_pct"],
+                    "created_at": row["created_at"],
+                },
+            )
+        )
+    return findings
+
+
 DETECTOR_REGISTRY: dict[str, Any] = {
     "failed_routine": detect_failed_routine,
     "stuck_hitl": detect_stuck_hitl,
     "budget_exhaustion": detect_budget_exhaustion,
+    "mail_without_draft": detect_mail_without_draft,
+    "stale_source": detect_stale_sources,
+    "unreviewed_gold": detect_unreviewed_gold,
 }

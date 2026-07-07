@@ -529,6 +529,53 @@ def should_pause_for_utility_breaker(
 # Orchestrator
 # ---------------------------------------------------------------------------
 
+def get_detector_backoff(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    workspace_id: str | None,
+    detector_slug: str,
+) -> dict[str, Any]:
+    """Return {consecutive_failures, backoff_until, disabled} for a detector.
+
+    Backoff contract (plan E2 Sec.1.7.3): tras un fallo, el siguiente intento
+    espera 2^n * 60s (max 4h). Tres fallos consecutivos marcan el detector
+    disabled (ambient_detector.is_active = 0) hasta revisión manual.
+    """
+
+    row = conn.execute(
+        """
+        SELECT consecutive_failures, backoff_until FROM ambient_detector_run
+        WHERE tenant_id = ? AND workspace_id IS ? AND detector_slug = ?
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        (tenant_id, workspace_id, detector_slug),
+    ).fetchone()
+    disabled_row = conn.execute(
+        "SELECT is_active FROM ambient_detector WHERE tenant_id = ? AND slug = ?",
+        (tenant_id, detector_slug),
+    ).fetchone()
+    return {
+        "consecutive_failures": int(row["consecutive_failures"] or 0) if row else 0,
+        "backoff_until": row["backoff_until"] if row else None,
+        "disabled": bool(disabled_row is not None and not disabled_row["is_active"]),
+    }
+
+
+def compute_backoff_until(consecutive_failures: int) -> str:
+    """2^n * 60s, capped at 4h."""
+
+    seconds = min((2 ** max(consecutive_failures, 1)) * 60, 4 * 3600)
+    until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    return until.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def disable_detector(conn: sqlite3.Connection, tenant_id: str, detector_slug: str) -> None:
+    conn.execute(
+        "UPDATE ambient_detector SET is_active = 0, updated_at = ? WHERE tenant_id = ? AND slug = ?",
+        (utc_now(), tenant_id, detector_slug),
+    )
+
+
 class AmbientOrchestrator:
     """Runs ambient cycles for a tenant/workspace."""
 
@@ -558,8 +605,8 @@ class AmbientOrchestrator:
         if config is None:
             raise RuntimeError(f"No ambient_config for tenant {tenant_id}")
 
-        # Global kill switch
-        if not config.get("global_enabled", True):
+        # Global kill switch (fail-closed: plan E2 Sec.7.1 — ambient arranca OFF)
+        if not config.get("global_enabled", False):
             logger.info("Ambient cycle skipped: global kill switch")
             raise RuntimeError("Global kill switch is active")
 
@@ -728,6 +775,19 @@ class AmbientOrchestrator:
                 ws_evidence["detectors"].append({"slug": slug, "status": "skipped_kill"})
                 continue
 
+            # Backoff / disabled check (Sec.1.7.3)
+            backoff = get_detector_backoff(conn, tenant_id, workspace_id, slug)
+            if backoff["disabled"]:
+                ws_evidence["detectors"].append({"slug": slug, "status": "skipped_disabled"})
+                continue
+            if backoff["backoff_until"] and backoff["backoff_until"] > utc_now():
+                ws_evidence["detectors"].append({
+                    "slug": slug,
+                    "status": "skipped_backoff",
+                    "backoff_until": backoff["backoff_until"],
+                })
+                continue
+
             detector_start = time.time()
             detector_run = create_detector_run(conn, cycle_id, tenant_id, workspace_id, slug)
 
@@ -782,13 +842,19 @@ class AmbientOrchestrator:
             except Exception as exc:
                 latency_ms = int((time.time() - detector_start) * 1000)
                 logger.exception("Detector %s failed", slug)
+                failures = backoff["consecutive_failures"] + 1
                 update_detector_run(
                     conn,
                     detector_run["id"],
                     status="failed",
                     error_message=str(exc),
                     latency_ms=latency_ms,
+                    consecutive_failures=failures,
+                    backoff_until=compute_backoff_until(failures),
                 )
+                if failures >= 3:
+                    disable_detector(conn, tenant_id, slug)
+                    logger.warning("Detector %s disabled after %d consecutive failures", slug, failures)
                 stats["detectors_run"] += 1
                 stats["detectors_failed"] += 1
                 ws_evidence["detectors"].append({"slug": slug, "status": "failed", "error": str(exc)})
@@ -904,7 +970,7 @@ def _scheduler_loop() -> None:
                 # Support default tenant only for this MVP. Multi-tenant scheduler is E2-3+.
                 tenant_id = DEFAULT_TENANT_ID
                 config = get_ambient_config(conn, tenant_id)
-                if config is None or not config.get("global_enabled", True):
+                if config is None or not config.get("global_enabled", False):
                     time.sleep(AMBIENT_SCHEDULER_INTERVAL_SECONDS)
                     continue
 
@@ -1226,7 +1292,7 @@ def seed_ambient_config(conn: sqlite3.Connection, tenant_id: str) -> None:
         (
             cfg_id,
             tenant_id,
-            1,
+            0,  # global_enabled OFF por default: plan E2 Sec.7.1, se enciende al pasar gate E2-5
             "06:00",
             "22:00",
             "America/Bogota",

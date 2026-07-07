@@ -22,6 +22,11 @@ from app.tests.e3_1_pg_helper import (
     postgres_test_schema,
     skip_if_no_postgres,
 )
+from app.scripts.check_canary_isolation_postgres import (
+    WORKSPACE_TABLES,
+    TENANT_TABLES,
+    OPTIONAL_WORKSPACE_TABLES,
+)
 
 
 @contextmanager
@@ -166,3 +171,43 @@ def test_rls_kb_scope_is_tenant_workspace_bound() -> None:
                     assert rows == []
             finally:
                 conn.close()
+
+
+def test_canary_postgres_script_covers_v29_tables() -> None:
+    """The Postgres canary checker must cover all v29 workspace/tenant tables."""
+
+    required_workspace_tables = {
+        "kb_source",
+        "kb_chunk",
+        "kb_fact",
+        "chat",
+        "message",
+        "draft",
+        "routine",
+        "routine_run",
+        "gold_candidate",
+        "usage_record",
+        "mail_message",
+        "mail_outbox",
+        "email_account",
+        "audit_log",
+        "editorial_history",
+        "workspace_smtp_config",
+        "workspace_routing_policy",
+        "workspace_model_catalog",
+        "ambient_workspace_config",
+        "ambient_proposal",
+        "object",
+    }
+    required_tenant_tables = {
+        "ambient_config",
+        "ambient_detector",
+    }
+    required_optional_tables = {
+        "ambient_cycle",
+        "ambient_detector_run",
+    }
+
+    assert required_workspace_tables.issubset(set(WORKSPACE_TABLES))
+    assert required_tenant_tables.issubset(set(TENANT_TABLES))
+    assert required_optional_tables.issubset(set(OPTIONAL_WORKSPACE_TABLES))

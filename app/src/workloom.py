@@ -10,6 +10,43 @@ from .context import Context
 from .db import GOLD_CANDIDATE_COLUMNS, ROUTINE_RUN_COLUMNS, row_to_dict
 
 
+def assign_workloom_item(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    item_type: str,
+    item_id: str,
+    assigned_to: str | None,
+    urgency: int | None = None,
+) -> dict[str, Any]:
+    """Assign or reassign a WorkLoom item (routine_run | draft) to a user.
+
+    E2-2 cola compartida: la asignación vive en la fila del item; assigned_to
+    en None des-asigna. Fail-closed si el item no pertenece al workspace/tenant.
+    """
+
+    if item_type not in {"routine_run", "draft"}:
+        raise ValueError("item_type must be 'routine_run' or 'draft'")
+    workspace_id = ctx.require_scoped_workspace()
+    row = conn.execute(
+        f"SELECT id FROM {item_type} WHERE id = ? AND workspace_id = ? AND tenant_id = ?",
+        (item_id, workspace_id, ctx.tenant_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"{item_type} {item_id} not found in workspace")
+
+    sets = ["assigned_to = ?"]
+    values: list[Any] = [assigned_to]
+    if urgency is not None:
+        sets.append("urgency = ?")
+        values.append(int(urgency))
+    values.append(item_id)
+    conn.execute(f"UPDATE {item_type} SET {', '.join(sets)} WHERE id = ?", values)
+    return row_to_dict(
+        conn.execute(f"SELECT * FROM {item_type} WHERE id = ?", (item_id,)).fetchone()
+    )
+
+
 def list_workloom_items(
     ctx: Context,
     conn: sqlite3.Connection,

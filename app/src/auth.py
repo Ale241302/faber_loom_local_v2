@@ -43,7 +43,7 @@ class TokenResponse(BaseModel):
     email: str
 
 
-ACCESS_TOKEN_TTL_MINUTES = int(os.getenv("FABERLOOM_ACCESS_TOKEN_TTL_MINUTES", "15"))
+ACCESS_TOKEN_TTL_MINUTES = int(os.getenv("FABERLOOM_ACCESS_TOKEN_TTL_MINUTES", "60"))
 REFRESH_TOKEN_TTL_DAYS = int(os.getenv("FABERLOOM_REFRESH_TOKEN_TTL_DAYS", "7"))
 
 

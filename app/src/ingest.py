@@ -34,6 +34,15 @@ _INGEST_MIME_MAP = {
     "application/sql": "sql",
     "text/x-sql": "sql",
     "application/x-sql": "sql",
+    "text/csv": "csv",
+    "application/csv": "csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-excel": "xlsx",
+    "text/markdown": "text",
+    "text/plain": "text",
+    "text/html": "text",
+    "application/x-msaccess": "access",
+    "application/msaccess": "access",
     "image/png": "image",
     "image/jpeg": "image",
     "image/gif": "image",
@@ -78,8 +87,20 @@ def _detect_ingest_type(mime_type: str | None, file_name: str | None) -> str:
     ext = (file_name or "").rsplit(".", 1)[-1].lower()
     ext_map = {
         "docx": "docx",
+        "doc": "docx",
         "json": "json",
         "sql": "sql",
+        "csv": "csv",
+        "tsv": "csv",
+        "xlsx": "xlsx",
+        "xls": "xlsx",
+        "md": "text",
+        "txt": "text",
+        "log": "text",
+        "html": "text",
+        "htm": "text",
+        "accdb": "access",
+        "mdb": "access",
         "png": "image",
         "jpg": "image",
         "jpeg": "image",
@@ -145,6 +166,60 @@ def _extract_sql(blob: bytes) -> str:
         return blob.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise IngestError("SQL file is not valid UTF-8") from exc
+
+
+def _decode_text(blob: bytes, what: str) -> str:
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            return blob.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise IngestError(f"{what} file is not decodable text")
+
+
+def _extract_csv(blob: bytes) -> str:
+    import csv as _csv
+    import io as _io
+
+    text = _decode_text(blob, "CSV")
+    try:
+        sample = text[:4096]
+        dialect = _csv.Sniffer().sniff(sample) if sample.strip() else _csv.excel
+    except Exception:
+        dialect = _csv.excel
+    rows = list(_csv.reader(_io.StringIO(text), dialect))
+    if not rows:
+        return ""
+    return "\n".join(" | ".join(cell.strip() for cell in row) for row in rows)
+
+
+def _extract_xlsx(blob: bytes) -> str:
+    try:
+        import openpyxl  # type: ignore[import-untyped]
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise LocalOnlyEngineMissingError("openpyxl no está instalado") from exc
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
+    except Exception as exc:
+        raise IngestError(f"Invalid XLSX: {exc}") from exc
+
+    parts: list[str] = []
+    for sheet in workbook.worksheets:
+        rows: list[str] = []
+        for row in sheet.iter_rows(values_only=True):
+            cells = ["" if cell is None else str(cell) for cell in row]
+            if any(c.strip() for c in cells):
+                rows.append(" | ".join(cells))
+        if rows:
+            parts.append(f"--- Hoja: {sheet.title} ---")
+            parts.extend(rows)
+    workbook.close()
+    return "\n".join(parts)
+
+
+def _extract_plain_text(blob: bytes) -> str:
+    return _decode_text(blob, "Text")
 
 
 def _extract_image(blob: bytes, require_local: bool) -> str:
@@ -214,6 +289,16 @@ def extract_text_from_blob(
         return _extract_json(blob)
     if ingest_type == "sql":
         return _extract_sql(blob)
+    if ingest_type == "csv":
+        return _extract_csv(blob)
+    if ingest_type == "xlsx":
+        return _extract_xlsx(blob)
+    if ingest_type == "text":
+        return _extract_plain_text(blob)
+    if ingest_type == "access":
+        raise IngestError(
+            "Microsoft Access (.accdb/.mdb) no está soportado: exporta la tabla a CSV o XLSX y súbela de nuevo"
+        )
     if ingest_type == "image":
         return _extract_image(blob, require_local)
     if ingest_type == "audio":
