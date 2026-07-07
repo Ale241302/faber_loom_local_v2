@@ -32,7 +32,7 @@ def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
         return existing
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=bootstrap_ctx):
         created = create_workspace(
             bootstrap_ctx,
             conn,
@@ -85,10 +85,10 @@ TEL-DEMO-002,Lino natural,18.00,USD,120,2026-06-01,2026-09-30
 TEL-DEMO-003,Gabardina stretch,15.75,USD,85,2026-06-01,2026-09-30
 """
     # E2-5: seed ambient config and detectors
-    with transaction(conn):
+    with transaction(conn, ctx=workspace_ctx):
         seed_ambient_config(conn, workspace_ctx.tenant_id)
 
-    with transaction(conn):
+    with transaction(conn, ctx=workspace_ctx):
         ingest_kb_source(
             workspace_ctx,
             conn,
@@ -143,7 +143,7 @@ def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
         return existing
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=canary_ctx):
         created = create_workspace(
             canary_ctx,
             conn,
