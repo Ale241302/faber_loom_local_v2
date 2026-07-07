@@ -74,7 +74,7 @@ services:
       start_period: 10s
 
   faberloom-minio:
-    image: minio/minio:RELEASE.2026-04-26T16-46-20Z
+    image: minio/minio:latest
     container_name: faberloom-minio
     command: server /data --console-address ":9001"
     env_file:
