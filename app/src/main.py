@@ -21,6 +21,7 @@ from .storage import get_object_store
 from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .foundation import foundation_router, init_foundation_db
+from .platform_admin import platform_admin_router
 from .db import db_session, initialize_database, transaction
 from .features import is_email_connector_enabled, is_shared_instance
 from .models import FeaturesRead
@@ -59,8 +60,7 @@ async def lifespan(app: FastAPI):
         initialize_database(conn)
         seed_demo_workspace(conn)
         seed_canary_workspace(conn)
-        with transaction(conn):
-            seed_ambient_for_all_tenants(conn)
+        seed_ambient_for_all_tenants(conn)
     init_foundation_db()
     load_trusted_update_keys()
     try:
@@ -133,11 +133,17 @@ def _read_version() -> str:
 def create_app() -> FastAPI:
     app = FastAPI(title="FaberLoom", version=_read_version(), lifespan=lifespan)
     app.add_middleware(LocalhostCSRFMiddleware)
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        # Test-only header trust lives in test harness, never in production.
+        from .test_harness import TestTrustHeaderMiddleware
+
+        app.add_middleware(TestTrustHeaderMiddleware)
     app.include_router(public_router)
     app.include_router(auth_router, prefix="/api")
     # Foundation Beta (M07-M20): gestiona su propia auth por sesión (M08),
     # por eso no lleva la dependencia JWT global.
     app.include_router(foundation_router, prefix="/api")
+    app.include_router(platform_admin_router, prefix="/api")
     app.include_router(api_router, dependencies=[Depends(get_current_user)])
 
     @app.exception_handler(PermissionError)

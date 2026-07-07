@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-sqlite:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run SQLite suite
+        run: uv run pytest -q
+        env:
+          FABERLOOM_DB_ENGINE: sqlite
+
+  test-postgres:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: faberloom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d faberloom_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PYTHONIOENCODING: utf-8
+      FABERLOOM_TEST_POSTGRES_URL: postgresql://faberloom_app:faberloom_app@localhost:5432/faberloom_test
+      FABERLOOM_TEST_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/faberloom_test
+      FABERLOOM_POSTGRES_URL: postgresql://faberloom_app:faberloom_app@localhost:5432/faberloom_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Create application role
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE ROLE faberloom_app LOGIN NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD 'faberloom_app';"
+          psql "postgresql://postgres:postgres@localhost:5432/faberloom_test" -c "GRANT CREATE ON DATABASE faberloom_test TO faberloom_app;"
+          psql "postgresql://postgres:postgres@localhost:5432/faberloom_test" -c "GRANT CREATE ON SCHEMA public TO faberloom_app;"
+          psql "postgresql://postgres:postgres@localhost:5432/faberloom_test" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO faberloom_app;"
+          psql "postgresql://postgres:postgres@localhost:5432/faberloom_test" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO faberloom_app;"
+
+      - name: Bootstrap Postgres schema
+        run: uv run python scripts/bootstrap_postgres_for_tests.py
+
+      - name: Run Postgres E3-1 tests
+        run: uv run pytest -q tests/test_e3_1_*.py

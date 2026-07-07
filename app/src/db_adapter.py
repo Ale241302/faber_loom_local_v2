@@ -338,12 +338,15 @@ def _normalize_row(row: Any, engine: str) -> Any:
 
 
 class _DictRow:
-    """dict-like row exposing ``row['col']`` access."""
+    """dict-like row exposing ``row['col']`` and positional ``row[0]`` access."""
 
     def __init__(self, data: dict[str, Any]):
         self._data = data
+        self._keys = list(data.keys())
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return self._data[self._keys[key]]
         return self._data[key]
 
     def __getattr__(self, key: str) -> Any:

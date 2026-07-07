@@ -8,7 +8,7 @@ from typing import Any
 
 import sqlite3
 
-from .context import Context
+from .context import SYSTEM_WORKSPACE_ID, Context
 from .db import (
     GOLD_CANDIDATE_COLUMNS,
     get_routine,
@@ -76,16 +76,17 @@ def get_gold_candidate(
 ) -> dict[str, Any] | None:
     """Return a gold candidate row if it belongs to the current workspace/tenant."""
 
-    workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        f"""
-        SELECT {GOLD_CANDIDATE_COLUMNS}
-        FROM gold_candidate
-        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-        """,
-        (candidate_id, workspace_id, ctx.tenant_id),
-    ).fetchone()
-    return row_to_dict(row) if row else None
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        row = conn.execute(
+            f"""
+            SELECT {GOLD_CANDIDATE_COLUMNS}
+            FROM gold_candidate
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (candidate_id, workspace_id, ctx.tenant_id),
+        ).fetchone()
+        return row_to_dict(row) if row else None
 
 
 def _count_similar_learned(conn: sqlite3.Connection, candidate: dict[str, Any]) -> int:
@@ -95,36 +96,37 @@ def _count_similar_learned(conn: sqlite3.Connection, candidate: dict[str, Any]) 
     canonized learned_output_json. For promotion to L3 the result must be >= 5.
     """
 
-    tenant_id = candidate.get("tenant_id")
-    learned = candidate.get("learned_output_json") or "{}"
-    try:
-        learned_value = json.loads(learned)
-    except json.JSONDecodeError:
-        learned_value = {}
-    if not isinstance(learned_value, dict):
-        learned_value = {}
-    target = _canonical_json(learned_value)
-
-    rows = conn.execute(
-        """
-        SELECT learned_output_json
-        FROM gold_candidate
-        WHERE tenant_id = ? AND state != 'rejected'
-        """,
-        (tenant_id,),
-    ).fetchall()
-    count = 0
-    for row in rows:
-        other = row["learned_output_json"] or "{}"
+    with transaction(conn, ctx=Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=candidate.get('tenant_id', 'default'))):
+        tenant_id = candidate.get("tenant_id")
+        learned = candidate.get("learned_output_json") or "{}"
         try:
-            other_value = json.loads(other)
+            learned_value = json.loads(learned)
         except json.JSONDecodeError:
-            continue
-        if not isinstance(other_value, dict):
-            other_value = {}
-        if _canonical_json(other_value) == target:
-            count += 1
-    return count
+            learned_value = {}
+        if not isinstance(learned_value, dict):
+            learned_value = {}
+        target = _canonical_json(learned_value)
+
+        rows = conn.execute(
+            """
+            SELECT learned_output_json
+            FROM gold_candidate
+            WHERE tenant_id = ? AND state != 'rejected'
+            """,
+            (tenant_id,),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            other = row["learned_output_json"] or "{}"
+            try:
+                other_value = json.loads(other)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(other_value, dict):
+                other_value = {}
+            if _canonical_json(other_value) == target:
+                count += 1
+        return count
 
 
 def list_gold_candidates(
@@ -135,21 +137,22 @@ def list_gold_candidates(
 ) -> list[dict[str, Any]]:
     """Return gold candidate rows for the current workspace/tenant."""
 
-    workspace_id = ctx.require_scoped_workspace()
-    params: list[Any] = [workspace_id, ctx.tenant_id]
-    sql = f"""
-        SELECT {GOLD_CANDIDATE_COLUMNS}
-        FROM gold_candidate
-        WHERE workspace_id = ? AND tenant_id = ?
-    """
-    if routine_id is not None:
-        sql += " AND routine_id = ?"
-        params.append(routine_id)
-    sql += " ORDER BY created_at DESC LIMIT ?"
-    params.append(limit)
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        params: list[Any] = [workspace_id, ctx.tenant_id]
+        sql = f"""
+            SELECT {GOLD_CANDIDATE_COLUMNS}
+            FROM gold_candidate
+            WHERE workspace_id = ? AND tenant_id = ?
+        """
+        if routine_id is not None:
+            sql += " AND routine_id = ?"
+            params.append(routine_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
 
-    rows = conn.execute(sql, params).fetchall()
-    return [row_to_dict(row) for row in rows]
+        rows = conn.execute(sql, params).fetchall()
+        return [row_to_dict(row) for row in rows]
 
 
 def list_approved_gold_candidates_for_routine(
@@ -160,19 +163,20 @@ def list_approved_gold_candidates_for_routine(
 ) -> list[dict[str, Any]]:
     """Return promoted gold candidates safe to use as few-shot examples."""
 
-    workspace_id = ctx.require_scoped_workspace()
-    rows = conn.execute(
-        f"""
-        SELECT {GOLD_CANDIDATE_COLUMNS}
-        FROM gold_candidate
-        WHERE workspace_id = ? AND tenant_id = ? AND routine_id = ?
-          AND state IN ('active_l2', 'l3')
-        ORDER BY use_count ASC, created_at DESC
-        LIMIT ?
-        """,
-        (workspace_id, ctx.tenant_id, routine_id, limit),
-    ).fetchall()
-    return [row_to_dict(row) for row in rows]
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        rows = conn.execute(
+            f"""
+            SELECT {GOLD_CANDIDATE_COLUMNS}
+            FROM gold_candidate
+            WHERE workspace_id = ? AND tenant_id = ? AND routine_id = ?
+              AND state IN ('active_l2', 'l3')
+            ORDER BY use_count ASC, created_at DESC
+            LIMIT ?
+            """,
+            (workspace_id, ctx.tenant_id, routine_id, limit),
+        ).fetchall()
+        return [row_to_dict(row) for row in rows]
 
 
 def promote_gold_candidate(
@@ -195,161 +199,162 @@ def promote_gold_candidate(
       - rejected: discarded.
     """
 
-    workspace_id = ctx.require_scoped_workspace()
-    approved_by = approved_by or ctx.resolved_actor_id()
-    actor_role = _normalize_role(actor_role_at_decision or ctx.actor_role_at_decision)
-    now = utc_now()
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        approved_by = approved_by or ctx.resolved_actor_id()
+        actor_role = _normalize_role(actor_role_at_decision or ctx.actor_role_at_decision)
+        now = utc_now()
 
-    if target_state not in _GOLD_STATES:
-        raise ValueError(f"Invalid target state: {target_state}")
+        if target_state not in _GOLD_STATES:
+            raise ValueError(f"Invalid target state: {target_state}")
 
-    candidate = get_gold_candidate(ctx, conn, candidate_id)
-    if candidate is None:
-        return None
-
-    current_state = candidate.get("state") or "candidate"
-    allowed = _VALID_TRANSITIONS.get(current_state, set())
-    if target_state not in allowed:
-        raise ValueError(
-            f"Invalid state transition from {current_state} to {target_state}"
-        )
-
-    has_hard_fields = _contains_hard_fields(learned_output_json)
-
-    if target_state == "active_l2":
-        if not _role_can_l2(actor_role):
-            raise ValueError(
-                "Insufficient role to promote gold candidate to L2"
-            )
-        if has_hard_fields and not verified_by:
-            raise ValueError(
-                "Hard fields require independent verification; provide verified_by"
-            )
-        if verified_by and approved_by == verified_by:
-            raise ValueError(
-                "Second gate gold: promoter and verifier must be different actors"
-            )
-
-        cursor = conn.execute(
-            """
-            UPDATE gold_candidate
-            SET learned_output_json = ?, approved = 1, approved_by = ?, verified_by = ?,
-                state = ?, actor_role_at_decision = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-            """,
-            (
-                _canonical_json(learned_output_json),
-                approved_by,
-                verified_by,
-                target_state,
-                actor_role,
-                now,
-                candidate_id,
-                workspace_id,
-                ctx.tenant_id,
-            ),
-        )
-        if cursor.rowcount == 0:
-            return None
-        return get_gold_candidate(ctx, conn, candidate_id)
-
-    if target_state == "l3_pending":
-        if not _role_can_l3(actor_role):
-            raise ValueError(
-                "Insufficient role to queue gold candidate for L3"
-            )
-        # Update learned output before counting so k-anon reflects the intended canonized value.
-        conn.execute(
-            """
-            UPDATE gold_candidate
-            SET learned_output_json = ?, state = ?, actor_role_at_decision = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-            """,
-            (
-                _canonical_json(learned_output_json),
-                target_state,
-                actor_role,
-                now,
-                candidate_id,
-                workspace_id,
-                ctx.tenant_id,
-            ),
-        )
         candidate = get_gold_candidate(ctx, conn, candidate_id)
         if candidate is None:
             return None
-        k = _count_similar_learned(conn, candidate)
-        if k < 5:
-            raise ValueError(
-                f"L3 promotion requires k-anon >= 5 (found {k})"
-            )
-        return candidate
 
-    if target_state == "l3":
-        if not _role_can_l3(actor_role):
+        current_state = candidate.get("state") or "candidate"
+        allowed = _VALID_TRANSITIONS.get(current_state, set())
+        if target_state not in allowed:
             raise ValueError(
-                "Insufficient role to promote gold candidate to L3"
+                f"Invalid state transition from {current_state} to {target_state}"
             )
-        original_approved_by = candidate.get("approved_by") or approved_by
-        if has_hard_fields and not verified_by:
-            raise ValueError(
-                "Hard fields require independent verification; provide verified_by"
-            )
-        if verified_by and original_approved_by == verified_by:
-            raise ValueError(
-                "Second gate gold: promoter and verifier must be different actors"
-            )
-        # Ensure k-anon still holds at final L3 promotion.
-        k = _count_similar_learned(conn, candidate)
-        if k < 5:
-            raise ValueError(
-                f"L3 promotion requires k-anon >= 5 (found {k})"
-            )
-        cursor = conn.execute(
-            """
-            UPDATE gold_candidate
-            SET learned_output_json = ?, approved = 1, verified_by = ?,
-                state = ?, actor_role_at_decision = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-            """,
-            (
-                _canonical_json(learned_output_json),
-                verified_by,
-                target_state,
-                actor_role,
-                now,
-                candidate_id,
-                workspace_id,
-                ctx.tenant_id,
-            ),
-        )
-        if cursor.rowcount == 0:
-            return None
-        return get_gold_candidate(ctx, conn, candidate_id)
 
-    if target_state == "rejected":
-        if not (_role_can_l2(actor_role) or _role_can_l3(actor_role)):
-            raise ValueError("Insufficient role to reject gold candidate")
-        cursor = conn.execute(
-            """
-            UPDATE gold_candidate
-            SET state = ?, approved = 0, actor_role_at_decision = ?, updated_at = ?
-            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-            """,
-            (
-                target_state,
-                actor_role,
-                now,
-                candidate_id,
-                workspace_id,
-                ctx.tenant_id,
-            ),
-        )
-        if cursor.rowcount == 0:
-            return None
-        return get_gold_candidate(ctx, conn, candidate_id)
+        has_hard_fields = _contains_hard_fields(learned_output_json)
 
-    raise ValueError(f"Unhandled target state: {target_state}")
+        if target_state == "active_l2":
+            if not _role_can_l2(actor_role):
+                raise ValueError(
+                    "Insufficient role to promote gold candidate to L2"
+                )
+            if has_hard_fields and not verified_by:
+                raise ValueError(
+                    "Hard fields require independent verification; provide verified_by"
+                )
+            if verified_by and approved_by == verified_by:
+                raise ValueError(
+                    "Second gate gold: promoter and verifier must be different actors"
+                )
+
+            cursor = conn.execute(
+                """
+                UPDATE gold_candidate
+                SET learned_output_json = ?, approved = 1, approved_by = ?, verified_by = ?,
+                    state = ?, actor_role_at_decision = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+                """,
+                (
+                    _canonical_json(learned_output_json),
+                    approved_by,
+                    verified_by,
+                    target_state,
+                    actor_role,
+                    now,
+                    candidate_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+            return get_gold_candidate(ctx, conn, candidate_id)
+
+        if target_state == "l3_pending":
+            if not _role_can_l3(actor_role):
+                raise ValueError(
+                    "Insufficient role to queue gold candidate for L3"
+                )
+            # Update learned output before counting so k-anon reflects the intended canonized value.
+            conn.execute(
+                """
+                UPDATE gold_candidate
+                SET learned_output_json = ?, state = ?, actor_role_at_decision = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+                """,
+                (
+                    _canonical_json(learned_output_json),
+                    target_state,
+                    actor_role,
+                    now,
+                    candidate_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                ),
+            )
+            candidate = get_gold_candidate(ctx, conn, candidate_id)
+            if candidate is None:
+                return None
+            k = _count_similar_learned(conn, candidate)
+            if k < 5:
+                raise ValueError(
+                    f"L3 promotion requires k-anon >= 5 (found {k})"
+                )
+            return candidate
+
+        if target_state == "l3":
+            if not _role_can_l3(actor_role):
+                raise ValueError(
+                    "Insufficient role to promote gold candidate to L3"
+                )
+            original_approved_by = candidate.get("approved_by") or approved_by
+            if has_hard_fields and not verified_by:
+                raise ValueError(
+                    "Hard fields require independent verification; provide verified_by"
+                )
+            if verified_by and original_approved_by == verified_by:
+                raise ValueError(
+                    "Second gate gold: promoter and verifier must be different actors"
+                )
+            # Ensure k-anon still holds at final L3 promotion.
+            k = _count_similar_learned(conn, candidate)
+            if k < 5:
+                raise ValueError(
+                    f"L3 promotion requires k-anon >= 5 (found {k})"
+                )
+            cursor = conn.execute(
+                """
+                UPDATE gold_candidate
+                SET learned_output_json = ?, approved = 1, verified_by = ?,
+                    state = ?, actor_role_at_decision = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+                """,
+                (
+                    _canonical_json(learned_output_json),
+                    verified_by,
+                    target_state,
+                    actor_role,
+                    now,
+                    candidate_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+            return get_gold_candidate(ctx, conn, candidate_id)
+
+        if target_state == "rejected":
+            if not (_role_can_l2(actor_role) or _role_can_l3(actor_role)):
+                raise ValueError("Insufficient role to reject gold candidate")
+            cursor = conn.execute(
+                """
+                UPDATE gold_candidate
+                SET state = ?, approved = 0, actor_role_at_decision = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+                """,
+                (
+                    target_state,
+                    actor_role,
+                    now,
+                    candidate_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+            return get_gold_candidate(ctx, conn, candidate_id)
+
+        raise ValueError(f"Unhandled target state: {target_state}")
 
 
 def apply_gold_to_routine(
@@ -361,7 +366,7 @@ def apply_gold_to_routine(
 
     workspace_id = ctx.require_scoped_workspace()
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         candidate = get_gold_candidate(ctx, conn, candidate_id)
         if candidate is None:
             return None

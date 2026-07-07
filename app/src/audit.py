@@ -71,7 +71,7 @@ class AuditWriter:
             created_at=created_at,
         )
 
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             insert_audit_log(
                 ctx,
                 conn,

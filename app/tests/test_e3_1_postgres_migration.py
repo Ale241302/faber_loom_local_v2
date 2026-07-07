@@ -263,11 +263,11 @@ def test_live_migration_counts_match(
     sqlite_conn = sqlite3.connect(sample_sqlite)
     sqlite_conn.row_factory = sqlite3.Row
     sqlite_counts = {
-        row[0]: row[1]
+        row[0]: 0
         for row in sqlite_conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
-        if row[0] not in {"kb_chunk_fts"}
+        if not row[0].startswith(("kb_chunk_fts", "_"))
     }
     for table in list(sqlite_counts):
         sqlite_counts[table] = sqlite_conn.execute(

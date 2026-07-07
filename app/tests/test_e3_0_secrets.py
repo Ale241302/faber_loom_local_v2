@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
+from app.src.context import Context
 from app.src.security.secrets import (
     SecretError,
     TenantDataKey,
+    TenantSecretStore,
     decrypt_value_for_tenant,
     encrypt_value_for_tenant,
 )
@@ -60,3 +63,75 @@ def test_master_key_from_env() -> None:
     os.environ["FABERLOOM_MASTER_KEY"] = "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo="
     key = TenantDataKey.create("tenant-c")
     assert key.encrypt_blob("x")
+
+
+def test_tenant_secret_store_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    store = TenantSecretStore()
+    ctx = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    envelope = store.encrypt_for_tenant(ctx, "sensitive-value")
+    assert envelope is not None
+    assert envelope.startswith("enc:v1:")
+    assert store.decrypt_for_tenant(ctx, envelope) == "sensitive-value"
+
+
+def test_tenant_secret_store_encrypts_none_as_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    store = TenantSecretStore()
+    ctx = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    assert store.encrypt_for_tenant(ctx, None) is None
+    assert store.decrypt_for_tenant(ctx, None) is None
+
+
+def test_tenant_secret_store_returns_plaintext_as_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    store = TenantSecretStore()
+    ctx = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    assert store.decrypt_for_tenant(ctx, "legacy-plaintext") == "legacy-plaintext"
+
+
+def test_tenant_secret_store_isolates_tenants(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    store = TenantSecretStore()
+    ctx_a = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    ctx_b = Context(workspace_id="ws_1", tenant_id="tenant-b", user_id="user-a")
+    envelope = store.encrypt_for_tenant(ctx_a, "secret-a")
+    # Tenant b cannot decrypt tenant a's envelope.
+    assert store.decrypt_for_tenant(ctx_b, envelope) == envelope
+
+
+def test_tenant_secret_store_rotates_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    store = TenantSecretStore()
+    ctx = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    envelope1 = store.encrypt_for_tenant(ctx, "secret")
+    key1 = store.get_or_create_data_key(ctx)
+
+    key2 = store.rotate_tenant_key(ctx)
+    assert key1.key_id != key2.key_id
+
+    # Old ciphertext is still decryptable after rotation.
+    assert store.decrypt_for_tenant(ctx, envelope1) == "secret"
+
+    # New ciphertext uses the rotated key.
+    envelope2 = store.encrypt_for_tenant(ctx, "secret")
+    assert envelope2 != envelope1
+    assert store.decrypt_for_tenant(ctx, envelope2) == "secret"

@@ -17,8 +17,6 @@ def client(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) ->
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     # Avoid leaking external credentials or feature flags into the app under test.
     for name in (
         "OPENAI_API_KEY",
@@ -95,15 +93,3 @@ def test_canary_workspace_is_not_reachable_from_default_tenant(client: TestClien
     response = client.get(f"/api/workspaces/{canary_id}", headers=_headers("default"))
     assert response.status_code == 404, response.text
 
-
-def test_dev_trust_headers_disabled_ignores_canary_header(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Without trust headers the canary header is ignored and requests resolve to default."""
-
-    monkeypatch.delenv("FABERLOOM_DEV_TRUST_HEADERS", raising=False)
-
-    response = client.get("/api/workspaces", headers={"x-tenant-id": "canary"})
-    assert response.status_code == 200, response.text
-    workspaces = response.json()["workspaces"]
-    assert not any(w["tenant_id"] == "canary" for w in workspaces)

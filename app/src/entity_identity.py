@@ -10,6 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .context import SYSTEM_WORKSPACE_ID, Context
+from .db_adapter import transaction
+
 
 class IdentityError(Exception):
     """Raised when an identity mutation would violate immutability rules."""
@@ -30,17 +33,19 @@ class EntityIdentity:
 def get_identity(conn: Any, tenant_id: str) -> EntityIdentity | None:
     """Return the current identity for a tenant, or None if not set."""
 
-    row = conn.execute(
-        """SELECT tenant_id, version, name, slug, tax_id, jurisdiction,
-                  owner_user_id, updated_at
-           FROM entity_identity_version
-           WHERE tenant_id = ?
-           ORDER BY version DESC LIMIT 1""",
-        (tenant_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    return EntityIdentity(**dict(row))
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            """SELECT tenant_id, version, name, slug, tax_id, jurisdiction,
+                      owner_user_id, updated_at
+               FROM entity_identity_version
+               WHERE tenant_id = ?
+               ORDER BY version DESC LIMIT 1""",
+            (tenant_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return EntityIdentity(**dict(row))
 
 
 def create_identity(
@@ -69,7 +74,7 @@ def create_identity(
         owner_user_id=owner_user_id,
         updated_at=timestamp or _now(),
     )
-    _persist(conn, identity)
+    _persist(conn, tenant_id, identity)
     return identity
 
 
@@ -116,27 +121,29 @@ def update_identity(
         owner_user_id=current.owner_user_id,
         updated_at=timestamp or _now(),
     )
-    _persist(conn, new_identity)
+    _persist(conn, tenant_id, new_identity)
     return new_identity
 
 
-def _persist(conn: Any, identity: EntityIdentity) -> None:
-    conn.execute(
-        """INSERT INTO entity_identity_version
-           (tenant_id, version, name, slug, tax_id, jurisdiction,
-            owner_user_id, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            identity.tenant_id,
-            identity.version,
-            identity.name,
-            identity.slug,
-            identity.tax_id,
-            identity.jurisdiction,
-            identity.owner_user_id,
-            identity.updated_at,
-        ),
-    )
+def _persist(conn: Any, tenant_id: str, identity: EntityIdentity) -> None:
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        conn.execute(
+            """INSERT INTO entity_identity_version
+               (tenant_id, version, name, slug, tax_id, jurisdiction,
+                owner_user_id, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                identity.tenant_id,
+                identity.version,
+                identity.name,
+                identity.slug,
+                identity.tax_id,
+                identity.jurisdiction,
+                identity.owner_user_id,
+                identity.updated_at,
+            ),
+        )
 
 
 def _now() -> str:

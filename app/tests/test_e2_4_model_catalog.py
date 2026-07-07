@@ -15,8 +15,6 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     config_dir = tmp_path / "config"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     for name in (
         "OPENAI_API_KEY",
         "FABERLOOM_OPENAI_API_KEY",

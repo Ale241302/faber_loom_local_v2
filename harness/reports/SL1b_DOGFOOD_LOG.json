@@ -1,6 +1,6 @@
 {
   "version": "sl1b-2026-06-25",
-  "workspace_id": "ws_4af587b959be490499ab2f208f4abe22",
+  "workspace_id": "ws_23a8b0e28ca649348cd6da778438ddaf",
   "total_drafts": 10,
   "fully_sourced": 8,
   "pending": 2,
@@ -21,7 +21,7 @@
     {
       "prompt_id": "sl1b-p01",
       "request": "Precio de Oxford",
-      "draft_id": "draft_5cf4ea90e9374d60bd7544a2898db15b",
+      "draft_id": "draft_6d3428116dd849028945ee9d2e60414c",
       "status": "approved",
       "edit_simulation": "light",
       "edit_pct": 8.93,
@@ -32,7 +32,7 @@
     {
       "prompt_id": "sl1b-p02",
       "request": "Stock de Lino",
-      "draft_id": "draft_663f6cdd6de2427cb0a71e61d34264fb",
+      "draft_id": "draft_10581cc4dd194a6f90b8237d80f4b1a5",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,
@@ -43,7 +43,7 @@
     {
       "prompt_id": "sl1b-p03",
       "request": "Cotizar Raso",
-      "draft_id": "draft_c41b161322ac4228a18113f71e76e9ef",
+      "draft_id": "draft_e4e55cbf41ac4cb6a487773532a93f4a",
       "status": "approved",
       "edit_simulation": "heavy",
       "edit_pct": 12.42,
@@ -54,7 +54,7 @@
     {
       "prompt_id": "sl1b-p04",
       "request": "Equivalencia Oxford",
-      "draft_id": "draft_004868c436de4c14a39d4830221a5359",
+      "draft_id": "draft_5446d18cb8a34115be0ab0ae28f70b60",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,
@@ -65,7 +65,7 @@
     {
       "prompt_id": "sl1b-p05",
       "request": "Lead time Seda",
-      "draft_id": "draft_9989703c90674f9a94d14d55b00b29cb",
+      "draft_id": "draft_6a9756fc203546079e236f1c6db01732",
       "status": "approved",
       "edit_simulation": "light",
       "edit_pct": 5.81,
@@ -76,7 +76,7 @@
     {
       "prompt_id": "sl1b-p06",
       "request": "MOQ Gabardina",
-      "draft_id": "draft_1af6b84eef744c3dab7309f70fb3c98d",
+      "draft_id": "draft_4d09492d9bae4d27939a29a81a488562",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,
@@ -87,7 +87,7 @@
     {
       "prompt_id": "sl1b-p07",
       "request": "Disponibilidad Terciopelo",
-      "draft_id": "draft_b4cc27dbc8024b0bb9ef6a148b09f136",
+      "draft_id": "draft_6b650f2d415e43fe83a4169bcdf7e332",
       "status": "approved",
       "edit_simulation": "light",
       "edit_pct": 9.43,
@@ -98,7 +98,7 @@
     {
       "prompt_id": "sl1b-p08",
       "request": "Precio especial Jean",
-      "draft_id": "draft_633926b3246445249490c938295181bd",
+      "draft_id": "draft_bbae15e3a4134cf1baa7ee1c6dd46040",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,
@@ -109,7 +109,7 @@
     {
       "prompt_id": "sl1b-p09",
       "request": "Condiciones de pago",
-      "draft_id": "draft_76a75916411945949028d4df439db65c",
+      "draft_id": "draft_c1c524dedab545e7b2299324af33f0d2",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,
@@ -120,7 +120,7 @@
     {
       "prompt_id": "sl1b-p10",
       "request": "Vigencia de lista",
-      "draft_id": "draft_25f9b1c2af574912a4fd9f75c223d60f",
+      "draft_id": "draft_5b89bb2e74154f4c90870d7316b5aaeb",
       "status": "approved",
       "edit_simulation": "none",
       "edit_pct": 0.0,

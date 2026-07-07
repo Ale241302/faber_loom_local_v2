@@ -29,8 +29,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "FABERLOOM_OLLAMA_ENABLED",
         "FABERLOOM_PROVIDER_ALLOWLIST",
         "FABERLOOM_BUDGET_CAP_USD",
-        "FABERLOOM_DEV_TRUST_HEADERS",
-    ):
+            ):
         monkeypatch.delenv(name, raising=False)
 
     from app.src.audit import audit_writer

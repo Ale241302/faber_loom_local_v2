@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 32
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1147,6 +1147,44 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE draft ADD COLUMN assigned_to TEXT;
     -- E2-4: budget por usuario (NULL = sin límite individual).
     ALTER TABLE workspace_routing_policy ADD COLUMN user_budget_cap_usd REAL;
+    """,
+    31: """
+    -- E3-2: tenant-scoped configuration cascade.
+    CREATE TABLE IF NOT EXISTS tenant_settings (
+        tenant_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_settings_tenant ON tenant_settings(tenant_id);
+    """,
+    32: """
+    -- E3-3: immutable tenant identity and graduated key broker.
+    CREATE TABLE IF NOT EXISTS entity_identity_version (
+        tenant_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        tax_id TEXT,
+        jurisdiction TEXT,
+        owner_user_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS idx_entity_identity_tenant ON entity_identity_version(tenant_id, version DESC);
+
+    CREATE TABLE IF NOT EXISTS key_policy (
+        tenant_id TEXT NOT NULL,
+        space_id TEXT NOT NULL,
+        level TEXT NOT NULL,
+        approver_roles_json TEXT NOT NULL DEFAULT '[]',
+        ceo_only INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT,
+        PRIMARY KEY (tenant_id, space_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_key_policy_tenant ON key_policy(tenant_id);
     """,
 }
 

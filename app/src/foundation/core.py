@@ -77,7 +77,10 @@ CREATE TABLE IF NOT EXISTS fnd_tenants (
     plan TEXT NOT NULL DEFAULT 'beta',
     settings_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
-    activated_at TEXT
+    activated_at TEXT,
+    approved_by TEXT,
+    suspended_by TEXT,
+    suspension_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS fnd_users (
@@ -89,6 +92,8 @@ CREATE TABLE IF NOT EXISTS fnd_users (
     totp_secret TEXT,
     totp_enabled INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    email_verified_at TEXT,
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TEXT,
     created_at TEXT NOT NULL,
@@ -156,6 +161,38 @@ CREATE TABLE IF NOT EXISTS fnd_events (
     published_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_fnd_events_tenant ON fnd_events(tenant_id, seq);
+
+CREATE TABLE IF NOT EXISTS fnd_email_verifications (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES fnd_users(id),
+    purpose TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fnd_email_verifications_user ON fnd_email_verifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_fnd_email_verifications_hash ON fnd_email_verifications(token_hash);
+
+CREATE TABLE IF NOT EXISTS fnd_platform_smtp_config (
+    id TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    use_ssl INTEGER NOT NULL DEFAULT 1,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    from_email TEXT,
+    is_app_password INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fnd_rate_limits (
+    key TEXT PRIMARY KEY,
+    window_until TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+);
 """
 
 _MODULE_SCHEMAS: list[str] = []
@@ -241,6 +278,58 @@ def fnd_db() -> Iterator[Any]:
         conn.close()
 
 
+def _migrate_fnd_users_email_verification_fields(conn: sqlite3.Connection) -> None:
+    """Idempotently add email verification columns to fnd_users."""
+
+    for column, dtype in (
+        ("email_verified", "INTEGER NOT NULL DEFAULT 0"),
+        ("email_verified_at", "TEXT"),
+    ):
+        exists = conn.execute(
+            "SELECT 1 FROM pragma_table_info('fnd_users') WHERE name = ?",
+            (column,),
+        ).fetchone()
+        if exists is None:
+            conn.execute(f"ALTER TABLE fnd_users ADD COLUMN {column} {dtype};")
+
+
+register_seed(_migrate_fnd_users_email_verification_fields)
+
+
+def _migrate_fnd_tenants_admin_fields(conn: sqlite3.Connection) -> None:
+    """Idempotently add platform_admin lifecycle columns to fnd_tenants."""
+
+    for column, dtype in (
+        ("approved_by", "TEXT"),
+        ("suspended_by", "TEXT"),
+        ("suspension_reason", "TEXT"),
+    ):
+        exists = conn.execute(
+            "SELECT 1 FROM pragma_table_info('fnd_tenants') WHERE name = ?",
+            (column,),
+        ).fetchone()
+        if exists is None:
+            conn.execute(f"ALTER TABLE fnd_tenants ADD COLUMN {column} {dtype};")
+
+
+register_seed(_migrate_fnd_tenants_admin_fields)
+
+
+def _migrate_fnd_users_preferences(conn: sqlite3.Connection) -> None:
+    """Idempotently add user preferences column to fnd_users."""
+
+    column, dtype = "preferences_json", "TEXT"
+    exists = conn.execute(
+        "SELECT 1 FROM pragma_table_info('fnd_users') WHERE name = ?",
+        (column,),
+    ).fetchone()
+    if exists is None:
+        conn.execute(f"ALTER TABLE fnd_users ADD COLUMN {column} {dtype};")
+
+
+register_seed(_migrate_fnd_users_preferences)
+
+
 def init_foundation_db() -> None:
     with fnd_db() as conn:
         if _foundation_db_engine() == "postgres":
@@ -286,6 +375,50 @@ def new_id(prefix: str) -> str:
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def get_platform_smtp_config(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    """Return the configured platform SMTP settings, or None if not configured.
+
+    Priority:
+    1. Row in ``fnd_platform_smtp_config`` with id='platform'.
+    2. Optional ``FABERLOOM_PLATFORM_SMTP_*`` environment variables.
+
+    Passwords are returned as part of the dict but must never be logged.
+    """
+
+    row = conn.execute(
+        "SELECT * FROM fnd_platform_smtp_config WHERE id = 'platform'"
+    ).fetchone()
+    if row is not None:
+        return dict(row)
+
+    host = os.getenv("FABERLOOM_PLATFORM_SMTP_HOST", "").strip()
+    port_raw = os.getenv("FABERLOOM_PLATFORM_SMTP_PORT", "").strip()
+    username = os.getenv("FABERLOOM_PLATFORM_SMTP_USERNAME", "").strip()
+    password = os.getenv("FABERLOOM_PLATFORM_SMTP_PASSWORD", "")
+    from_email = os.getenv("FABERLOOM_PLATFORM_SMTP_FROM_EMAIL", "").strip() or username
+    use_ssl_raw = os.getenv("FABERLOOM_PLATFORM_SMTP_USE_SSL", "true").lower()
+    is_app_password_raw = os.getenv("FABERLOOM_PLATFORM_SMTP_IS_APP_PASSWORD", "false").lower()
+
+    if not host or not port_raw or not username or not password:
+        return None
+
+    try:
+        port = int(port_raw)
+    except ValueError:
+        return None
+
+    return {
+        "id": "platform",
+        "host": host,
+        "port": port,
+        "use_ssl": 1 if use_ssl_raw in {"1", "true", "yes"} else 0,
+        "username": username,
+        "password": password,
+        "from_email": from_email,
+        "is_app_password": 1 if is_app_password_raw in {"1", "true", "yes"} else 0,
+    }
 
 
 def to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:

@@ -62,7 +62,6 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     config_dir = tmp_path / "config"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
     monkeypatch.setenv("FABERLOOM_AUTO_MODE_ENABLED", "true")
 
     for name in (

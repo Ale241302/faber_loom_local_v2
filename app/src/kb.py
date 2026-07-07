@@ -101,14 +101,15 @@ def _workspace_kb_scope(
     same tenant, the parent's workspace_id is included in the scope.
     """
 
-    workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        "SELECT parent_id, inherits_kb, tenant_id FROM workspace WHERE id = ?",
-        (workspace_id,),
-    ).fetchone()
-    if row and row["inherits_kb"] and row["parent_id"] and row["tenant_id"] == ctx.tenant_id:
-        return [workspace_id, row["parent_id"]]
-    return [workspace_id]
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        row = conn.execute(
+            "SELECT parent_id, inherits_kb, tenant_id FROM workspace WHERE id = ?",
+            (workspace_id,),
+        ).fetchone()
+        if row and row["inherits_kb"] and row["parent_id"] and row["tenant_id"] == ctx.tenant_id:
+            return [workspace_id, row["parent_id"]]
+        return [workspace_id]
 
 
 def _workspace_seals(
@@ -118,14 +119,15 @@ def _workspace_seals(
 ) -> dict[str, str]:
     """Return seal_id per workspace for HMAC verification inside a KB scope."""
 
-    if not scope:
-        return {}
-    placeholders = ",".join("?" for _ in scope)
-    rows = conn.execute(
-        f"SELECT id, seal_id FROM workspace WHERE id IN ({placeholders}) AND tenant_id = ?",
-        (*scope, ctx.tenant_id),
-    ).fetchall()
-    return {row["id"]: row["seal_id"] for row in rows if row["seal_id"]}
+    with transaction(conn, ctx=ctx):
+        if not scope:
+            return {}
+        placeholders = ",".join("?" for _ in scope)
+        rows = conn.execute(
+            f"SELECT id, seal_id FROM workspace WHERE id IN ({placeholders}) AND tenant_id = ?",
+            (*scope, ctx.tenant_id),
+        ).fetchall()
+        return {row["id"]: row["seal_id"] for row in rows if row["seal_id"]}
 
 
 def _is_date_stale(valid_from: str | None, valid_until: str | None) -> bool:
@@ -172,92 +174,93 @@ def _table_rows_to_facts(
     preserved) but flagged in ``extraction_warnings``.
     """
 
-    if not rows:
-        return
+    with transaction(conn, ctx=ctx):
+        if not rows:
+            return
 
-    headers = list(rows[0].keys())
-    entity_header = headers[0]
-    valid_from_header = next(
-        (h for h in headers if h.lower() in {"vigente_desde", "valid_from", "desde"}),
-        None,
-    )
-    valid_until_header = next(
-        (h for h in headers if h.lower() in {"vigente_hasta", "valid_until", "hasta"}),
-        None,
-    )
-    currency_header = next(
-        (h for h in headers if h.lower() in {"moneda", "currency"}),
-        None,
-    )
+        headers = list(rows[0].keys())
+        entity_header = headers[0]
+        valid_from_header = next(
+            (h for h in headers if h.lower() in {"vigente_desde", "valid_from", "desde"}),
+            None,
+        )
+        valid_until_header = next(
+            (h for h in headers if h.lower() in {"vigente_hasta", "valid_until", "hasta"}),
+            None,
+        )
+        currency_header = next(
+            (h for h in headers if h.lower() in {"moneda", "currency"}),
+            None,
+        )
 
-    locator_prefix = f"{table_name}: " if table_name else ""
-    workspace_id = ctx.require_scoped_workspace()
-    tenant_id = ctx.tenant_id
-    if seal_id is None:
-        seal_id = workspace_seal_id(ctx, conn)
+        locator_prefix = f"{table_name}: " if table_name else ""
+        workspace_id = ctx.require_scoped_workspace()
+        tenant_id = ctx.tenant_id
+        if seal_id is None:
+            seal_id = workspace_seal_id(ctx, conn)
 
-    for row_index, row in enumerate(rows, start=2):  # row 1 is header
-        entity_key = row.get(entity_header, "").strip()
-        if not entity_key:
-            continue
-
-        valid_from = row.get(valid_from_header, "").strip() if valid_from_header else None
-        valid_until = row.get(valid_until_header, "").strip() if valid_until_header else None
-        currency = row.get(currency_header, "").strip() if currency_header else None
-
-        if _is_date_stale(valid_from, valid_until) and extraction_warnings is not None:
-            extraction_warnings.append(
-                f"Row {row_index} ({entity_key}) has a stale or not-yet-valid date window."
-            )
-
-        for header in headers:
-            value = row.get(header, "").strip()
-            if not value or header in {valid_from_header, valid_until_header, currency_header}:
-                continue
-            if header == entity_header:
+        for row_index, row in enumerate(rows, start=2):  # row 1 is header
+            entity_key = row.get(entity_header, "").strip()
+            if not entity_key:
                 continue
 
-            fact_id = new_id("fact")
-            fact_hmac_row = {
-                "id": fact_id,
-                "workspace_id": workspace_id,
-                "source_id": source_id,
-                "entity_key": entity_key,
-                "field_name": header,
-                "field_value": value,
-                "source_version": source_version,
-            }
-            hmac = compute_workspace_hmac_for_row(seal_id, fact_hmac_row, "kb_fact")
-            conn.execute(
-                """
-                INSERT INTO kb_fact (
-                    id, workspace_id, source_id, entity_key, field_name, field_value,
-                    currency, valid_from, valid_until, source_locator, source_version,
-                    extraction_method, source_sheet, schema_version, workspace_hmac,
-                    tenant_id, created_at
+            valid_from = row.get(valid_from_header, "").strip() if valid_from_header else None
+            valid_until = row.get(valid_until_header, "").strip() if valid_until_header else None
+            currency = row.get(currency_header, "").strip() if currency_header else None
+
+            if _is_date_stale(valid_from, valid_until) and extraction_warnings is not None:
+                extraction_warnings.append(
+                    f"Row {row_index} ({entity_key}) has a stale or not-yet-valid date window."
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    fact_id,
-                    workspace_id,
-                    source_id,
-                    entity_key,
-                    header,
-                    value,
-                    currency,
-                    valid_from or None,
-                    valid_until or None,
-                    f"{locator_prefix}row {row_index}",
-                    source_version,
-                    extraction_method,
-                    source_sheet,
-                    SCHEMA_VERSION,
-                    hmac,
-                    tenant_id,
-                    utc_now(),
-                ),
-            )
+
+            for header in headers:
+                value = row.get(header, "").strip()
+                if not value or header in {valid_from_header, valid_until_header, currency_header}:
+                    continue
+                if header == entity_header:
+                    continue
+
+                fact_id = new_id("fact")
+                fact_hmac_row = {
+                    "id": fact_id,
+                    "workspace_id": workspace_id,
+                    "source_id": source_id,
+                    "entity_key": entity_key,
+                    "field_name": header,
+                    "field_value": value,
+                    "source_version": source_version,
+                }
+                hmac = compute_workspace_hmac_for_row(seal_id, fact_hmac_row, "kb_fact")
+                conn.execute(
+                    """
+                    INSERT INTO kb_fact (
+                        id, workspace_id, source_id, entity_key, field_name, field_value,
+                        currency, valid_from, valid_until, source_locator, source_version,
+                        extraction_method, source_sheet, schema_version, workspace_hmac,
+                        tenant_id, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        fact_id,
+                        workspace_id,
+                        source_id,
+                        entity_key,
+                        header,
+                        value,
+                        currency,
+                        valid_from or None,
+                        valid_until or None,
+                        f"{locator_prefix}row {row_index}",
+                        source_version,
+                        extraction_method,
+                        source_sheet,
+                        SCHEMA_VERSION,
+                        hmac,
+                        tenant_id,
+                        utc_now(),
+                    ),
+                )
 
 
 def ingest_kb_source(
@@ -503,53 +506,55 @@ def ingest_kb_source(
 
 
 def list_kb_sources(ctx: Context, conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    rows = conn.execute(
-        f"""
-        SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
-               type, title, content_text, meta_json, source_version, schema_version,
-               file_name, mime_type, file_size, parser_version, approved_by,
-               workspace_hmac, created_at
-        FROM kb_source
-        WHERE workspace_id IN ({placeholders}) AND tenant_id = ?
-        ORDER BY created_at DESC
-        """,
-        (*scope, ctx.tenant_id),
-    ).fetchall()
-    seals = _workspace_seals(ctx, conn, scope)
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        seal_id = seals.get(row["workspace_id"])
-        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source"):
-            results.append(row_to_dict(row))
-    return results
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        rows = conn.execute(
+            f"""
+            SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
+                   type, title, content_text, meta_json, source_version, schema_version,
+                   file_name, mime_type, file_size, parser_version, approved_by,
+                   workspace_hmac, created_at
+            FROM kb_source
+            WHERE workspace_id IN ({placeholders}) AND tenant_id = ?
+            ORDER BY created_at DESC
+            """,
+            (*scope, ctx.tenant_id),
+        ).fetchall()
+        seals = _workspace_seals(ctx, conn, scope)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            seal_id = seals.get(row["workspace_id"])
+            if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source"):
+                results.append(row_to_dict(row))
+        return results
 
 
 def get_kb_source(
     ctx: Context, conn: sqlite3.Connection, source_id: str
 ) -> dict[str, Any] | None:
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    row = conn.execute(
-        f"""
-        SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
-               type, title, content_text, meta_json, source_version, schema_version,
-               file_name, mime_type, file_size, parser_version, approved_by,
-               workspace_hmac, created_at
-        FROM kb_source
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
-        """,
-        (source_id, *scope, ctx.tenant_id),
-    ).fetchone()
-    if row is None:
-        return None
-    seals = _workspace_seals(ctx, conn, scope)
-    seal_id = seals.get(row["workspace_id"])
-    if not seal_id:
-        return None
-    assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source")
-    return row_to_dict(row)
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        row = conn.execute(
+            f"""
+            SELECT id, workspace_id, tenant_id, user_id, actor_id, actor_role_at_decision,
+                   type, title, content_text, meta_json, source_version, schema_version,
+                   file_name, mime_type, file_size, parser_version, approved_by,
+                   workspace_hmac, created_at
+            FROM kb_source
+            WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
+            """,
+            (source_id, *scope, ctx.tenant_id),
+        ).fetchone()
+        if row is None:
+            return None
+        seals = _workspace_seals(ctx, conn, scope)
+        seal_id = seals.get(row["workspace_id"])
+        if not seal_id:
+            return None
+        assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_source")
+        return row_to_dict(row)
 
 
 def delete_kb_source(ctx: Context, conn: sqlite3.Connection, source_id: str) -> bool:
@@ -571,56 +576,57 @@ def search_kb_chunks(
 ) -> list[dict[str, Any]]:
     """Keyword retrieval via FTS5 (SQLite) or tsvector/GIN (Postgres)."""
 
-    scope = _workspace_kb_scope(ctx, conn)
-    terms = [term.strip() for term in query.split() if term.strip()]
-    if not terms:
-        return []
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        terms = [term.strip() for term in query.split() if term.strip()]
+        if not terms:
+            return []
 
-    placeholders = ",".join("?" for _ in scope)
-    engine = getattr(conn, "engine", "sqlite")
+        placeholders = ",".join("?" for _ in scope)
+        engine = getattr(conn, "engine", "sqlite")
 
-    if engine == "postgres":
-        # Postgres path: plainto_tsquery handles escaping and OR semantics.
-        rows = conn.execute(
-            f"""
-            SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
-                   c.source_locator, c.source_version, c.created_at
-            FROM kb_chunk c
-            JOIN kb_source s ON s.id = c.source_id
-            WHERE to_tsvector('simple', c.content_text) @@ plainto_tsquery('simple', ?)
-              AND c.workspace_id IN ({placeholders})
-              AND s.workspace_id IN ({placeholders})
-              AND c.tenant_id = ?
-              AND s.tenant_id = ?
-            ORDER BY ts_rank(to_tsvector('simple', c.content_text), plainto_tsquery('simple', ?)) DESC
-            LIMIT ?
-            """,
-            (query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, query, limit),
-        ).fetchall()
-    else:
-        # SQLite path: FTS5 virtual table.
-        safe_query = " OR ".join(
-            f'"{term.replace('"', '""')}"'
-            for term in terms
-        )
-        rows = conn.execute(
-            f"""
-            SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
-                   c.source_locator, c.source_version, c.created_at
-            FROM kb_chunk_fts f
-            JOIN kb_chunk c ON c.rowid = f.rowid
-            JOIN kb_source s ON s.id = c.source_id
-            WHERE kb_chunk_fts MATCH ?
-              AND c.workspace_id IN ({placeholders})
-              AND s.workspace_id IN ({placeholders})
-              AND c.tenant_id = ?
-              AND s.tenant_id = ?
-            ORDER BY rank
-            LIMIT ?
-            """,
-            (safe_query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, limit),
-        ).fetchall()
-    return [row_to_dict(row) for row in rows]
+        if engine == "postgres":
+            # Postgres path: plainto_tsquery handles escaping and OR semantics.
+            rows = conn.execute(
+                f"""
+                SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
+                       c.source_locator, c.source_version, c.created_at
+                FROM kb_chunk c
+                JOIN kb_source s ON s.id = c.source_id
+                WHERE to_tsvector('simple', c.content_text) @@ plainto_tsquery('simple', ?)
+                  AND c.workspace_id IN ({placeholders})
+                  AND s.workspace_id IN ({placeholders})
+                  AND c.tenant_id = ?
+                  AND s.tenant_id = ?
+                ORDER BY ts_rank(to_tsvector('simple', c.content_text), plainto_tsquery('simple', ?)) DESC
+                LIMIT ?
+                """,
+                (query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, query, limit),
+            ).fetchall()
+        else:
+            # SQLite path: FTS5 virtual table.
+            safe_query = " OR ".join(
+                f'"{term.replace('"', '""')}"'
+                for term in terms
+            )
+            rows = conn.execute(
+                f"""
+                SELECT c.id, c.workspace_id, c.source_id, c.chunk_index, c.content_text,
+                       c.source_locator, c.source_version, c.created_at
+                FROM kb_chunk_fts f
+                JOIN kb_chunk c ON c.rowid = f.rowid
+                JOIN kb_source s ON s.id = c.source_id
+                WHERE kb_chunk_fts MATCH ?
+                  AND c.workspace_id IN ({placeholders})
+                  AND s.workspace_id IN ({placeholders})
+                  AND c.tenant_id = ?
+                  AND s.tenant_id = ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (safe_query, *scope, *scope, ctx.tenant_id, ctx.tenant_id, limit),
+            ).fetchall()
+        return [row_to_dict(row) for row in rows]
 
 
 def search_kb_facts(
@@ -636,74 +642,77 @@ def search_kb_facts(
     row cannot be read from another workspace.
     """
 
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    pattern = f"%{query}%"
-    rows = conn.execute(
-        f"""
-        SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
-               unit, currency, valid_from, valid_until, source_locator,
-               source_version, extraction_method, source_sheet, workspace_hmac,
-               tenant_id, created_at
-        FROM kb_fact
-        WHERE workspace_id IN ({placeholders})
-          AND tenant_id = ?
-          AND (entity_key LIKE ? OR field_value LIKE ?)
-        ORDER BY created_at DESC
-        LIMIT ?
-        """,
-        (*scope, ctx.tenant_id, pattern, pattern, limit),
-    ).fetchall()
-    seals = _workspace_seals(ctx, conn, scope)
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        seal_id = seals.get(row["workspace_id"])
-        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
-            results.append(row_to_dict(row))
-    return results
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        pattern = f"%{query}%"
+        rows = conn.execute(
+            f"""
+            SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
+                   unit, currency, valid_from, valid_until, source_locator,
+                   source_version, extraction_method, source_sheet, workspace_hmac,
+                   tenant_id, created_at
+            FROM kb_fact
+            WHERE workspace_id IN ({placeholders})
+              AND tenant_id = ?
+              AND (entity_key LIKE ? OR field_value LIKE ?)
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (*scope, ctx.tenant_id, pattern, pattern, limit),
+        ).fetchall()
+        seals = _workspace_seals(ctx, conn, scope)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            seal_id = seals.get(row["workspace_id"])
+            if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
+                results.append(row_to_dict(row))
+        return results
 
 
 def get_kb_fact_by_id(
     ctx: Context, conn: sqlite3.Connection, fact_id: str
 ) -> dict[str, Any] | None:
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    row = conn.execute(
-        f"""
-        SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
-               unit, currency, valid_from, valid_until, source_locator,
-               source_version, extraction_method, source_sheet, workspace_hmac,
-               tenant_id, created_at
-        FROM kb_fact
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
-        """,
-        (fact_id, *scope, ctx.tenant_id),
-    ).fetchone()
-    if row is None:
-        return None
-    seals = _workspace_seals(ctx, conn, scope)
-    seal_id = seals.get(row["workspace_id"])
-    if not seal_id:
-        return None
-    assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
-    return row_to_dict(row)
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        row = conn.execute(
+            f"""
+            SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
+                   unit, currency, valid_from, valid_until, source_locator,
+                   source_version, extraction_method, source_sheet, workspace_hmac,
+                   tenant_id, created_at
+            FROM kb_fact
+            WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
+            """,
+            (fact_id, *scope, ctx.tenant_id),
+        ).fetchone()
+        if row is None:
+            return None
+        seals = _workspace_seals(ctx, conn, scope)
+        seal_id = seals.get(row["workspace_id"])
+        if not seal_id:
+            return None
+        assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
+        return row_to_dict(row)
 
 
 def get_kb_chunk_by_id(
     ctx: Context, conn: sqlite3.Connection, chunk_id: str
 ) -> dict[str, Any] | None:
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    row = conn.execute(
-        f"""
-        SELECT id, workspace_id, source_id, chunk_index, content_text,
-               source_locator, source_version, tenant_id, created_at
-        FROM kb_chunk
-        WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
-        """,
-        (chunk_id, *scope, ctx.tenant_id),
-    ).fetchone()
-    return row_to_dict(row) if row else None
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        row = conn.execute(
+            f"""
+            SELECT id, workspace_id, source_id, chunk_index, content_text,
+                   source_locator, source_version, tenant_id, created_at
+            FROM kb_chunk
+            WHERE id = ? AND workspace_id IN ({placeholders}) AND tenant_id = ?
+            """,
+            (chunk_id, *scope, ctx.tenant_id),
+        ).fetchone()
+        return row_to_dict(row) if row else None
 
 
 def find_kb_fact(
@@ -716,31 +725,32 @@ def find_kb_fact(
 ) -> dict[str, Any] | None:
     """Find a kb_fact by exact source, field and value (workspace-scoped)."""
 
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    row = conn.execute(
-        f"""
-        SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
-               unit, currency, valid_from, valid_until, source_locator,
-               source_version, extraction_method, source_sheet, workspace_hmac,
-               tenant_id, created_at
-        FROM kb_fact
-        WHERE workspace_id IN ({placeholders})
-          AND tenant_id = ?
-          AND source_id = ? AND field_name = ? AND field_value = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        (*scope, ctx.tenant_id, source_id, field_name, field_value),
-    ).fetchone()
-    if row is None:
-        return None
-    seals = _workspace_seals(ctx, conn, scope)
-    seal_id = seals.get(row["workspace_id"])
-    if not seal_id:
-        return None
-    assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
-    return row_to_dict(row)
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        row = conn.execute(
+            f"""
+            SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
+                   unit, currency, valid_from, valid_until, source_locator,
+                   source_version, extraction_method, source_sheet, workspace_hmac,
+                   tenant_id, created_at
+            FROM kb_fact
+            WHERE workspace_id IN ({placeholders})
+              AND tenant_id = ?
+              AND source_id = ? AND field_name = ? AND field_value = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (*scope, ctx.tenant_id, source_id, field_name, field_value),
+        ).fetchone()
+        if row is None:
+            return None
+        seals = _workspace_seals(ctx, conn, scope)
+        seal_id = seals.get(row["workspace_id"])
+        if not seal_id:
+            return None
+        assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact")
+        return row_to_dict(row)
 
 
 def get_kb_facts_by_source(
@@ -748,27 +758,28 @@ def get_kb_facts_by_source(
 ) -> list[dict[str, Any]]:
     """Return all kb_fact rows for a source (workspace-scoped)."""
 
-    scope = _workspace_kb_scope(ctx, conn)
-    placeholders = ",".join("?" for _ in scope)
-    rows = conn.execute(
-        f"""
-        SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
-               unit, currency, valid_from, valid_until, source_locator,
-               source_version, extraction_method, source_sheet, workspace_hmac,
-               tenant_id, created_at
-        FROM kb_fact
-        WHERE workspace_id IN ({placeholders}) AND tenant_id = ? AND source_id = ?
-        ORDER BY entity_key, field_name
-        """,
-        (*scope, ctx.tenant_id, source_id),
-    ).fetchall()
-    seals = _workspace_seals(ctx, conn, scope)
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        seal_id = seals.get(row["workspace_id"])
-        if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
-            results.append(row_to_dict(row))
-    return results
+    with transaction(conn, ctx=ctx):
+        scope = _workspace_kb_scope(ctx, conn)
+        placeholders = ",".join("?" for _ in scope)
+        rows = conn.execute(
+            f"""
+            SELECT id, workspace_id, source_id, entity_key, field_name, field_value,
+                   unit, currency, valid_from, valid_until, source_locator,
+                   source_version, extraction_method, source_sheet, workspace_hmac,
+                   tenant_id, created_at
+            FROM kb_fact
+            WHERE workspace_id IN ({placeholders}) AND tenant_id = ? AND source_id = ?
+            ORDER BY entity_key, field_name
+            """,
+            (*scope, ctx.tenant_id, source_id),
+        ).fetchall()
+        seals = _workspace_seals(ctx, conn, scope)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            seal_id = seals.get(row["workspace_id"])
+            if seal_id and verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "kb_fact"):
+                results.append(row_to_dict(row))
+        return results
 
 
 # -----------------------------------------------------------------------------
@@ -811,90 +822,92 @@ def insert_draft(
     source_version: str | None = None,
     original_body_md: str | None = None,
 ) -> dict[str, Any]:
-    workspace_id = ctx.require_scoped_workspace()
-    draft_id = new_id("draft")
-    now = utc_now()
-    seal_id = workspace_seal_id(ctx, conn)
-    # The first persisted body is the baseline for measuring human edits.
-    original_body_md = original_body_md if original_body_md is not None else body_md
-    hmac = compute_workspace_hmac_for_row(
-        seal_id,
-        {
-            "id": draft_id,
-            "workspace_id": workspace_id,
-            "task": task,
-            "subject": subject,
-            "body_md": body_md,
-            "status": status,
-            "source_version": source_version,
-        },
-        "draft",
-    )
-
-    conn.execute(
-        """
-        INSERT INTO draft (
-            id, workspace_id, chat_id, tenant_id, user_id, actor_id,
-            actor_role_at_decision, task, subject, body_md, hard_facts_json,
-            sources_json, blockers_json, warnings_json, requires_confirmation,
-            status, schema_version, source_version, workspace_hmac, created_at,
-            updated_at, original_body_md, edit_pct
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        draft_id = new_id("draft")
+        now = utc_now()
+        seal_id = workspace_seal_id(ctx, conn)
+        # The first persisted body is the baseline for measuring human edits.
+        original_body_md = original_body_md if original_body_md is not None else body_md
+        hmac = compute_workspace_hmac_for_row(
+            seal_id,
+            {
+                "id": draft_id,
+                "workspace_id": workspace_id,
+                "task": task,
+                "subject": subject,
+                "body_md": body_md,
+                "status": status,
+                "source_version": source_version,
+            },
+            "draft",
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            draft_id,
-            workspace_id,
-            chat_id,
-            ctx.tenant_id,
-            ctx.user_id,
-            ctx.resolved_actor_id(),
-            ctx.actor_role_at_decision,
-            task,
-            subject,
-            body_md,
-            json.dumps(hard_facts, ensure_ascii=False),
-            json.dumps(sources, ensure_ascii=False),
-            json.dumps(blockers, ensure_ascii=False),
-            json.dumps(warnings, ensure_ascii=False),
-            1 if requires_confirmation else 0,
-            status,
-            SCHEMA_VERSION,
-            source_version,
-            hmac,
-            now,
-            now,
-            original_body_md,
-            None,
-        ),
-    )
-    row = conn.execute(
-        """
-        SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-        """,
-        (draft_id, workspace_id, ctx.tenant_id),
-    ).fetchone()
-    assert row is not None
-    return _serialize_draft(row)
+
+        conn.execute(
+            """
+            INSERT INTO draft (
+                id, workspace_id, chat_id, tenant_id, user_id, actor_id,
+                actor_role_at_decision, task, subject, body_md, hard_facts_json,
+                sources_json, blockers_json, warnings_json, requires_confirmation,
+                status, schema_version, source_version, workspace_hmac, created_at,
+                updated_at, original_body_md, edit_pct
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                draft_id,
+                workspace_id,
+                chat_id,
+                ctx.tenant_id,
+                ctx.user_id,
+                ctx.resolved_actor_id(),
+                ctx.actor_role_at_decision,
+                task,
+                subject,
+                body_md,
+                json.dumps(hard_facts, ensure_ascii=False),
+                json.dumps(sources, ensure_ascii=False),
+                json.dumps(blockers, ensure_ascii=False),
+                json.dumps(warnings, ensure_ascii=False),
+                1 if requires_confirmation else 0,
+                status,
+                SCHEMA_VERSION,
+                source_version,
+                hmac,
+                now,
+                now,
+                original_body_md,
+                None,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT * FROM draft
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (draft_id, workspace_id, ctx.tenant_id),
+        ).fetchone()
+        assert row is not None
+        return _serialize_draft(row)
 
 
 def get_draft(
     ctx: Context, conn: sqlite3.Connection, draft_id: str
 ) -> dict[str, Any] | None:
-    workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        """
-        SELECT * FROM draft
-        WHERE id = ? AND workspace_id = ? AND tenant_id = ?
-        """,
-        (draft_id, workspace_id, ctx.tenant_id),
-    ).fetchone()
-    if row is None:
-        return None
-    seal_id = workspace_seal_id(ctx, conn)
-    assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "draft")
-    return _serialize_draft(row)
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        row = conn.execute(
+            """
+            SELECT * FROM draft
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (draft_id, workspace_id, ctx.tenant_id),
+        ).fetchone()
+        if row is None:
+            return None
+        seal_id = workspace_seal_id(ctx, conn)
+        assert_workspace_hmac_for_row(seal_id, row_to_dict(row), "draft")
+        return _serialize_draft(row)
 
 
 def list_drafts(
@@ -904,24 +917,25 @@ def list_drafts(
     status: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    workspace_id = ctx.require_scoped_workspace()
-    sql = """
-        SELECT * FROM draft
-        WHERE workspace_id = ? AND tenant_id = ?
-    """
-    params: list[Any] = [workspace_id, ctx.tenant_id]
-    if status is not None:
-        sql += " AND status = ?"
-        params.append(status)
-    sql += " ORDER BY created_at DESC LIMIT ?"
-    params.append(limit)
-    rows = conn.execute(sql, params).fetchall()
-    seal_id = workspace_seal_id(ctx, conn)
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        if verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "draft"):
-            results.append(_serialize_draft(row))
-    return results
+    with transaction(conn, ctx=ctx):
+        workspace_id = ctx.require_scoped_workspace()
+        sql = """
+            SELECT * FROM draft
+            WHERE workspace_id = ? AND tenant_id = ?
+        """
+        params: list[Any] = [workspace_id, ctx.tenant_id]
+        if status is not None:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        seal_id = workspace_seal_id(ctx, conn)
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            if verify_workspace_hmac_for_row(seal_id, row_to_dict(row), "draft"):
+                results.append(_serialize_draft(row))
+        return results
 
 
 def update_draft(

@@ -34,8 +34,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     for name in (
         "OPENAI_API_KEY",
         "FABERLOOM_OPENAI_API_KEY",

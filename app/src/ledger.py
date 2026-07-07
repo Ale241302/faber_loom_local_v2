@@ -10,6 +10,7 @@ from typing import Any
 
 from .context import Context
 from .db import insert_usage_record, new_id, utc_now
+from .db_adapter import transaction
 
 
 def start_chain(
@@ -69,14 +70,15 @@ def sum_chain_cost(
     """Sum succeeded step costs for a chain."""
 
     workspace_id = ctx.require_scoped_workspace()
-    row = conn.execute(
-        """
-        SELECT COALESCE(SUM(cost_usd), 0.0) AS total
-        FROM usage_record
-        WHERE workspace_id = ? AND tenant_id = ? AND chain_id = ? AND status = 'succeeded'
-        """,
-        (workspace_id, ctx.require_tenant(), chain_id),
-    ).fetchone()
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(cost_usd), 0.0) AS total
+            FROM usage_record
+            WHERE workspace_id = ? AND tenant_id = ? AND chain_id = ? AND status = 'succeeded'
+            """,
+            (workspace_id, ctx.require_tenant(), chain_id),
+        ).fetchone()
     return float(row["total"]) if row and row["total"] is not None else 0.0
 
 
@@ -99,14 +101,15 @@ def list_chain_steps(
     """Return all usage records for a chain ordered by step_index."""
 
     workspace_id = ctx.require_scoped_workspace()
-    rows = conn.execute(
-        """
-        SELECT provider_slug, model, input_tokens, output_tokens, cost_usd,
-               duration_ms, status, step_index, capability, created_at
-        FROM usage_record
-        WHERE workspace_id = ? AND tenant_id = ? AND chain_id = ?
-        ORDER BY step_index ASC, created_at ASC
-        """,
-        (workspace_id, ctx.require_tenant(), chain_id),
-    ).fetchall()
+    with transaction(conn, ctx=ctx):
+        rows = conn.execute(
+            """
+            SELECT provider_slug, model, input_tokens, output_tokens, cost_usd,
+                   duration_ms, status, step_index, capability, created_at
+            FROM usage_record
+            WHERE workspace_id = ? AND tenant_id = ? AND chain_id = ?
+            ORDER BY step_index ASC, created_at ASC
+            """,
+            (workspace_id, ctx.require_tenant(), chain_id),
+        ).fetchall()
     return [dict(row) for row in rows]

@@ -135,6 +135,7 @@ from .ingest import IngestError, extract_text_from_object, load_image_attachment
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
+from .plans import PlanError
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -276,13 +277,10 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _is_pytest_run() -> bool:
-    """Return True when code is executing inside a pytest test."""
-    return bool(os.getenv("PYTEST_CURRENT_TEST"))
-
-
 def context_from_request(request: Request, workspace_id: str | None = None) -> Context:
     # Authenticated user takes precedence when auth is active.
+    # During pytest runs the TestTrustHeaderMiddleware may inject state.user
+    # from test headers; in production tenant must flow through Context/SET LOCAL.
     user = getattr(request.state, "user", None)
     if user:
         tenant_id = user.get("tenant_id") or DEFAULT_TENANT_ID
@@ -290,13 +288,6 @@ def context_from_request(request: Request, workspace_id: str | None = None) -> C
         user_id = user.get("user_id") or user.get("sub") or "local"
         actor_id = user.get("actor_id") or user_id
         actor_role = user.get("role") or "owner"
-    elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS") and _is_pytest_run():
-        # P0: header trust is only allowed inside pytest runs. It must never be
-        # usable in production, where tenant must flow through Context/SET LOCAL.
-        tenant_id = request.headers.get("x-tenant-id") or DEFAULT_TENANT_ID
-        user_id = request.headers.get("x-user-id") or "local"
-        actor_id = request.headers.get("x-actor-id") or user_id
-        actor_role = request.headers.get("x-actor-role") or "owner"
     else:
         tenant_id = DEFAULT_TENANT_ID
         user_id = "local"
@@ -417,7 +408,7 @@ def api_create_workspace(
     bootstrap_ctx = context_from_request(request)
     event: AuditEvent | None = None
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=bootstrap_ctx):
             created = create_workspace(bootstrap_ctx, conn, payload)
             workspace_ctx = bootstrap_ctx.with_workspace(created["id"])
             event = audit_writer.write(
@@ -431,7 +422,7 @@ def api_create_workspace(
                 },
                 mirror_jsonl=False,
             )
-    except ValueError as exc:
+    except (ValueError, PlanError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
@@ -671,7 +662,7 @@ def api_create_chat(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         created = create_chat(ctx, conn, payload.title)
         event = audit_writer.write(
             ctx,
@@ -727,7 +718,7 @@ def api_update_chat(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = update_chat(ctx, conn, chat_id, payload.title)
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
@@ -758,7 +749,7 @@ def api_delete_chat(
     _require_confirmation(chat_id, confirmation_token)
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         if not delete_chat(ctx, conn, chat_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
         event = audit_writer.write(
@@ -856,7 +847,7 @@ def api_create_completion(
     # get_routing_policy puede INSERTar la fila default: debe ir en su propia
     # transacción para no dejar la conexión abierta (rompería los commits del
     # resto del request).
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         _policy_for_budget = get_routing_policy(ctx, conn)
     _user_cap = _policy_for_budget.get("user_budget_cap_usd")
     if _user_cap is not None and float(_user_cap) > 0:
@@ -946,7 +937,7 @@ def api_create_completion(
         )
         assistant_content = _skill_result_content(result)
         audit_event: AuditEvent | None = None
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             insert_message(
                 ctx,
                 conn,
@@ -1028,12 +1019,12 @@ def api_create_completion(
     # Ensure the workspace catalog and default policy row exist before validating
     # manual/auto choices. This is a separate transaction so the policy row is
     # committed before any nested per-mode transactions begin.
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
 
     if payload.mode == "auto":
         try:
-            with transaction(conn):
+            with transaction(conn, ctx=ctx):
                 routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
                 auto_result = run_auto_chain(
                     ctx,
@@ -1122,7 +1113,7 @@ def api_create_completion(
     _validate_completion_choice(payload, router)
 
     # Persist the user message first so the completion history includes it.
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
 
     history = [{"role": "system", "content": _SYSTEM_PROMPT}]
@@ -1199,7 +1190,7 @@ def api_create_completion(
     # completions in the same workspace.
     assistant_message: MessageRead | None = None
     audit_event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         if result is not None:
             current_spent = sum_workspace_usage_cost(ctx, conn)
             if current_spent + result.cost_usd > router.settings.budget_cap_usd:
@@ -1359,7 +1350,7 @@ def api_run_auto_chain(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
             auto_result = run_auto_chain(
                 ctx,
@@ -1471,7 +1462,7 @@ def api_invoke_routine(
     )
     assistant_content = _skill_result_content(result)
     audit_event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         if user_request:
             insert_message(
                 ctx,
@@ -1568,7 +1559,7 @@ def _record_completion_failure(
 ) -> AuditEvent:
     """Persist a failed/budget-exceeded usage record and audit event."""
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         insert_usage_record(
             ctx,
             conn,
@@ -1753,7 +1744,7 @@ def _execute_skill_run(
 
     # Persist the running row first, then leave the transaction before calling
     # the LLM so SQLite is not held open during a network call.
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         run = create_routine_run(
             ctx,
             conn,
@@ -1777,7 +1768,7 @@ def _execute_skill_run(
         spent_usd=spent_usd,
     )
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = set_routine_run_output(
             ctx,
             conn,
@@ -1965,7 +1956,7 @@ def api_update_provider_config(
             }
         else:
             diff_payload[field] = {"previous": old, "new": new}
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         record_editorial_event(
             ctx,
             conn,
@@ -2012,7 +2003,7 @@ def api_delete_provider_key(
 
     _require_confirmation(provider_slug, confirmation_token)
     ProviderConfigStore().delete_key(provider_slug, ctx.user_id)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         record_editorial_event(
             ctx,
             conn,
@@ -2202,7 +2193,7 @@ def api_update_routing_policy(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_routing_admin(ctx)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         policy = update_routing_policy(
             ctx,
             conn,
@@ -2226,7 +2217,7 @@ def api_list_model_catalog(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
     return [ModelCatalogEntryRead(**row) for row in list_model_catalog(ctx, conn, enabled_only=False)]
 
@@ -2242,7 +2233,7 @@ def api_create_model_catalog_entry(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_routing_admin(ctx)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = create_model_catalog_entry(
             ctx,
             conn,
@@ -2271,7 +2262,7 @@ def api_update_model_catalog_entry(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_routing_admin(ctx)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         row = update_model_catalog_entry(
             ctx,
             conn,
@@ -2300,7 +2291,7 @@ def api_delete_model_catalog_entry(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_routing_admin(ctx)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         deleted = delete_model_catalog_entry(ctx, conn, entry_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Catalog entry not found")
@@ -2418,7 +2409,7 @@ def api_upload_kb_source(
     object_id = new_id("obj")
     key = object_key(workspace_id, "upload", file.filename, object_id)
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             create_object(
                 ctx,
                 conn,
@@ -2490,7 +2481,7 @@ def api_delete_kb_source(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_confirmation(source_id, confirmation_token)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         deleted = delete_kb_source(ctx, conn, source_id)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KB source not found")
@@ -2614,7 +2605,7 @@ def api_presigned_upload(
     object_id = new_id("obj")
     key = object_key(workspace_id, payload.origin, payload.file_name, object_id)
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         create_object(
             ctx,
             conn,
@@ -2683,7 +2674,7 @@ def api_confirm_object_upload(
     if payload.sha256:
         updates["sha256"] = payload.sha256
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = update_object(ctx, conn, payload.object_id, **updates)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
@@ -2764,7 +2755,7 @@ def api_delete_object(
     _require_confirmation(object_id, confirmation_token)
 
     store = get_object_store()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         store.delete_object(obj["bucket"], obj["object_key"])
         deleted = delete_object(ctx, conn, object_id)
         if not deleted:
@@ -2846,7 +2837,7 @@ def api_generate_draft(
             detail=str(exc),
         ) from exc
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         draft = insert_draft(
             ctx,
             conn,
@@ -2983,7 +2974,7 @@ def api_approve_draft(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     request_payload = payload or DraftApproveRequest()
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             draft = approve_draft(
                 ctx,
                 conn,
@@ -3265,7 +3256,7 @@ def api_sync_mail(
         ) from exc
 
     created: list[MailMessageRead] = []
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         for msg in fetched:
             row = create_mail_message(
                 ctx,
@@ -3337,7 +3328,7 @@ def api_draft_mail_reply(
             detail=str(exc),
         ) from exc
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         draft = insert_draft(
             ctx,
             conn,
@@ -3411,7 +3402,7 @@ def api_send_mail_reply(
         )
 
     # Idempotency gate: write the outbox row before touching SMTP.
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         outbox = create_or_get_mail_outbox(
             ctx, conn, mail_id=mail_id, idempotency_key=idempotency_key, status="sending"
         )
@@ -3473,7 +3464,7 @@ def api_send_mail_reply(
         )
     except RuntimeError as exc:
         error_json = json.dumps({"error": str(exc)}, ensure_ascii=False)
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             update_mail_outbox_status(
                 ctx,
                 conn,
@@ -3487,7 +3478,7 @@ def api_send_mail_reply(
             detail=f"SMTP send failed: {exc}",
         ) from exc
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = update_mail_message_status(ctx, conn, mail_id, "sent")
         update_mail_outbox_status(ctx, conn, outbox["id"], status="sent")
         audit_event = audit_writer.write(
@@ -3811,11 +3802,12 @@ def api_list_workspace_members(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if not ctx.tenant_id:
         return {"members": []}
-    rows = conn.execute(
-        "SELECT id, email, display_name FROM fnd_users "
-        "WHERE tenant_id = ? AND status = 'active' ORDER BY email",
-        (ctx.tenant_id,),
-    ).fetchall()
+    with transaction(conn, ctx=ctx):
+        rows = conn.execute(
+            "SELECT id, email, display_name FROM fnd_users "
+            "WHERE tenant_id = ? AND status = 'active' ORDER BY email",
+            (ctx.tenant_id,),
+        ).fetchall()
     return {
         "members": [
             {"id": r["id"], "email": r["email"], "display_name": r["display_name"]}
@@ -3837,7 +3829,7 @@ def api_assign_workloom_item(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             item = assign_workloom_item(
                 ctx,
                 conn,
@@ -3908,7 +3900,7 @@ def api_edit_routine_run(
     except json.JSONDecodeError:
         current_output = {}
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         if payload.approved_by is not None:
             # E2-0: approved_by must reflect the authenticated actor, not a client value.
             updated = update_routine_run_output(
@@ -3955,7 +3947,7 @@ def api_approve_routine_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     request_payload = payload or RoutineRunApproveRequest()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         # E2-0: approved_by is taken from the authenticated Context, never from the client.
         updated = approve_routine_run(
             ctx,
@@ -3998,7 +3990,7 @@ def api_reject_routine_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     request_payload = payload or RoutineRunRejectRequest()
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = reject_routine_run(ctx, conn, run_id, reason=request_payload.reason)
 
     if updated is None:
@@ -4060,7 +4052,7 @@ def api_promote_gold_candidate(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             updated = promote_gold_candidate(
                 ctx,
                 conn,
@@ -4109,7 +4101,7 @@ def api_apply_gold_to_routine(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             result = apply_gold_to_routine(ctx, conn, candidate_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -4177,7 +4169,7 @@ def api_create_routine(
         skill_version = compiled["version"]
 
     event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         created = create_routine(
             ctx,
             conn,
@@ -4314,7 +4306,7 @@ def api_update_routine(
     if "skill_version" in updates and updates.get("skill_version") != existing.get("skill_version"):
         approval_cleared = True
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         updated = update_routine(ctx, conn, routine_id, **updates)
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
@@ -4348,7 +4340,7 @@ def api_delete_routine(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     _require_confirmation(routine_id, confirmation_token)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         if not delete_routine(ctx, conn, routine_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
         audit_event = audit_writer.write(
@@ -4375,7 +4367,7 @@ def api_approve_routine(
     if get_routine(ctx, conn, routine_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         # E2-0: approved_by is taken from the authenticated Context, never from the client.
         updated = approve_routine(ctx, conn, routine_id)
 
@@ -4452,7 +4444,7 @@ def api_run_routine(
         spent_usd=spent,
     )
     audit_event: AuditEvent | None = None
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         audit_event = _persist_skill_usage(
             ctx,
             conn,
@@ -4520,7 +4512,7 @@ def api_import_faberloom_routines(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         imported = import_catalog_items(ctx, conn, payload.imports)
         if imported:
             audit_writer.write(
@@ -4576,7 +4568,7 @@ def api_update_ambient_config(
     _require_admin_role(request)
     ctx = context_from_request(request)
     updates = payload.model_dump(exclude_unset=True)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         config = update_ambient_config(conn, ctx.tenant_id, updates)
     if config is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ambient config not found")
@@ -4619,7 +4611,7 @@ def api_update_ambient_workspace_config(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     updates = payload.model_dump(exclude_unset=True)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         config = update_ambient_workspace_config(conn, ctx.tenant_id, workspace_id, updates)
     if config is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace config not found")
@@ -4634,7 +4626,7 @@ def api_ambient_kill_global(
 ) -> dict[str, Any]:
     _require_admin_role(request)
     ctx = context_from_request(request)
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         return set_kill_switch(conn, ctx.tenant_id, payload.enabled)
 
 
@@ -4649,7 +4641,7 @@ def api_ambient_kill_workspace(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    with transaction(conn):
+    with transaction(conn, ctx=ctx):
         return set_kill_switch(conn, ctx.tenant_id, payload.enabled, workspace_id=workspace_id)
 
 
@@ -4664,10 +4656,11 @@ def api_ambient_metrics(
     ctx = context_from_request(request)
     if workspace_id:
         # Validate workspace belongs to tenant
-        ws = conn.execute(
-            "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
-            (workspace_id, ctx.tenant_id),
-        ).fetchone()
+        with transaction(conn, ctx=ctx):
+            ws = conn.execute(
+                "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
+                (workspace_id, ctx.tenant_id),
+            ).fetchone()
         if ws is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     metrics = ambient_metrics(conn, ctx.tenant_id, workspace_id, days)
@@ -4684,14 +4677,15 @@ def api_ambient_trigger(
     ctx = context_from_request(request)
     workspace_id = payload.workspace_id
     if workspace_id:
-        ws = conn.execute(
-            "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
-            (workspace_id, ctx.tenant_id),
-        ).fetchone()
+        with transaction(conn, ctx=ctx):
+            ws = conn.execute(
+                "SELECT id FROM workspace WHERE id = ? AND tenant_id = ?",
+                (workspace_id, ctx.tenant_id),
+            ).fetchone()
         if ws is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     try:
-        with transaction(conn):
+        with transaction(conn, ctx=ctx):
             result = trigger_ambient_cycle(conn, ctx.tenant_id, workspace_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

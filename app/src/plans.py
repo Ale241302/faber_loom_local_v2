@@ -7,8 +7,13 @@ current usage cannot be determined, the operation is rejected.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+from .context import SYSTEM_WORKSPACE_ID, Context
+from .db_adapter import transaction
 
 
 class PlanError(Exception):
@@ -47,6 +52,14 @@ PLANS: dict[str, PlanLimits] = {
         max_storage_bytes=None,
         max_monthly_budget_usd=None,
     ),
+    # Legacy Foundation tenants created before E3-2 are treated as unrestricted.
+    "beta": PlanLimits(
+        name="beta",
+        max_users=None,
+        max_workspaces=None,
+        max_storage_bytes=None,
+        max_monthly_budget_usd=None,
+    ),
 }
 
 
@@ -60,10 +73,12 @@ def get_plan(plan_name: str) -> PlanLimits:
 
 
 def _count_tenant_workspaces(conn: Any, tenant_id: str) -> int:
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM workspace WHERE tenant_id = ?",
-        (tenant_id,),
-    ).fetchone()
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM workspace WHERE tenant_id = ?",
+            (tenant_id,),
+        ).fetchone()
     return int(row["n"]) if row else 0
 
 
@@ -71,12 +86,14 @@ def _count_tenant_users(conn: Any, tenant_id: str) -> int:
     # Foundation users are the source of truth for tenant owners/staff.
     # Fall back to 0 if the foundation tables are not available (should not
     # happen for real tenants).
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
     try:
-        row = conn.execute(
-            """SELECT COUNT(*) AS n FROM fnd_users
-               WHERE tenant_id = ? AND status = 'active'""",
-            (tenant_id,),
-        ).fetchone()
+        with transaction(conn, ctx=ctx):
+            row = conn.execute(
+                """SELECT COUNT(*) AS n FROM fnd_users
+                   WHERE tenant_id = ? AND status = 'active'""",
+                (tenant_id,),
+            ).fetchone()
         return int(row["n"]) if row else 0
     except Exception:
         return 0
@@ -132,3 +149,35 @@ def enforce_all_limits(
 
     for resource, amount in requested.items():
         check_plan_limit(conn, tenant_id, plan_name, resource, amount)
+
+
+def get_tenant_plan_name(tenant_id: str) -> str:
+    """Return the plan name stored in Foundation for the tenant.
+
+    Defaults to ``enterprise`` when Foundation is not reachable so local/dev
+    tenants are not blocked.
+    """
+
+    from .foundation.core import get_foundation_db_path
+
+    db_path = get_foundation_db_path()
+    if not db_path.exists():
+        return "enterprise"
+
+    conn = sqlite3.connect(str(db_path), timeout=20.0)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT plan FROM fnd_tenants WHERE id = ?",
+            (tenant_id,),
+        ).fetchone()
+        return row["plan"] if row else "enterprise"
+    finally:
+        conn.close()
+
+
+def enforce_workspace_creation(ctx: Context, conn: Any) -> None:
+    """Fail if creating one more workspace would exceed the tenant plan."""
+
+    plan_name = get_tenant_plan_name(ctx.tenant_id)
+    check_plan_limit(conn, ctx.tenant_id, plan_name, "workspaces", 1)

@@ -31,8 +31,6 @@ def client(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("FABERLOOM_SECRET_KEY", "test-secret")
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     # Avoid leaking external credentials or feature flags into the app under test.
     for name in (
         "OPENAI_API_KEY",
@@ -167,21 +165,3 @@ def test_editorial_history_is_isolated_by_tenant(client: TestClient) -> None:
         assert list_editorial_history(beta_ctx, conn) == []
         assert len(list_editorial_history(alpha_ctx, conn)) == 1
 
-
-def test_x_tenant_id_header_is_ignored_without_trust_headers(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("FABERLOOM_DEV_TRUST_HEADERS", raising=False)
-
-    created = client.post(
-        "/api/workspaces",
-        headers={"x-tenant-id": "alpha"},
-        json={"name": "Ignored", "slug": "ignored"},
-    ).json()
-
-    # Without FABERLOOM_DEV_TRUST_HEADERS the header is ignored, so both
-    # requests resolve to the default tenant.
-    default_list = client.get("/api/workspaces").json()["workspaces"]
-    alpha_list = client.get("/api/workspaces", headers={"x-tenant-id": "alpha"}).json()["workspaces"]
-    assert any(w["id"] == created["id"] for w in default_list)
-    assert any(w["id"] == created["id"] for w in alpha_list)

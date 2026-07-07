@@ -27,8 +27,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "FABERLOOM_OLLAMA_ENABLED",
         "FABERLOOM_PROVIDER_ALLOWLIST",
         "FABERLOOM_BUDGET_CAP_USD",
-        "FABERLOOM_DEV_TRUST_HEADERS",
-    ):
+            ):
         monkeypatch.delenv(name, raising=False)
 
     from app.src.audit import audit_writer
@@ -496,8 +495,6 @@ def test_confidential_workspace_tenant_isolation(
 ) -> None:
     """A confidential workspace is invisible to other tenants even with passphrase."""
 
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     workspace = _create_workspace(
         client,
         "Conf Tenant A",
@@ -552,8 +549,6 @@ def test_confidential_workspace_cannot_inherit_cross_tenant_parent(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A confidential child workspace cannot attach to a parent in another tenant."""
-
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
 
     parent = _create_workspace(
         client,

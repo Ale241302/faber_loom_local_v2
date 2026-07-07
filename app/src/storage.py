@@ -18,7 +18,9 @@ from io import BytesIO
 from typing import Any
 from urllib.parse import urlsplit
 
+from .context import Context
 from .db import new_id
+from .security.secrets import TenantSecretStore
 
 
 UPLOAD_BUCKET = "fl-uploads"
@@ -36,6 +38,18 @@ class ObjectNotFoundError(ObjectStoreError):
 
 def workspace_object_prefix(workspace_id: str) -> str:
     return f"ws-{workspace_id}"
+
+
+def get_tenant_encryption_key(ctx: Context) -> Any:
+    """Return the tenant's active data encryption key.
+
+    Object storage itself does not persist tenant-scoped credentials (MinIO
+    service credentials are supplied via environment variables). This helper
+    lets future features encrypt object metadata or payloads with the tenant
+    key before they reach the backend.
+    """
+
+    return TenantSecretStore().get_or_create_data_key(ctx)
 
 
 def object_key(workspace_id: str, origin: str, file_name: str, object_id: str) -> str:

@@ -32,6 +32,8 @@ def conn():
                 level TEXT NOT NULL,
                 approver_roles_json TEXT NOT NULL DEFAULT '[]',
                 ceo_only INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT '',
+                updated_by TEXT,
                 PRIMARY KEY (tenant_id, space_id)
             );
             """

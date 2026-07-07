@@ -337,17 +337,17 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
             )
             cursor.execute(
                 f"""
-                INSERT INTO {schema_quoted}.kb_chunk (id, workspace_id, source_id, chunk_index, content_text, created_at)
-                VALUES ('kc-{tenant}', %s, 'ks-{tenant}', 0, '{tenant} chunk', %s)
+                INSERT INTO {schema_quoted}.kb_chunk (id, workspace_id, tenant_id, source_id, chunk_index, content_text, created_at)
+                VALUES ('kc-{tenant}', %s, %s, 'ks-{tenant}', 0, '{tenant} chunk', %s)
                 """,
-                (ws, now),
+                (ws, tenant, now),
             )
             cursor.execute(
                 f"""
-                INSERT INTO {schema_quoted}.kb_fact (id, workspace_id, source_id, entity_key, field_name, field_value, created_at)
-                VALUES ('kf-{tenant}', %s, 'ks-{tenant}', 'entity', 'field', 'value-{tenant}', %s)
+                INSERT INTO {schema_quoted}.kb_fact (id, workspace_id, tenant_id, source_id, entity_key, field_name, field_value, created_at)
+                VALUES ('kf-{tenant}', %s, %s, 'ks-{tenant}', 'entity', 'field', 'value-{tenant}', %s)
                 """,
-                (ws, now),
+                (ws, tenant, now),
             )
 
         # chat / message
@@ -395,10 +395,10 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
             )
             cursor.execute(
                 f"""
-                INSERT INTO {schema_quoted}.gold_candidate (id, workspace_id, routine_id, run_id, created_at, updated_at)
-                VALUES ('gc-{tenant}', %s, 'rt-{tenant}', 'rr-{tenant}', %s, %s)
+                INSERT INTO {schema_quoted}.gold_candidate (id, workspace_id, tenant_id, routine_id, run_id, created_at, updated_at)
+                VALUES ('gc-{tenant}', %s, %s, 'rt-{tenant}', 'rr-{tenant}', %s, %s)
                 """,
-                (ws, now, now),
+                (ws, tenant, now, now),
             )
 
         # usage_record
@@ -422,10 +422,10 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
             )
             cursor.execute(
                 f"""
-                INSERT INTO {schema_quoted}.mail_outbox (id, workspace_id, mail_id, idempotency_key, status, created_at, updated_at)
-                VALUES ('mo-{tenant}', %s, 'mm-{tenant}', 'key-{tenant}', 'pending', %s, %s)
+                INSERT INTO {schema_quoted}.mail_outbox (id, workspace_id, tenant_id, mail_id, idempotency_key, status, created_at, updated_at)
+                VALUES ('mo-{tenant}', %s, %s, 'mm-{tenant}', 'key-{tenant}', 'pending', %s, %s)
                 """,
-                (ws, now, now),
+                (ws, tenant, now, now),
             )
 
         # email_account
@@ -538,10 +538,10 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
             )
             cursor.execute(
                 f"""
-                INSERT INTO {schema_quoted}.ambient_detector (id, tenant_id, slug, name, created_at)
-                VALUES ('ad-{tenant}', %s, 'det-{tenant}', '{tenant.title()} Detector', %s)
+                INSERT INTO {schema_quoted}.ambient_detector (id, tenant_id, slug, name, created_at, updated_at)
+                VALUES ('ad-{tenant}', %s, 'det-{tenant}', '{tenant.title()} Detector', %s, %s)
                 """,
-                (tenant, now),
+                (tenant, now, now),
             )
 
         conn.commit()

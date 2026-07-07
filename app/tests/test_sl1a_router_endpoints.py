@@ -32,8 +32,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "FABERLOOM_OLLAMA_ENABLED",
         "FABERLOOM_PROVIDER_ALLOWLIST",
         "FABERLOOM_BUDGET_CAP_USD",
-        "FABERLOOM_DEV_TRUST_HEADERS",
-    ):
+            ):
         monkeypatch.delenv(name, raising=False)
 
     from app.src.audit import audit_writer
@@ -263,8 +262,6 @@ def test_delete_conversation_requires_confirmation(client: TestClient) -> None:
 
 
 def test_delete_conversation_tenant_isolation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     ws_a = client.post("/api/workspaces", json={"name": "Tenant A"}, headers={"x-tenant-id": "tenant-a"}).json()
     ws_b = client.post("/api/workspaces", json={"name": "Tenant B"}, headers={"x-tenant-id": "tenant-b"}).json()
 

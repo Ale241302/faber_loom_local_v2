@@ -30,8 +30,6 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         monkeypatch.delenv(name, raising=False)
 
     # Trust headers only for the cross-tenant test below.
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     from app.src.audit import audit_writer
     from app.src.main import create_app
 

@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from .context import SYSTEM_WORKSPACE_ID, Context
+from .db_adapter import transaction
+
 
 class KeyLevel(str, Enum):
     CLOSED = "closed"
@@ -44,30 +47,32 @@ DEFAULT_APPROVER_ROLES = frozenset({"owner", "ceo"})
 def get_policy(conn: Any, tenant_id: str, space_id: str) -> KeyPolicy:
     """Return the active key policy for a space, defaulting to CLOSED/owner+ceo."""
 
-    row = conn.execute(
-        """SELECT level, approver_roles_json, ceo_only
-           FROM key_policy
-           WHERE tenant_id = ? AND space_id = ?""",
-        (tenant_id, space_id),
-    ).fetchone()
-    if row is None:
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            """SELECT level, approver_roles_json, ceo_only
+               FROM key_policy
+               WHERE tenant_id = ? AND space_id = ?""",
+            (tenant_id, space_id),
+        ).fetchone()
+        if row is None:
+            return KeyPolicy(
+                tenant_id=tenant_id,
+                space_id=space_id,
+                level=KeyLevel.CLOSED,
+                approver_roles=DEFAULT_APPROVER_ROLES,
+            )
+
+        import json
+
+        roles = frozenset(json.loads(row["approver_roles_json"] or "[]"))
         return KeyPolicy(
             tenant_id=tenant_id,
             space_id=space_id,
-            level=KeyLevel.CLOSED,
-            approver_roles=DEFAULT_APPROVER_ROLES,
+            level=KeyLevel(row["level"]),
+            approver_roles=roles or DEFAULT_APPROVER_ROLES,
+            ceo_only=bool(row["ceo_only"]),
         )
-
-    import json
-
-    roles = frozenset(json.loads(row["approver_roles_json"] or "[]"))
-    return KeyPolicy(
-        tenant_id=tenant_id,
-        space_id=space_id,
-        level=KeyLevel(row["level"]),
-        approver_roles=roles or DEFAULT_APPROVER_ROLES,
-        ceo_only=bool(row["ceo_only"]),
-    )
 
 
 def set_policy(
@@ -78,21 +83,35 @@ def set_policy(
     *,
     approver_roles: set[str] | None = None,
     ceo_only: bool = False,
+    updated_by: str | None = None,
 ) -> KeyPolicy:
     """Set a key policy. Existing policies are overwritten."""
 
     import json
+    from datetime import datetime, timezone
 
     roles = frozenset(approver_roles) if approver_roles else DEFAULT_APPROVER_ROLES
-    conn.execute(
-        """INSERT INTO key_policy (tenant_id, space_id, level, approver_roles_json, ceo_only)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(tenant_id, space_id) DO UPDATE SET
-               level = excluded.level,
-               approver_roles_json = excluded.approver_roles_json,
-               ceo_only = excluded.ceo_only""",
-        (tenant_id, space_id, level.value, json.dumps(sorted(roles)), int(ceo_only)),
-    )
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        conn.execute(
+            """INSERT INTO key_policy (tenant_id, space_id, level, approver_roles_json, ceo_only, updated_at, updated_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(tenant_id, space_id) DO UPDATE SET
+                   level = excluded.level,
+                   approver_roles_json = excluded.approver_roles_json,
+                   ceo_only = excluded.ceo_only,
+                   updated_at = excluded.updated_at,
+                   updated_by = excluded.updated_by""",
+            (
+                tenant_id,
+                space_id,
+                level.value,
+                json.dumps(sorted(roles)),
+                int(ceo_only),
+                datetime.now(timezone.utc).isoformat(),
+                updated_by,
+            ),
+        )
     return KeyPolicy(
         tenant_id=tenant_id,
         space_id=space_id,

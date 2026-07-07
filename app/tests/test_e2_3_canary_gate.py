@@ -17,8 +17,6 @@ def client(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) ->
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     for name in (
         "OPENAI_API_KEY",
         "FABERLOOM_OPENAI_API_KEY",

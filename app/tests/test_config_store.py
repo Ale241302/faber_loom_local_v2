@@ -114,3 +114,62 @@ def test_store_user_delete_provider_does_not_affect_global(monkeypatch: pytest.M
     store.delete("openai", user_id="user-a@example.com")
     assert store.get("openai", user_id="user-a@example.com") == {}
     assert store.get("openai")["api_key"] == "sk-global"
+
+
+def test_store_uses_tenant_scoped_encryption_for_api_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+    store.set("openai", {"api_key": "sk-secret", "model_default": "gpt-4o-mini"})
+
+    # Raw file must not contain the secret even when decrypted with the master key.
+    raw = (tmp_path / "cfg" / "providers.json").read_bytes()
+    assert b"sk-secret" not in raw
+
+    # Re-create the store to force a reload from disk.
+    store2 = ProviderConfigStore()
+    cfg = store2.get("openai")
+    assert cfg["api_key"] == "sk-secret"
+    assert cfg["model_default"] == "gpt-4o-mini"
+
+    # A tenant-scoped key file must have been created.
+    assert (tmp_path / "cfg" / "tenant_keys.json").exists()
+
+
+def test_store_migrates_legacy_plaintext_api_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+    store.set("openai", {"api_key": "sk-secret", "model_default": "gpt-4o-mini"})
+
+    # Manually downgrade the stored api_key to plaintext to simulate a legacy row.
+    data = store.load()
+    tenant_root = data["tenants"]["default"]
+    tenant_root["openai"]["api_key"] = "sk-secret"
+    store.save(data)
+
+    # Reading the legacy plaintext value returns it as-is.
+    store2 = ProviderConfigStore()
+    assert store2.get("openai")["api_key"] == "sk-secret"
+
+    # The next write re-encrypts it.
+    store2.set("openai", {"model_default": "gpt-4o"})
+    raw = (tmp_path / "cfg" / "providers.json").read_bytes()
+    assert b"sk-secret" not in raw
+    assert ProviderConfigStore().get("openai")["api_key"] == "sk-secret"
+
+
+def test_store_encrypts_and_decrypts_password_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+    store = ProviderConfigStore()
+    store.set("smtp", {"server": "smtp.example.com", "password": "mail-secret"})
+
+    raw = (tmp_path / "cfg" / "providers.json").read_bytes()
+    assert b"mail-secret" not in raw
+
+    assert ProviderConfigStore().get("smtp")["password"] == "mail-secret"
+    assert ProviderConfigStore().get("smtp")["server"] == "smtp.example.com"

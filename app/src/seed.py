@@ -120,10 +120,14 @@ def seed_ambient_for_all_tenants(conn: sqlite3.Connection) -> None:
     bootstrap get ambient coverage immediately.
     """
 
-    tenant_ids = {
-        row[0]
-        for row in conn.execute("SELECT DISTINCT tenant_id FROM workspace")
-    }
+    from .db_adapter import transaction
+
+    bootstrap_ctx = system_context()
+    with transaction(conn, ctx=bootstrap_ctx):
+        tenant_ids = {
+            row[0]
+            for row in conn.execute("SELECT DISTINCT tenant_id FROM workspace")
+        }
     for tenant_id in tenant_ids:
         seed_ambient_config(conn, tenant_id)
 

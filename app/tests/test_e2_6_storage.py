@@ -13,7 +13,6 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
     monkeypatch.setenv("FL_STORAGE_BACKEND", "memory")
 
     from app.src.audit import audit_writer
@@ -204,3 +203,27 @@ def test_minio_backend_uses_public_endpoint_for_presigned(monkeypatch: pytest.Mo
     # Presigned client must sign against the TLS front door.
     assert backend._presigned_client._base_url.host == "minio.faberloom.ai"
     assert backend._presigned_client._base_url.is_https
+
+
+def test_get_tenant_encryption_key_returns_scoped_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.src.context import Context
+    from app.src.storage import get_tenant_encryption_key
+
+    monkeypatch.setenv("FABERLOOM_MASTER_KEY", "DV5NGDoFt9FuQaR4zN-jTBhYd-3m4BNqLWKmtZPRtxo=")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    ctx = Context(workspace_id="ws_1", tenant_id="tenant-a", user_id="user-a")
+    key = get_tenant_encryption_key(ctx)
+    assert key.tenant_id == "tenant-a"
+
+    # Same tenant returns the same key id (key is persisted).
+    key2 = get_tenant_encryption_key(ctx)
+    assert key2.key_id == key.key_id
+
+    # Different tenant gets a different key.
+    ctx_b = Context(workspace_id="ws_1", tenant_id="tenant-b", user_id="user-a")
+    key_b = get_tenant_encryption_key(ctx_b)
+    assert key_b.tenant_id == "tenant-b"
+    assert key_b.key_id != key.key_id

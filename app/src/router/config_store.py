@@ -21,7 +21,8 @@ from typing import Any
 
 from cryptography.fernet import Fernet
 
-from ..context import DEFAULT_TENANT_ID, Context
+from ..context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context
+from ..security.secrets import TenantSecretStore
 
 
 def get_config_dir() -> Path:
@@ -140,12 +141,28 @@ class ProviderConfigStore:
     """Encrypted JSON store for provider runtime configuration."""
 
     FILE_NAME = "providers.json"
+    # Fields that must be encrypted with the tenant data key before persistence.
+    _SECRET_FIELDS = {"api_key", "password"}
 
     def __init__(self) -> None:
         self._config_dir = get_config_dir()
         self._config_dir.mkdir(parents=True, exist_ok=True)
         self._path = self._config_dir / self.FILE_NAME
         self._fernet = Fernet(get_master_key())
+        self._secret_store = TenantSecretStore()
+
+    def _context(
+        self,
+        user_id: str | None,
+        tenant_id: str | None,
+    ) -> Context:
+        """Build a valid Context for tenant-scoped secret operations."""
+
+        return Context(
+            workspace_id=SYSTEM_WORKSPACE_ID,
+            tenant_id=_resolve_tenant_id(tenant_id),
+            user_id=user_id,
+        )
 
     def load(self) -> dict[str, Any]:
         """Decrypt and return the full provider configuration dictionary."""
@@ -241,7 +258,43 @@ class ProviderConfigStore:
         """Return the stored configuration for a single provider."""
 
         data = self.load()
-        return self._user_root(data, user_id, tenant_id).get(slug, {})
+        cfg = self._user_root(data, user_id, tenant_id).get(slug, {})
+        return self._decrypt_config(cfg, user_id, tenant_id)
+
+    def _encrypt_config(
+        self,
+        values: dict[str, Any],
+        user_id: str | None,
+        tenant_id: str | None,
+    ) -> dict[str, Any]:
+        """Encrypt secret fields in ``values`` using the tenant data key."""
+
+        ctx = self._context(user_id, tenant_id)
+        return {
+            key: self._secret_store.encrypt_for_tenant(ctx, value)
+            if key in self._SECRET_FIELDS and value is not None
+            else value
+            for key, value in values.items()
+        }
+
+    def _decrypt_config(
+        self,
+        cfg: dict[str, Any],
+        user_id: str | None,
+        tenant_id: str | None,
+    ) -> dict[str, Any]:
+        """Decrypt secret fields in ``cfg``; legacy plaintext is returned as-is."""
+
+        if not cfg:
+            return {}
+        ctx = self._context(user_id, tenant_id)
+        decrypted = dict(cfg)
+        for key in self._SECRET_FIELDS:
+            if key in decrypted:
+                decrypted[key] = self._secret_store.decrypt_for_tenant(
+                    ctx, decrypted[key]
+                )
+        return decrypted
 
     def set(
         self,
@@ -255,7 +308,8 @@ class ProviderConfigStore:
         data = self.load()
         root = self._ensure_user_copy(data, user_id, tenant_id)
         current = root.get(slug, {})
-        for key, value in values.items():
+        encrypted = self._encrypt_config(values, user_id, tenant_id)
+        for key, value in encrypted.items():
             if value is None:
                 current.pop(key, None)
             else:
@@ -299,7 +353,11 @@ class ProviderConfigStore:
 
         data = self.load()
         root = self._user_root(data, user_id, tenant_id)
-        return {k: v for k, v in root.items() if k != "users"}
+        return {
+            slug: self._decrypt_config(cfg, user_id, tenant_id)
+            for slug, cfg in root.items()
+            if slug != "users"
+        }
 
 
 def get_user_provider_config(ctx: Context, slug: str) -> dict[str, Any]:

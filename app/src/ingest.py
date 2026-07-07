@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import sqlite3
+import tempfile
 from typing import Any
 
 from .context import Context
@@ -241,21 +243,31 @@ def _extract_image(blob: bytes, require_local: bool) -> str:
 
 
 def _extract_audio(blob: bytes, require_local: bool) -> str:
+    # Import only when audio/video files are processed.
     try:
-        import whisper  # type: ignore[import-untyped]
+        from faster_whisper import WhisperModel  # type: ignore[import-untyped]
     except Exception as exc:  # pragma: no cover - optional dependency
+        message = "Transcripción local no disponible (instalar faster-whisper)"
         if require_local:
-            raise LocalOnlyEngineMissingError(
-                "Transcripción local no disponible (instalar openai-whisper)"
-            ) from exc
-        raise LocalOnlyEngineMissingError("Transcripción local no disponible") from exc
+            message = "Transcripción local requerida pero faster-whisper no está instalado"
+        raise LocalOnlyEngineMissingError(message) from exc
 
+    model_name = os.getenv("FABERLOOM_WHISPER_MODEL", "base")
     try:
-        with io.BytesIO(blob) as src:
-            # whisper expects a file path or numpy array; passing a file-like works with the API.
-            model = whisper.load_model("base")
-            result = model.transcribe(src)
-        return result.get("text", "").strip()
+        # faster-whisper can decode many formats via ffmpeg; use a temp file so
+        # the original container format is preserved for the decoder.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            tmp.write(blob)
+            tmp_path = tmp.name
+        try:
+            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            segments, _ = model.transcribe(tmp_path)
+            return " ".join(segment.text for segment in segments).strip()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
     except Exception as exc:
         raise IngestError(f"Transcription failed: {exc}") from exc
 

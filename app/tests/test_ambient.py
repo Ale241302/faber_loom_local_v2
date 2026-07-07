@@ -16,8 +16,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "faberloom.sqlite3"
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
-    monkeypatch.setenv("FABERLOOM_DEV_TRUST_HEADERS", "true")
-
     from app.src.audit import audit_writer
     from app.src.main import create_app
 

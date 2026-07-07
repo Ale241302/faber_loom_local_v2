@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .db_adapter import transaction
 from .context import Context
 
 
@@ -118,13 +119,14 @@ def resolve(
 ) -> Any:
     """Resolve ``key`` following the user > workspace > tenant > default cascade."""
 
-    for value in (
-        _user_config(conn, ctx, key),
-        _workspace_config(conn, ctx, key),
-        _tenant_config(conn, ctx, key),
-        DEFAULTS.get(key),
-        default,
-    ):
-        if value is not None:
-            return value
+    with transaction(conn, ctx=ctx):
+        for value in (
+            _user_config(conn, ctx, key),
+            _workspace_config(conn, ctx, key),
+            _tenant_config(conn, ctx, key),
+            DEFAULTS.get(key),
+            default,
+        ):
+            if value is not None:
+                return value
     raise ConfigCascadeError(f"No value found for setting '{key}'")
