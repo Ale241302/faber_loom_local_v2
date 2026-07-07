@@ -284,29 +284,56 @@ Resultado esperado: **0 fugas cross-workspace / cross-tenant**.
 
 ### 8.1 Backup nocturno con `mc mirror`
 
-Cron en el host (ej. `crontab -e` como usuario de backup):
+El script automatizado vive en `/opt/faber_loom/scripts/minio-backup.sh` y está en cron diario a las 03:00:
 
-```cron
-0 3 * * * /usr/local/bin/mc mirror --overwrite --remove faberloom/fl-uploads /opt/backups/faberloom/minio/fl-uploads >> /var/log/faberloom-minio-backup.log 2>&1
-5 3 * * * /usr/local/bin/mc mirror --overwrite --remove faberloom/fl-generated /opt/backups/faberloom/minio/fl-generated >> /var/log/faberloom-minio-backup.log 2>&1
+```bash
+ls /opt/faber_loom/scripts/minio-backup.sh
+sudo cat /var/log/faberloom-minio-backup.log
+```
+
+Para reinstalar o modificar:
+
+```bash
+crontab -e
+# 0 3 * * * /opt/faber_loom/scripts/minio-backup.sh
+```
+
+Contenido del script (resumen):
+
+```bash
+mc alias set local http://127.0.0.1:9100 "$FL_MINIO_ROOT_USER" "$FL_MINIO_ROOT_PASSWORD"
+mc mirror --overwrite --remove local/fl-uploads /opt/backups/faberloom/minio/fl-uploads
+mc mirror --overwrite --remove local/fl-generated /opt/backups/faberloom/minio/fl-generated
 ```
 
 `--remove` mantiene el destino sincronizado; usar con cuidado si se necesita retención point-in-time. En ese caso reemplazar por `mc cp --recursive` con fecha en el path.
 
 ### 8.2 Smoke test de restore
 
-Antes de confiar en backups con datos reales:
+Script de referencia ejecutado tras el primer backup:
 
 ```bash
-# 1. Levantar MinIO temporal local o en un volumen nuevo
-# 2. Restaurar buckets
-docker run --rm -v /opt/backups/faberloom/minio:/backup minio/mc \
-  mirror /backup/fl-uploads target/fl-uploads
+mkdir -p /tmp/minio-restore-test
+docker run -d --name minio-restore-test -p 9200:9000 -p 9201:9001 \
+  -v /tmp/minio-restore-test:/data \
+  -e MINIO_ROOT_USER=restoretest \
+  -e MINIO_ROOT_PASSWORD=restoretest123 \
+  minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --console-address ":9001"
 
-# 3. Verificar que los objetos restaurados son legibles
-mc ls target/fl-uploads
-mc cat target/fl-uploads/ws_<id>/upload/<key> | head
+sleep 5
+mc alias set restoretest http://127.0.0.1:9200 restoretest restoretest123
+mc mb restoretest/fl-uploads
+mc mb restoretest/fl-generated
+mc mirror /opt/backups/faberloom/minio/fl-uploads restoretest/fl-uploads
+mc mirror /opt/backups/faberloom/minio/fl-generated restoretest/fl-generated
+mc ls restoretest/fl-uploads
+mc ls restoretest/fl-generated
+
+# Limpiar
+docker stop minio-restore-test && docker rm minio-restore-test && rm -rf /tmp/minio-restore-test
 ```
+
+Resultado esperado: ambos buckets son listables y los objetos son legibles.
 
 Documentar el resultado en `harness/reports/` o en el changelog operativo.
 
@@ -439,7 +466,19 @@ docker compose up -d faberloom-minio
 
 ---
 
-## 12. Checklist de emergencia
+## 12. Monitoreo de disco
+
+Script `/opt/faber_loom/scripts/minio-disk-alert.sh` corre cada hora y escribe en syslog si el uso de `/var/lib/docker` supera el 80%:
+
+```bash
+sudo tail /var/log/faberloom-minio-disk-alert.log
+```
+
+Para extender a Slack/email, modificar el script y añadir el webhook/servidor SMTP.
+
+---
+
+## 13. Checklist de emergencia
 
 | Síntoma | Primer paso | Segundo paso |
 |---|---|---|
