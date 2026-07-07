@@ -189,7 +189,7 @@ def test_delete_object_requires_confirmation(client: TestClient) -> None:
     assert gone.status_code == 404
 
 
-def test_minio_backend_rewrites_presigned_url_to_public_host(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_minio_backend_uses_public_endpoint_for_presigned(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FL_MINIO_ACCESS_KEY", "test-access")
     monkeypatch.setenv("FL_MINIO_SECRET_KEY", "test-secret")
     monkeypatch.setenv("FL_MINIO_ENDPOINT", "faberloom-minio:9000")
@@ -198,8 +198,9 @@ def test_minio_backend_rewrites_presigned_url_to_public_host(monkeypatch: pytest
     from app.src.storage import _MinioStoreBackend
 
     backend = _MinioStoreBackend()
-    internal = "http://faberloom-minio:9000/fl-uploads/ws-ws_123/upload/obj_abc/file.png?X-Amz-Algorithm=AWS4-HMAC-SHA256"
-    public = backend._to_public_url(internal)
-    assert public.startswith("https://minio.faberloom.ai/fl-uploads/")
-    assert "faberloom-minio:9000" not in public
-    assert public.endswith("X-Amz-Algorithm=AWS4-HMAC-SHA256")
+    # Internal client stays on the docker network.
+    assert backend._client._base_url.host == "faberloom-minio:9000"
+    assert not backend._client._base_url.is_https
+    # Presigned client must sign against the TLS front door.
+    assert backend._presigned_client._base_url.host == "minio.faberloom.ai"
+    assert backend._presigned_client._base_url.is_https

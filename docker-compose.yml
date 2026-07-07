@@ -91,7 +91,8 @@ services:
       - "9100:9000"
       - "9101:9001"
     networks:
-      - mwt_default
+      mwt_default:
+        ipv4_address: 172.20.0.30
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
