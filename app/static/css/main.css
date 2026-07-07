@@ -868,3 +868,10 @@ button { background: none; border: none; cursor: pointer; }
 .composer-attachment button { width: 22px; height: 22px; padding: 0; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
 .composer-attachment button:hover { color: var(--text-primary); }
 .composer-drag-over .composer { border-color: var(--coral); box-shadow: 0 0 0 3px var(--coral-soft); }
+
+.composer-attachment-preview { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-raised); border: 1px solid var(--border-subtle); margin-bottom: 8px; }
+.composer-attachment-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: var(--r-sm); background: var(--bg-sunken); flex-shrink: 0; }
+.composer-attachment-doc { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.composer-attachment-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.composer-attachment-name { font-size: 12px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-attachment-status { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); }

@@ -442,12 +442,19 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   const [mode, setMode] = useState("manual");
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [attachment, setAttachment] = useState(null);
+  const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
   const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
   const availableModels = modelAllowlist[provider] || [];
+
+  const clearAttachment = () => {
+    if (attachmentPreview?.url) URL.revokeObjectURL(attachmentPreview.url);
+    setAttachmentPreview(null);
+    setAttachment(null);
+  };
 
   const uploadFile = async (file) => {
     if (!activeWorkspace) return;
@@ -471,26 +478,32 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         size_bytes: file.size,
       });
       setAttachment({ object_id: presigned.object_id, file_name: file.name });
+      setAttachmentPreview((prev) => prev && { ...prev, uploading: false });
     } catch (err) {
       alert(err.message);
+      clearAttachment();
     } finally {
       setUploading(false);
     }
   };
 
+  const startFileUpload = (file) => {
+    if (!file) return;
+    const url = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    setAttachmentPreview({ file, url, uploading: true });
+    uploadFile(file);
+  };
+
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     event.target.value = "";
-    if (file) uploadFile(file);
+    startFileUpload(file);
   };
-
-  const clearAttachment = () => setAttachment(null);
 
   const handleDrop = (event) => {
     event.preventDefault();
     setIsDragging(false);
-    const file = event.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    startFileUpload(event.dataTransfer.files[0]);
   };
 
   const handleDragOver = (event) => {
@@ -514,7 +527,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     }
     onSend(text, options);
     setDraft("");
-    setAttachment(null);
+    clearAttachment();
   };
 
   const handleProviderChange = (p) => {
@@ -534,10 +547,20 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
 
   return <form className={cx("composer-shell", isDragging && "composer-drag-over")} onSubmit={submit} aria-label="Composer de chat" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
     <div className="composer">
-      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || "Escribe tu mensaje… Usa @skill o /run."} rows="2" disabled={disabled || uploading}/>
+      {attachmentPreview && <div className="composer-attachment-preview">
+        {attachmentPreview.url
+          ? <img className="composer-attachment-thumb" src={attachmentPreview.url} alt={attachmentPreview.file.name}/>
+          : <div className="composer-attachment-thumb composer-attachment-doc"><Icon name="file" size={22}/></div>}
+        <div className="composer-attachment-meta">
+          <span className="composer-attachment-name">{attachmentPreview.file.name}</span>
+          <span className="composer-attachment-status">{attachmentPreview.uploading ? "Subiendo…" : "Listo para enviar"}</span>
+        </div>
+        <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto" disabled={uploading}><Icon name="x" size={14}/></button>
+      </div>}
+      <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
       <div className="composer-actions">
-        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading}/>
-        <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
+        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
+        <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
           <Icon name="paperclip" size={16}/>
         </button>
         <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
@@ -546,11 +569,6 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
       </div>
     </div>
-    {attachment && <div className="composer-attachment">
-      <Icon name="file" size={14}/>
-      <span>{attachment.file_name}</span>
-      <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto"><Icon name="x" size={14}/></button>
-    </div>}
     {showModelPicker && <div className="composer-picker">
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ ...S.label, margin: 0, fontSize: 12 }}>

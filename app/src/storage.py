@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from datetime import timedelta
 from io import BytesIO
 from typing import Any
 
@@ -162,11 +163,13 @@ class _MinioStoreBackend:
     ) -> str:
         self._ensure_bucket(bucket)
         return self._client.presigned_put_object(
-            bucket, key, expires=expires,
+            bucket, key, expires=timedelta(seconds=expires),
         )
 
     def presigned_get_url(self, bucket: str, key: str, expires: int = 3600) -> str:
-        return self._client.presigned_get_object(bucket, key, expires=expires)
+        return self._client.presigned_get_object(
+            bucket, key, expires=timedelta(seconds=expires)
+        )
 
 
 class ObjectStore:
