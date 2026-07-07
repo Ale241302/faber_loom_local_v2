@@ -49,8 +49,17 @@ def _postgres_adapter() -> Iterator[Any]:
 
 
 def _insert_workspace(conn: Any, schema: str, ws_id: str, tenant_id: str, is_canary: int = 0) -> None:
-    conn.execute(
-        f'INSERT INTO "{schema}".workspace (id, name, slug, tenant_id, is_canary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    import psycopg
+
+    conn.execute("BEGIN")
+    cur = conn.cursor()
+    cur.execute(
+        psycopg.sql.SQL("SET LOCAL app.current_tenant = {}").format(psycopg.sql.Literal(tenant_id))
+    )
+    cur.execute(
+        psycopg.sql.SQL(
+            f'INSERT INTO "{schema}".workspace (id, name, slug, tenant_id, is_canary, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s)'
+        ),
         (ws_id, ws_id, ws_id, tenant_id, is_canary, "2024-01-01", "2024-01-01"),
     )
     conn.commit()
@@ -146,12 +155,21 @@ def test_rls_kb_scope_is_tenant_workspace_bound() -> None:
 
             conn = adapter.connect()
             try:
-                conn.execute(
-                    f'INSERT INTO "{schema}".kb_source (id, workspace_id, tenant_id, type, title, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                import psycopg
+
+                cur = conn.cursor()
+                cur.execute(
+                    psycopg.sql.SQL("SET LOCAL app.current_tenant = {}").format(psycopg.sql.Literal("tenant-a"))
+                )
+                cur.execute(
+                    psycopg.sql.SQL("SET LOCAL app.current_workspace = {}").format(psycopg.sql.Literal("ws-a"))
+                )
+                cur.execute(
+                    f'INSERT INTO "{schema}".kb_source (id, workspace_id, tenant_id, type, title, created_at) VALUES (%s, %s, %s, %s, %s, %s)',
                     ("kbs-a", "ws-a", "tenant-a", "md", "Source A", "2024-01-01"),
                 )
-                conn.execute(
-                    f'INSERT INTO "{schema}".kb_chunk (id, workspace_id, source_id, chunk_index, content_text, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                cur.execute(
+                    f'INSERT INTO "{schema}".kb_chunk (id, workspace_id, source_id, chunk_index, content_text, tenant_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)',
                     ("chunk-a", "ws-a", "kbs-a", 0, "alpha bravo", "tenant-a", "2024-01-01"),
                 )
                 conn.commit()

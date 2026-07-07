@@ -105,13 +105,22 @@ def _sqlite_corpus() -> Iterator[tuple[Any, Context]]:
 
 
 def _seed_postgres_corpus(conn: Any, schema: str) -> Context:
+    import psycopg
+
     ctx = Context(workspace_id="ws-1", tenant_id="tenant-1", user_id="u1")
-    conn.execute(
-        f'INSERT INTO "{schema}".workspace (id, name, slug, tenant_id, is_canary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    cur = conn.cursor()
+    cur.execute(
+        psycopg.sql.SQL("SET LOCAL app.current_tenant = {}").format(psycopg.sql.Literal("tenant-1"))
+    )
+    cur.execute(
+        psycopg.sql.SQL("SET LOCAL app.current_workspace = {}").format(psycopg.sql.Literal("ws-1"))
+    )
+    cur.execute(
+        f'INSERT INTO "{schema}".workspace (id, name, slug, tenant_id, is_canary, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s)',
         ("ws-1", "WS", "ws-1", "tenant-1", 0, "2024-01-01", "2024-01-01"),
     )
-    conn.execute(
-        f'INSERT INTO "{schema}".kb_source (id, workspace_id, tenant_id, type, title, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    cur.execute(
+        f'INSERT INTO "{schema}".kb_source (id, workspace_id, tenant_id, type, title, created_at) VALUES (%s, %s, %s, %s, %s, %s)',
         ("kbs-1", "ws-1", "tenant-1", "md", "Manual", "2024-01-01"),
     )
     chunks = [
@@ -120,8 +129,8 @@ def _seed_postgres_corpus(conn: Any, schema: str) -> Context:
         ("chunk-3", "Para facturar se necesita el NIT del receptor y el CAI vigente."),
     ]
     for cid, text in chunks:
-        conn.execute(
-            f'INSERT INTO "{schema}".kb_chunk (id, workspace_id, source_id, chunk_index, content_text, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        cur.execute(
+            f'INSERT INTO "{schema}".kb_chunk (id, workspace_id, source_id, chunk_index, content_text, tenant_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)',
             (cid, "ws-1", "kbs-1", 0, text, "tenant-1", "2024-01-01"),
         )
     conn.commit()
@@ -159,6 +168,7 @@ def test_postgres_tsvector_returns_expected_chunks() -> None:
 
             conn = adapter.connect()
             try:
+                conn.execute(f'SET search_path TO "{schema}"')
                 with adapter.transaction(conn, ctx=ctx):
                     results = search_kb_chunks(ctx, conn, "facturación", limit=5)
                     ids = _chunk_ids(results)
@@ -193,6 +203,7 @@ def test_fts_parity_across_engines() -> None:
 
             conn = adapter.connect()
             try:
+                conn.execute(f'SET search_path TO "{schema}"')
                 with adapter.transaction(conn, ctx=pg_ctx):
                     for q in queries:
                         pg_ids = _chunk_ids(search_kb_chunks(pg_ctx, conn, q, limit=5))

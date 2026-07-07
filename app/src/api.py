@@ -276,6 +276,11 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _is_pytest_run() -> bool:
+    """Return True when code is executing inside a pytest test."""
+    return bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+
 def context_from_request(request: Request, workspace_id: str | None = None) -> Context:
     # Authenticated user takes precedence when auth is active.
     user = getattr(request.state, "user", None)
@@ -285,7 +290,9 @@ def context_from_request(request: Request, workspace_id: str | None = None) -> C
         user_id = user.get("user_id") or user.get("sub") or "local"
         actor_id = user.get("actor_id") or user_id
         actor_role = user.get("role") or "owner"
-    elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS"):
+    elif os.getenv("FABERLOOM_DEV_TRUST_HEADERS") and _is_pytest_run():
+        # P0: header trust is only allowed inside pytest runs. It must never be
+        # usable in production, where tenant must flow through Context/SET LOCAL.
         tenant_id = request.headers.get("x-tenant-id") or DEFAULT_TENANT_ID
         user_id = request.headers.get("x-user-id") or "local"
         actor_id = request.headers.get("x-actor-id") or user_id

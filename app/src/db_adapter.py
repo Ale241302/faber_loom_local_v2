@@ -243,6 +243,23 @@ class _PostgresConnectionWrapper:
     def cursor(self) -> Any:
         return _CursorWrapper(self._conn.cursor(), self.engine)
 
+    def _set_config_var(self, name: str, value: str) -> None:
+        """Execute ``SET LOCAL name = value`` safely for RLS session variables.
+
+        ``name`` is allow-listed because it is injected as raw SQL; ``value`` is
+        escaped via psycopg3's literal encoder.
+        """
+
+        if name not in {"app.current_tenant", "app.current_workspace", "app.tenant_id"}:
+            raise ValueError(f"Disallowed SET variable: {name}")
+        from psycopg import sql
+
+        query = sql.SQL("SET LOCAL {name} = {value}").format(
+            name=sql.SQL(name), value=sql.Literal(value)
+        )
+        cur = self._conn.cursor()
+        cur.execute(query)
+
     @property
     def in_transaction(self) -> bool:
         # psycopg3 TransactionStatus: IDLE = 0, INTRANS = 2, ACTIVE = 1
@@ -433,9 +450,9 @@ def transaction(conn: Any, ctx: Context | None = None) -> Iterator[None]:
         if engine == "postgres" and ctx is not None:
             tenant_id = ctx.tenant_id or ""
             workspace_id = ctx.workspace_id or ""
-            conn.execute("SET LOCAL app.current_tenant = %s", (tenant_id,))
-            conn.execute("SET LOCAL app.current_workspace = %s", (workspace_id,))
-            conn.execute("SET LOCAL app.tenant_id = %s", (tenant_id,))
+            conn._set_config_var("app.current_tenant", tenant_id)
+            conn._set_config_var("app.current_workspace", workspace_id)
+            conn._set_config_var("app.tenant_id", tenant_id)
         yield
     except Exception:
         if not outer_transaction:

@@ -55,6 +55,12 @@ def postgres_test_schema() -> Iterator[tuple[Any, str]]:
     try:
         yield conn, schema_name
     finally:
+        # Close any open transaction before switching autocommit so cleanup can
+        # run even if a test left the connection in INTRANS/INERROR.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
@@ -147,15 +153,15 @@ def ensure_core_tables(conn: Any, schema: str) -> None:
         created_at TEXT NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS "{schema}".idx_kb_chunk_workspace
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_workspace
         ON "{schema}".kb_chunk(workspace_id);
-    CREATE INDEX IF NOT EXISTS "{schema}".idx_kb_chunk_source
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_source
         ON "{schema}".kb_chunk(source_id);
-    CREATE INDEX IF NOT EXISTS "{schema}".idx_kb_fact_workspace
+    CREATE INDEX IF NOT EXISTS idx_kb_fact_workspace
         ON "{schema}".kb_fact(workspace_id);
 
     -- Full-text search via tsvector/GIN for Postgres parity with SQLite FTS5.
-    CREATE INDEX IF NOT EXISTS "{schema}".idx_kb_chunk_fts
+    CREATE INDEX IF NOT EXISTS idx_kb_chunk_fts
         ON "{schema}".kb_chunk USING GIN (to_tsvector('simple', content_text));
     """
     conn.execute(sql)
@@ -166,10 +172,14 @@ def enable_rls(conn: Any, schema: str) -> None:
     """Enable RLS and create tenant/workspace policies for the test schema."""
 
     sql = f"""
-    ALTER TABLE "{schema}".workspace ENABLE ROW LEVEL FORCE;
-    ALTER TABLE "{schema}".kb_source ENABLE ROW LEVEL FORCE;
-    ALTER TABLE "{schema}".kb_chunk ENABLE ROW LEVEL FORCE;
-    ALTER TABLE "{schema}".kb_fact ENABLE ROW LEVEL FORCE;
+    ALTER TABLE "{schema}".workspace ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".workspace FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_source ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_source FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_chunk ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_chunk FORCE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_fact ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "{schema}".kb_fact FORCE ROW LEVEL SECURITY;
 
     CREATE OR REPLACE FUNCTION "{schema}".set_app_scope(p_tenant TEXT, p_workspace TEXT)
     RETURNS VOID AS $$
@@ -180,19 +190,19 @@ def enable_rls(conn: Any, schema: str) -> None:
     $$ LANGUAGE plpgsql SECURITY DEFINER;
 
     CREATE POLICY tenant_workspace_policy ON "{schema}".workspace
-        USING (tenant_id = current_setting('app.current_tenant')::TEXT);
+        USING (tenant_id = current_setting('app.current_tenant', true)::TEXT);
 
     CREATE POLICY tenant_workspace_policy ON "{schema}".kb_source
-        USING (tenant_id = current_setting('app.current_tenant')::TEXT
-               AND workspace_id = current_setting('app.current_workspace')::TEXT);
+        USING (tenant_id = current_setting('app.current_tenant', true)::TEXT
+               AND workspace_id = current_setting('app.current_workspace', true)::TEXT);
 
     CREATE POLICY tenant_workspace_policy ON "{schema}".kb_chunk
-        USING (tenant_id = current_setting('app.current_tenant')::TEXT
-               AND workspace_id = current_setting('app.current_workspace')::TEXT);
+        USING (tenant_id = current_setting('app.current_tenant', true)::TEXT
+               AND workspace_id = current_setting('app.current_workspace', true)::TEXT);
 
     CREATE POLICY tenant_workspace_policy ON "{schema}".kb_fact
-        USING (tenant_id = current_setting('app.current_tenant')::TEXT
-               AND workspace_id = current_setting('app.current_workspace')::TEXT);
+        USING (tenant_id = current_setting('app.current_tenant', true)::TEXT
+               AND workspace_id = current_setting('app.current_workspace', true)::TEXT);
     """
     conn.execute(sql)
     conn.commit()
