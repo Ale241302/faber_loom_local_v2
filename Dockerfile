@@ -27,6 +27,7 @@ FROM python:3.13-slim
 # Runtime library required by the sqlcipher3 extension.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlcipher1 \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
