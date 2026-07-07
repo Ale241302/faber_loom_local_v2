@@ -27,7 +27,8 @@ CANARY_TENANT_ID = "canary"
 
 def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
     bootstrap_ctx = system_context()
-    existing = get_workspace_by_slug(bootstrap_ctx, conn, DEMO_WORKSPACE_SLUG)
+    with transaction(conn, ctx=bootstrap_ctx):
+        existing = get_workspace_by_slug(bootstrap_ctx, conn, DEMO_WORKSPACE_SLUG)
     if existing is not None:
         return existing
 
@@ -138,7 +139,8 @@ def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
     from .context import DEFAULT_TENANT_ID
 
     canary_ctx = system_context(tenant_id=CANARY_TENANT_ID)
-    existing = get_workspace_by_slug(canary_ctx, conn, CANARY_WORKSPACE_SLUG)
+    with transaction(conn, ctx=canary_ctx):
+        existing = get_workspace_by_slug(canary_ctx, conn, CANARY_WORKSPACE_SLUG)
     if existing is not None:
         return existing
 
