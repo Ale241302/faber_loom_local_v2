@@ -729,6 +729,7 @@ def update_routing_policy(
     provider_allowlist: list[str] | None = None,
     model_allowlist: dict[str, list[str]] | None = None,
     budget_cap_usd: float | None = None,
+    user_budget_cap_usd: float | None = None,
     auto_mode_enabled: bool | None = None,
     max_auto_steps: int | None = None,
     require_local_only: bool | None = None,
@@ -744,6 +745,8 @@ def update_routing_policy(
         updates["model_allowlist_json"] = json.dumps(model_allowlist, ensure_ascii=False)
     if budget_cap_usd is not None:
         updates["budget_cap_usd"] = budget_cap_usd
+    if user_budget_cap_usd is not None:
+        updates["user_budget_cap_usd"] = user_budget_cap_usd
     if auto_mode_enabled is not None:
         updates["auto_mode_enabled"] = 1 if auto_mode_enabled else 0
     if max_auto_steps is not None:
@@ -1220,6 +1223,7 @@ WORKSPACE_ROUTING_POLICY_COLUMNS = """
     provider_allowlist_json,
     model_allowlist_json,
     budget_cap_usd,
+    user_budget_cap_usd,
     auto_mode_enabled,
     max_auto_steps,
     require_local_only,
@@ -1630,6 +1634,32 @@ def list_usage_records(
     return [row_to_dict(row) for row in rows]
 
 
+def sum_user_usage_cost(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    since: str | None = None,
+) -> float:
+    """Return accumulated cost_usd for the current user across the tenant.
+
+    E2-4: soporte de budget por usuario (plan Sec.1.1 — budget cap y cost
+    ledger por usuario, no solo global).
+    """
+
+    if not ctx.user_id:
+        return 0.0
+    params: list[Any] = [ctx.require_tenant(), ctx.user_id]
+    sql = """
+        SELECT COALESCE(SUM(cost_usd), 0.0) AS total
+        FROM usage_record
+        WHERE tenant_id = ? AND user_id = ? AND status = 'succeeded'
+    """
+    if since:
+        sql += " AND created_at >= ?"
+        params.append(since)
+    row = conn.execute(sql, params).fetchone()
+    return float(row["total"] or 0.0)
+
+
 def sum_workspace_usage_cost(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -1677,6 +1707,7 @@ ROUTINE_RUN_COLUMNS = """
     approved_by,
     urgency,
     reason,
+    assigned_to,
     workspace_hmac,
     created_at
 """

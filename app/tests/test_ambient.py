@@ -92,6 +92,17 @@ def _create_routine_run(
         conn.close()
 
 
+def _enable_ambient(client: TestClient) -> None:
+    """El ciclo ambiental arranca OFF por contrato (plan E2 Sec.7.1);
+    los tests que disparan ciclos lo encienden explícitamente."""
+    resp = client.patch(
+        "/api/admin/ambient/config",
+        json={"global_enabled": True},
+        headers=_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def test_ambient_config_is_seeded(client: TestClient) -> None:
     resp = client.get("/api/admin/ambient/config", headers=_auth_headers())
     assert resp.status_code == 200
@@ -102,6 +113,7 @@ def test_ambient_config_is_seeded(client: TestClient) -> None:
 
 def test_failed_routine_detector_creates_proposal(client: TestClient) -> None:
     ws = _create_workspace(client, "Ambient Test Failed")
+    _enable_ambient(client)
     _create_routine_run(client, ws["id"], status="failed", hours_ago=1)
 
     resp = client.post(
@@ -126,6 +138,7 @@ def test_failed_routine_detector_creates_proposal(client: TestClient) -> None:
 
 def test_kill_switch_workspace_blocks_cycle(client: TestClient) -> None:
     ws = _create_workspace(client, "Ambient Kill Switch")
+    _enable_ambient(client)
     _create_routine_run(client, ws["id"], status="failed", hours_ago=1)
 
     # Disable workspace kill switch
@@ -147,6 +160,7 @@ def test_kill_switch_workspace_blocks_cycle(client: TestClient) -> None:
 
 def test_ambient_metrics_endpoint(client: TestClient) -> None:
     ws = _create_workspace(client, "Ambient Metrics")
+    _enable_ambient(client)
     _create_routine_run(client, ws["id"], status="failed", hours_ago=1)
 
     client.post(
@@ -178,6 +192,7 @@ def test_cannot_send_email_from_ambient() -> None:
 
 def test_deduplication_merges_same_finding(client: TestClient) -> None:
     ws = _create_workspace(client, "Ambient Dedup")
+    _enable_ambient(client)
     run = _create_routine_run(client, ws["id"], status="failed", hours_ago=1)
 
     # First cycle

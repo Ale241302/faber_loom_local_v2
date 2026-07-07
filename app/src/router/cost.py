@@ -14,6 +14,9 @@ MODEL_PRICING_USD_PER_1K: dict[str, tuple[float, float]] = {
     # OpenAI pricing per 1K tokens (current as of 2025-06).
     "gpt-4o": (0.0025, 0.01),
     "gpt-4o-mini": (0.00015, 0.0006),
+    # Imagen: el costo real es por imagen (~$0.04/1024px), no por token; el
+    # dispatcher usa OPENAI_IMAGE_FLAT_COST_USD para el ledger.
+    "gpt-image-1": (0.0, 0.0),
     # Hidden providers remain in the allowlist but are not surfaced in SL1a beta.
     "claude-3-5-sonnet": (0.003, 0.015),
     "gemini-1.5-pro": (0.0035, 0.0105),
@@ -47,7 +50,7 @@ PRICING_VERSION = "cost:sl1a-2026-06-27"
 # SL1a model allowlist per provider. Unknown models are rejected at the API layer
 # to avoid surprise costs / DoS through the local Ollama provider.
 MODEL_ALLOWLIST: dict[str, set[str]] = {
-    "openai": {"gpt-4o-mini", "gpt-4o"},
+    "openai": {"gpt-4o-mini", "gpt-4o", "gpt-image-1"},
     "anthropic": {"claude-3-5-sonnet"},
     "google": {"gemini-1.5-pro"},
     "kimi": {

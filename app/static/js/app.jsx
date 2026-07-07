@@ -1867,8 +1867,26 @@ function RoutinesView({ activeWorkspace }) {
 
 function WorkloomView({ activeWorkspace }) {
   const [data, setData] = useState({ routine_runs: [], drafts: [], gold_candidates: [] });
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const memberLabel = (id) => {
+    const m = members.find((x) => x.id === id);
+    return m ? (m.display_name || m.email) : id;
+  };
+
+  const assignItem = async (itemType, itemId, assignedTo) => {
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${activeWorkspace.id}/workloom/assign`, {
+        item_type: itemType,
+        item_id: itemId,
+        assigned_to: assignedTo,
+      });
+      await load();
+    } catch (err) { setError(err.message); }
+  };
 
   const load = async () => {
     if (!activeWorkspace) return;
@@ -1877,6 +1895,7 @@ function WorkloomView({ activeWorkspace }) {
     try {
       const r = await apiGet(`/api/workspaces/${activeWorkspace.id}/workloom`);
       setData({ routine_runs: r.routine_runs || [], drafts: r.drafts || [], gold_candidates: r.gold_candidates || [] });
+      apiGet(`/api/workspaces/${activeWorkspace.id}/members`).then((m) => setMembers(m.members || [])).catch(() => {});
     } catch (err) {
       setError(err.message);
     }
@@ -1947,6 +1966,13 @@ function WorkloomView({ activeWorkspace }) {
             <div style={S.cardTitle}>{run.id}</div>
             <div style={S.cardMeta}>routine {run.routine_id}</div>
             <div style={{ marginBottom: 8 }}><span className={statusClass(run.status)}>{run.status}</span></div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Asignado:</span>
+              <select style={S.select} value={run.assigned_to || ""} onChange={(e) => assignItem("routine_run", run.id, e.target.value || null)}>
+                <option value="">— sin asignar —</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
+              </select>
+            </div>
             <Meter value={run.urgency || 0} max={10} label="Urgencia" variant={run.urgency >= 7 ? "vino" : run.urgency >= 4 ? "amber" : "sage"} />
             {run.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{run.reason}</div>}
             <div style={S.inlineGroup}>
@@ -1964,6 +1990,13 @@ function WorkloomView({ activeWorkspace }) {
             <div style={S.cardTitle}>{draft.subject || "(sin asunto)"}</div>
             <div style={S.cardMeta}>{draft.id}</div>
             <div style={{ marginBottom: 8 }}><span className={statusClass(draft.status)}>{draft.status}</span></div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Asignado:</span>
+              <select style={S.select} value={draft.assigned_to || ""} onChange={(e) => assignItem("draft", draft.id, e.target.value || null)}>
+                <option value="">— sin asignar —</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.display_name || m.email}</option>)}
+              </select>
+            </div>
             <Meter value={draft.urgency || 0} max={10} label="Urgencia" variant={draft.urgency >= 7 ? "vino" : draft.urgency >= 4 ? "amber" : "sage"} />
             {draft.reason && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 8 }}>{draft.reason}</div>}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{draft.body_md.slice(0, 160)}…</div>

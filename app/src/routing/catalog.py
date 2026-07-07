@@ -23,6 +23,7 @@ from ..router.registry import build_router
 DEFAULT_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "gpt-4o-mini": ["text", "cheap", "vision"],
     "gpt-4o": ["text", "vision"],
+    "gpt-image-1": ["image_gen"],
     "claude-3-5-sonnet": ["text", "vision"],
     "gemini-1.5-pro": ["text", "vision"],
     "moonshot-v1-8k": ["text"],
@@ -44,6 +45,7 @@ DEFAULT_MODEL_CAPABILITIES: dict[str, list[str]] = {
 # DEC-006): los niveles cambian por decisión humana con commit explícito.
 MODEL_QUALITY: dict[str, int] = {
     "gpt-4o": 3,
+    "gpt-image-1": 3,
     "gpt-4o-mini": 1,
     "claude-3-5-sonnet": 3,
     "gemini-1.5-pro": 3,
