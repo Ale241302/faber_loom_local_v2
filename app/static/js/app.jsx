@@ -549,7 +549,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     <div className="composer">
       {attachmentPreview && <div className="composer-attachment-preview">
         {attachmentPreview.url
-          ? <img className="composer-attachment-thumb" src={attachmentPreview.url} alt={attachmentPreview.file.name}/>
+          ? <img className="composer-attachment-thumb" src={attachmentPreview.url} alt={attachmentPreview.file.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }}/>
           : <div className="composer-attachment-thumb composer-attachment-doc"><Icon name="file" size={22}/></div>}
         <div className="composer-attachment-meta">
           <span className="composer-attachment-name">{attachmentPreview.file.name}</span>

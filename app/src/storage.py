@@ -16,6 +16,7 @@ import os
 from datetime import timedelta
 from io import BytesIO
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .db import new_id
 
@@ -112,6 +113,11 @@ class _MinioStoreBackend:
             secure=secure,
         )
 
+        # Public URL used for presigned links. The API talks to MinIO over an
+        # internal docker network, but browsers must use the TLS front door.
+        public_url = os.getenv("FL_MINIO_PUBLIC_URL") or os.getenv("MINIO_SERVER_URL")
+        self._public_url = public_url.rstrip("/") if public_url else None
+
     def _ensure_bucket(self, bucket: str) -> None:
         if not self._client.bucket_exists(bucket):
             self._client.make_bucket(bucket)
@@ -158,18 +164,30 @@ class _MinioStoreBackend:
         except Exception:
             return False
 
+    def _to_public_url(self, url: str) -> str:
+        if not self._public_url:
+            return url
+        orig = urlsplit(url)
+        pub = urlsplit(self._public_url)
+        # Replace scheme/host/port with the public front door.
+        netloc = pub.netloc
+        rebuilt = orig._replace(scheme=pub.scheme, netloc=netloc)
+        return urlunsplit(rebuilt)
+
     def presigned_put_url(
         self, bucket: str, key: str, content_type: str, expires: int = 3600
     ) -> str:
         self._ensure_bucket(bucket)
-        return self._client.presigned_put_object(
+        url = self._client.presigned_put_object(
             bucket, key, expires=timedelta(seconds=expires),
         )
+        return self._to_public_url(url)
 
     def presigned_get_url(self, bucket: str, key: str, expires: int = 3600) -> str:
-        return self._client.presigned_get_object(
+        url = self._client.presigned_get_object(
             bucket, key, expires=timedelta(seconds=expires)
         )
+        return self._to_public_url(url)
 
 
 class ObjectStore:

@@ -187,3 +187,19 @@ def test_delete_object_requires_confirmation(client: TestClient) -> None:
         headers=_auth_headers(),
     )
     assert gone.status_code == 404
+
+
+def test_minio_backend_rewrites_presigned_url_to_public_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FL_MINIO_ACCESS_KEY", "test-access")
+    monkeypatch.setenv("FL_MINIO_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("FL_MINIO_ENDPOINT", "faberloom-minio:9000")
+    monkeypatch.setenv("FL_MINIO_PUBLIC_URL", "https://minio.faberloom.ai")
+
+    from app.src.storage import _MinioStoreBackend
+
+    backend = _MinioStoreBackend()
+    internal = "http://faberloom-minio:9000/fl-uploads/ws-ws_123/upload/obj_abc/file.png?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+    public = backend._to_public_url(internal)
+    assert public.startswith("https://minio.faberloom.ai/fl-uploads/")
+    assert "faberloom-minio:9000" not in public
+    assert public.endswith("X-Amz-Algorithm=AWS4-HMAC-SHA256")

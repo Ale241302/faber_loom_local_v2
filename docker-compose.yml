@@ -50,6 +50,7 @@ services:
       FABERLOOM_PUBLIC_HOST: app.faberloom.ai
       FL_STORAGE_BACKEND: minio
       FL_MINIO_ENDPOINT: faberloom-minio:9000
+      FL_MINIO_PUBLIC_URL: ${FL_MINIO_PUBLIC_URL:-${MINIO_SERVER_URL:-https://minio.faberloom.ai}}
       FL_MINIO_ACCESS_KEY: ${FL_MINIO_SERVICE_USER:-faberloom-api}
       FL_MINIO_SECRET_KEY: ${FL_MINIO_SERVICE_PASSWORD:-faberloom-api-secret}
       FL_MINIO_SECURE: "false"
