@@ -172,8 +172,14 @@ def resolve_model_for_capability(
     policy: dict[str, Any] | None = None,
     local_only: bool = False,
     preferred_provider: str | None = None,
+    complexity: str = "medium",
 ) -> dict[str, Any]:
-    """Pick the highest-priority catalog entry that covers a capability.
+    """Pick the best catalog entry for a capability and task complexity.
+
+    Selection balances user priority, cost, and estimated task complexity:
+      - low complexity  -> strongly prefer cheaper models
+      - high complexity -> strongly prefer higher-priority (more capable) models
+      - medium          -> balanced trade-off
 
     Fail-closed: raises ValueError if no entry matches capability, allowlist,
     budget, or isolation constraints.
@@ -196,7 +202,25 @@ def resolve_model_for_capability(
         enabled_only=True,
     )
 
-    for entry in sorted(candidates, key=lambda e: (e["priority"], e["provider_slug"], e["model"])):
+    complexity = (complexity or "medium").lower()
+    if complexity not in {"low", "medium", "high"}:
+        complexity = "medium"
+
+    def _score(entry: dict[str, Any]) -> float:
+        """Lower score is better. Priority is ascending (smaller = user prefers);
+        cost is ascending (smaller = cheaper). Complexity shifts the weight."""
+        cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
+        priority = entry["priority"]
+        if capability == "cheap":
+            # Explicit cheap request: optimize purely for cost.
+            return cost_per_1k
+        if complexity == "low":
+            return priority * 0.3 + cost_per_1k * 2.0
+        if complexity == "high":
+            return priority * 2.0 + cost_per_1k * 0.3
+        return priority * 1.0 + cost_per_1k * 1.0
+
+    for entry in sorted(candidates, key=_score):
         if provider_allowlist and entry["provider_slug"] not in provider_allowlist:
             continue
         allowed_models = model_allowlist.get(entry["provider_slug"])

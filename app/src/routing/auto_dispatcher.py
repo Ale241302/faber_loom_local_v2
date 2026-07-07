@@ -20,6 +20,7 @@ from ..ledger import (
     start_chain,
     sum_chain_cost,
 )
+from ..router.cost import estimate_cost
 from ..router.engine import Router
 from ..router.models import CompletionRequest
 from ..router.providers import ProviderConfig, ProviderError, StubImageProvider
@@ -125,6 +126,7 @@ def run_auto_chain(
 
     for step_index, step in enumerate(plan):
         capability = step["capability"]
+        complexity = step.get("complexity", _estimate_complexity(user_request))
         spent = sum_chain_cost(ctx, conn, chain_id)
         remaining = budget_cap - spent
         if remaining <= 0:
@@ -136,6 +138,7 @@ def run_auto_chain(
             capability,
             budget_remaining=remaining,
             policy=policy,
+            complexity=complexity,
         )
 
         step_input = _render_step_input(
@@ -224,27 +227,55 @@ def _build_plan(
 
     # Canonical PDF -> summary -> image shortcut.
     if pdf_context and wants_image:
-        plan: list[dict[str, str]] = [{"capability": "text", "task": "summarize_pdf", "prompt": "Summarize the PDF in one paragraph."}]
+        plan: list[dict[str, str]] = [
+            {"capability": "text", "task": "summarize_pdf", "prompt": "Summarize the PDF in one paragraph.", "complexity": "medium"},
+        ]
         if has_catalog_capability(ctx, conn, "image_gen", local_only=policy.get("require_local_only", False)):
-            plan.append({"capability": "image_gen", "task": "generate_image", "prompt": "Generate an image based on the summary."})
+            plan.append({"capability": "image_gen", "task": "generate_image", "prompt": "Generate an image based on the summary.", "complexity": "medium"})
         else:
             raise NoCapacityError("No image_gen model available in workspace catalog")
         return plan
 
-    # General planner using the cheapest text model.
+    # General planner using the cheapest available text model so the plan itself
+    # does not consume the auto-routing budget.
     prompt = _planner_prompt(user_request, pdf_context, pdf_image_count)
-    router = build_router(
-        budget_cap_usd=policy.get("budget_cap_usd"),
-    )
     spent = sum_workspace_usage_cost(ctx, conn)
+    remaining = budget_cap - spent
+    try:
+        planner_entry = resolve_model_for_capability(
+            ctx,
+            conn,
+            "cheap",
+            budget_remaining=remaining,
+            policy=policy,
+            local_only=policy.get("require_local_only", False),
+        )
+    except ValueError:
+        planner_entry = resolve_model_for_capability(
+            ctx,
+            conn,
+            "text",
+            budget_remaining=remaining,
+            policy=policy,
+            complexity="low",
+            local_only=policy.get("require_local_only", False),
+        )
+
+    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    planner_provider = router.providers.get(planner_entry["provider_slug"])
+    if planner_provider is None:
+        raise NoCapacityError(f"Planner provider {planner_entry['provider_slug']} is not available")
+
     completion_request = CompletionRequest(
         messages=[{"role": "user", "content": prompt}],
+        model=planner_entry["model"],
+        provider_slug=planner_entry["provider_slug"],
         temperature=0.2,
         max_tokens=1024,
         spent_usd=spent,
     )
     try:
-        result = router.complete(completion_request)
+        result = planner_provider.complete(completion_request)
     except ProviderError as exc:
         raise NoCapacityError(f"Planner failed: {exc}") from exc
 
@@ -259,11 +290,15 @@ def _build_plan(
             if not isinstance(step, dict):
                 continue
             capability = str(step.get("capability", "text")).lower()
+            complexity = str(step.get("complexity", _estimate_complexity(user_request))).lower()
+            if complexity not in {"low", "medium", "high"}:
+                complexity = _estimate_complexity(user_request)
             validated.append(
                 {
                     "capability": capability,
                     "task": str(step.get("task", "answer")),
                     "prompt": str(step.get("prompt", user_request)),
+                    "complexity": complexity,
                 }
             )
         if validated:
@@ -272,15 +307,23 @@ def _build_plan(
         pass
 
     # Fallback: single text answer.
-    return [{"capability": "text", "task": "answer", "prompt": user_request}]
+    return [{
+        "capability": "text",
+        "task": "answer",
+        "prompt": user_request,
+        "complexity": _estimate_complexity(user_request),
+    }]
 
 
 def _planner_prompt(user_request: str, pdf_context: str, pdf_image_count: int) -> str:
     parts = [
         (
             "You are a routing planner. Respond ONLY with a JSON object: "
-            '{"steps": [{"capability": "text"|"image_gen", "task": "...", "prompt": "..."}]}. '
+            '{"steps": [{"capability": "text"|"image_gen", "task": "...", "prompt": "...", '
+            '"complexity": "low"|"medium"|"high"}]}. '
             "Use capability 'image_gen' only if the user explicitly asks for an image. "
+            "Set complexity to 'low' for greetings, short factual answers or simple chat. "
+            "Set complexity to 'high' for analysis, comparison, reasoning, code, design or long documents. "
             "Use at most 3 steps. Do not include explanations outside the JSON."
         ),
         f"User request: {user_request}",
@@ -297,6 +340,33 @@ def _extract_json(text: str) -> str:
         if text.startswith("json"):
             text = text[4:].strip()
     return text
+
+
+# Simple, local heuristic for task complexity. Keeps auto-routing deterministic
+# and independent of cloud calls. The planner can override this per-step.
+_COMPLEXITY_MARKERS: dict[str, list[str]] = {
+    "low": [
+        "hola", "como estas", "que tal", "buenos dias", "buenas tardes",
+        "si/no", "si o no", "una palabra", "definicion corta", "resumen corto",
+    ],
+    "high": [
+        "analiza", "analisis", "compara", "comparacion", "comparativa",
+        "razona", "razonamiento", "explica detalladamente", "en detalle",
+        "codigo", "programa", "implementa", "diseña", "estrategia",
+        "investiga", "investigacion", "sintesis", "resumen ejecutivo",
+        "proyecto", "propuesta", "plan", "modelo de negocio", "caso de estudio",
+    ],
+}
+
+
+def _estimate_complexity(text: str) -> str:
+    lowered = text.lower()
+    words = len(text.split())
+    if words < 10 and any(marker in lowered for marker in _COMPLEXITY_MARKERS["low"]):
+        return "low"
+    if any(marker in lowered for marker in _COMPLEXITY_MARKERS["high"]) or words > 80:
+        return "high"
+    return "medium"
 
 
 def _render_step_input(
@@ -361,10 +431,13 @@ def _execute_step(
             "duration_ms": comp.duration_ms,
         }
 
-    router = build_router(
-        budget_cap_usd=policy.get("budget_cap_usd"),
-    )
+    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    provider = router.providers.get(provider_slug)
+
+    from ..router.engine import _estimate_input_tokens, DEFAULT_ESTIMATED_OUTPUT_TOKENS
+
     spent = sum_workspace_usage_cost(ctx, conn)
+    budget_cap = policy.get("budget_cap_usd", 5.0)
     request = CompletionRequest(
         messages=[{"role": "user", "content": step_input}],
         model=model,
@@ -373,10 +446,33 @@ def _execute_step(
         max_tokens=1024,
         spent_usd=spent,
     )
+
+    estimated_cost = estimate_cost(
+        model,
+        _estimate_input_tokens(request.messages),
+        request.max_tokens or DEFAULT_ESTIMATED_OUTPUT_TOKENS,
+    )
+    if spent + estimated_cost > budget_cap:
+        raise NoCapacityError(
+            f"Step estimated cost exceeds workspace budget cap ${budget_cap:.2f}"
+        )
+
     try:
-        comp = router.complete(request)
+        if provider is not None:
+            # Honor the auto-routing decision: use the selected provider/model directly.
+            comp = provider.complete(request)
+        else:
+            # If the selected provider is not currently configured (e.g. stale catalog
+            # entry), fall back to the router's normal ordered path.
+            comp = router.complete(request)
     except ProviderError as exc:
         raise NoCapacityError(f"Step failed for {provider_slug}/{model}: {exc}") from exc
+
+    actual_total = spent + comp.cost_usd
+    if actual_total > budget_cap:
+        raise NoCapacityError(
+            f"Step actual cost exceeds workspace budget cap ${budget_cap:.2f}"
+        )
 
     return {
         "status": "succeeded",
