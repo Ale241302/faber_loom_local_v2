@@ -112,7 +112,7 @@ function authHeaders() {
 let _refreshingSession = null;
 function _refreshSession() {
   if (!_refreshingSession) {
-    _refreshingSession = fetch("/api/auth/refresh", { method: "POST" })
+    _refreshingSession = fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin" })
       .then((res) => res.ok)
       .catch(() => false)
       .finally(() => { _refreshingSession = null; });
@@ -132,7 +132,7 @@ function _sessionLost() {
 }
 
 async function apiFetch(path, options = {}) {
-  let res = await fetch(path, options);
+  let res = await fetch(path, { credentials: "same-origin", ...options });
   if (res.status === 401 && !String(path).startsWith("/api/auth/")) {
     const refreshed = await _refreshSession();
     if (refreshed) res = await fetch(path, options);
@@ -498,6 +498,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   const [slashItems, setSlashItems] = useState([]);
   const [selectedSkills, setSelectedSkills] = useState([]);
   const fileInputRef = useRef(null);
+  const inputWrapRef = useRef(null);
 
   const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
   const availableModels = modelAllowlist[provider] || [];
@@ -598,9 +599,8 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     if (!selectedSkills.find((s) => s.skill_id === skill.skill_id)) {
       setSelectedSkills((prev) => [...prev, skill]);
     }
-    const words = draft.split(/\s+/);
-    words[words.length - 1] = "";
-    setDraft(words.join(" ").trim());
+    const slashIdx = draft.lastIndexOf("/");
+    setDraft(draft.slice(0, slashIdx >= 0 ? slashIdx : draft.length).trim());
     setSlashOpen(false);
     setSlashQuery("");
     setSlashIndex(0);
@@ -624,6 +624,17 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     apiGet("/api/skills")
       .then((data) => setSlashItems(Array.isArray(data.skills) ? data.skills : []))
       .catch(() => setSlashItems([]));
+  }, [slashOpen]);
+
+  useEffect(() => {
+    if (!slashOpen) return;
+    const onDocClick = (e) => {
+      if (inputWrapRef.current && !inputWrapRef.current.contains(e.target)) {
+        setSlashOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, [slashOpen]);
 
   const handleInputChange = (event) => {
@@ -694,32 +705,39 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
           </span>
         ))}
       </div>}
-      <div className="composer-input-row">
-        <textarea value={draft} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa /skills para marcar marcos de trabajo.")} rows="2" disabled={disabled || uploading}/>
-        <div className="composer-actions">
-          <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
-          <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
-            <Icon name="paperclip" size={16}/>
-          </button>
-          <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
-            <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
-          </button>
-          <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
-        </div>
-      </div>
-      {slashOpen && filteredSkills.length > 0 && <div className="composer-skill-picker">
-        {filteredSkills.map((skill, idx) => (
-          <div
-            key={skill.skill_id}
-            className={cx("composer-skill-option", idx === slashIndex && "active")}
-            onMouseEnter={() => setSlashIndex(idx)}
-            onClick={() => selectSkill(skill)}
-          >
-            <div className="composer-skill-name">{skill.name}</div>
-            <div className="composer-skill-desc">{skill.description}</div>
+      <div className="composer-input-wrap" ref={inputWrapRef}>
+        <div className="composer-input-row">
+          <textarea value={draft} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa /skills para marcar marcos de trabajo.")} rows="2" disabled={disabled || uploading}/>
+          <div className="composer-actions">
+            <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
+            <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
+              <Icon name="paperclip" size={16}/>
+            </button>
+            <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
+              <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
+            </button>
+            <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
           </div>
-        ))}
-      </div>}
+        </div>
+        {slashOpen && filteredSkills.length > 0 && <div className="composer-skill-popover">
+          <div className="composer-skill-popover-header">Skills disponibles</div>
+          {filteredSkills.map((skill, idx) => (
+            <div
+              key={skill.skill_id}
+              className={cx("composer-skill-option", idx === slashIndex && "active")}
+              onMouseEnter={() => setSlashIndex(idx)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => selectSkill(skill)}
+            >
+              <div className="composer-skill-option-main">
+                <span className="composer-skill-option-kicker">/{skill.skill_id}</span>
+                <span className="composer-skill-name">{skill.name}</span>
+              </div>
+              <div className="composer-skill-desc">{skill.description}</div>
+            </div>
+          ))}
+        </div>}
+      </div>
     </div>
     {showModelPicker && <div className="composer-picker">
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -1024,7 +1042,11 @@ function SpaceView({ activeWorkspace }) {
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
       if (completion && completion.message) {
-        setTypingTarget({ id: completion.message.id, content: completion.message.content });
+        if (!completion.message.content) {
+          setError("El modelo no generó respuesta. Intenta sin skills o con otro modelo.");
+        } else {
+          setTypingTarget({ id: completion.message.id, content: completion.message.content });
+        }
       }
       await loadMessages(chatId);
       await loadRouter();
@@ -1215,6 +1237,19 @@ function RightRail({ open, activeWorkspace }) {
     </div>
     <ToolsetPanel activeWorkspace={activeWorkspace}/>
   </aside>;
+}
+
+function GlobalSkillCard({ skill }) {
+  return <div style={S.card}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+      <div>
+        <div style={S.cardTitle}>{skill.name}</div>
+        <div style={S.cardMeta}>/{skill.skill_id} · {skill.pack_id || "global"}</div>
+      </div>
+      <span style={{ ...S.badge, background: "var(--coral-soft)", color: "var(--text-primary)" }}>global</span>
+    </div>
+    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.5 }}>{skill.description}</div>
+  </div>;
 }
 
 function RoutineCard({ routine, onEdit, onApprove, onToggle, onDelete, onInvoke }) {
@@ -1414,6 +1449,19 @@ function SkillAgentView({ activeWorkspace, category, title, subtitle }) {
   const [editing, setEditing] = useState(null);
   const [deleteToken, setDeleteToken] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [globalSkills, setGlobalSkills] = useState([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [globalError, setGlobalError] = useState(null);
+
+  useEffect(() => {
+    if (category !== "skill") return;
+    setGlobalLoading(true);
+    setGlobalError(null);
+    apiGet("/api/skills")
+      .then((data) => setGlobalSkills(Array.isArray(data.skills) ? data.skills : []))
+      .catch((err) => setGlobalError(err.message))
+      .finally(() => setGlobalLoading(false));
+  }, [category]);
 
   const initialForm = {
     name: "",
@@ -1507,6 +1555,15 @@ function SkillAgentView({ activeWorkspace, category, title, subtitle }) {
         </div>
       </section>}
     </div>
+    {category === "skill" && <section className="panel" style={{ marginTop: 16 }} aria-label="Skills globales">
+      <div className="panel-header"><div><div className="panel-kicker">Catálogo global</div><div className="panel-title">Skills disponibles para el chat ({globalSkills.length})</div></div></div>
+      <div style={S.panelBody}>
+        {globalLoading && <div style={S.loading}>Cargando…</div>}
+        {globalError && <div style={S.error}>{globalError}</div>}
+        {!globalLoading && !globalError && globalSkills.length === 0 && <div style={S.empty}>No hay skills globales activas.</div>}
+        {!globalLoading && !globalError && globalSkills.length > 0 && <div style={S.list}>{globalSkills.map((skill) => <GlobalSkillCard key={skill.skill_id} skill={skill}/>)}</div>}
+      </div>
+    </section>}
     {deleteTarget && <DeleteConfirmModal title={`Eliminar ${category}`} resourceName={deleteTarget.name} token={deleteToken} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete}/>}
   </div>;
 }

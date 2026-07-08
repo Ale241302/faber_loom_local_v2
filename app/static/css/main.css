@@ -694,12 +694,17 @@ button { background: none; border: none; cursor: pointer; }
 .skill-tag-remove { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 0; margin-left: 2px; }
 .skill-tag-remove:hover { color: var(--coral); }
 
-.composer-skill-picker { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-md); margin-top: 6px; max-height: 220px; overflow-y: auto; box-shadow: 0 6px 28px rgba(0,0,0,.40); }
-.composer-skill-option { padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--border-subtle); }
-.composer-skill-option:last-child { border-bottom: none; }
-.composer-skill-option:hover, .composer-skill-option.active { background: var(--surface-raised); }
+.composer-input-wrap { position: relative; }
+.composer-skill-popover { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(420px, 100%); background: var(--bg-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); max-height: 260px; overflow-y: auto; box-shadow: 0 10px 34px rgba(0,0,0,.45); z-index: 50; padding: 6px; }
+.composer-skill-popover-header { font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); padding: 6px 8px 8px; }
+.composer-skill-option { padding: 8px 10px; cursor: pointer; border-radius: var(--r-sm); margin-bottom: 2px; }
+.composer-skill-option:last-child { margin-bottom: 0; }
+.composer-skill-option:hover, .composer-skill-option.active { background: var(--coral-soft); }
+.composer-skill-option.active .composer-skill-name { color: var(--text-primary); }
+.composer-skill-option-main { display: flex; align-items: center; gap: 8px; }
+.composer-skill-option-kicker { font-family: var(--font-mono); font-size: 11px; color: var(--coral); flex-shrink: 0; }
 .composer-skill-name { font-weight: 600; font-size: 13px; color: var(--text-primary); }
-.composer-skill-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.composer-skill-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
 
 .message-route { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }
 .message-route span { display: inline-flex; align-items: center; gap: 4px; }

@@ -1095,13 +1095,19 @@ def api_create_completion(
                     "duration_ms": auto_result["duration_ms"],
                     "mode": "auto",
                 }
+                auto_content = (auto_result.get("content") or "").strip()
+                if not auto_content:
+                    auto_content = (
+                        "El modelo no generó una respuesta de texto. "
+                        "Revisa el prompt o intenta con otro modelo / proveedor."
+                    )
                 assistant_message = _serialize_message(
                     insert_message(
                         ctx,
                         conn,
                         chat_id=chat_id,
                         role="assistant",
-                        content=auto_result["content"],
+                        content=auto_content,
                         route=route,
                     )
                 )
@@ -1294,13 +1300,19 @@ def api_create_completion(
                     "budget_usd": round(current_spent + result.cost_usd, 8),
                     "budget_cap_usd": router.settings.budget_cap_usd,
                 }
+                assistant_content = (result.content or "").strip()
+                if not assistant_content:
+                    assistant_content = (
+                        "El modelo no generó una respuesta de texto. "
+                        "Revisa el prompt, el modelo elegido o intenta sin skills seleccionadas."
+                    )
                 assistant_message = _serialize_message(
                     insert_message(
                         ctx,
                         conn,
                         chat_id=chat_id,
                         role="assistant",
-                        content=result.content,
+                        content=assistant_content,
                         route=route,
                     )
                 )
