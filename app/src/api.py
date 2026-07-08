@@ -784,6 +784,7 @@ def api_list_messages(
 
 
 def _build_skill_context(
+    ctx: Context,
     conn: sqlite3.Connection,
     skill_ids: list[str],
 ) -> tuple[list[dict[str, Any]], str]:
@@ -792,7 +793,8 @@ def _build_skill_context(
     badges: list[dict[str, Any]] = []
     parts: list[str] = []
     for skill_id in skill_ids:
-        skill = get_global_skill_by_id(conn, skill_id, tenant_id="global", active_only=True)
+        with transaction(conn, ctx=ctx):
+            skill = get_global_skill_by_id(conn, skill_id, tenant_id="global", active_only=True)
         if skill is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1064,7 +1066,7 @@ def api_create_completion(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="No se pueden combinar @mention con skills seleccionadas",
             )
-        skill_badges, skill_context = _build_skill_context(conn, payload.skill_ids)
+        skill_badges, skill_context = _build_skill_context(ctx, conn, payload.skill_ids)
 
     # Ensure the workspace catalog and default policy row exist before validating
     # manual/auto choices. This is a separate transaction so the policy row is
