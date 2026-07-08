@@ -492,6 +492,11 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashItems, setSlashItems] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState([]);
   const fileInputRef = useRef(null);
 
   const availableProviders = (routerStatus?.providers || []).filter((p) => p.available);
@@ -562,6 +567,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
 
   const submit = (event) => {
     event.preventDefault();
+    if (slashOpen) return;
     const text = draft.trim();
     if ((!text && !attachment) || disabled || uploading) return;
     const options = { mode };
@@ -574,8 +580,12 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
       options.attachment_file_name = attachment.file_name;
       options.attachment_mime_type = attachment.mime_type;
     }
+    if (selectedSkills.length) {
+      options.skill_ids = selectedSkills.map((s) => s.skill_id);
+    }
     onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
+    setSelectedSkills([]);
     clearAttachment();
   };
 
@@ -584,7 +594,74 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     setModel("");
   };
 
+  const selectSkill = (skill) => {
+    if (!selectedSkills.find((s) => s.skill_id === skill.skill_id)) {
+      setSelectedSkills((prev) => [...prev, skill]);
+    }
+    const words = draft.split(/\s+/);
+    words[words.length - 1] = "";
+    setDraft(words.join(" ").trim());
+    setSlashOpen(false);
+    setSlashQuery("");
+    setSlashIndex(0);
+  };
+
+  const removeSkill = (skillId) => {
+    setSelectedSkills((prev) => prev.filter((s) => s.skill_id !== skillId));
+  };
+
+  const filteredSkills = useMemo(() => {
+    const q = slashQuery.toLowerCase();
+    return slashItems.filter((s) =>
+      (s.name || "").toLowerCase().includes(q) ||
+      (s.skill_id || "").toLowerCase().includes(q) ||
+      (s.description || "").toLowerCase().includes(q)
+    );
+  }, [slashItems, slashQuery]);
+
+  useEffect(() => {
+    if (!slashOpen) return;
+    apiGet("/api/skills")
+      .then((data) => setSlashItems(Array.isArray(data.skills) ? data.skills : []))
+      .catch(() => setSlashItems([]));
+  }, [slashOpen]);
+
+  const handleInputChange = (event) => {
+    const value = event.target.value;
+    setDraft(value);
+    const words = value.split(/\s+/);
+    const last = words[words.length - 1] || "";
+    if (last.startsWith("/")) {
+      setSlashOpen(true);
+      setSlashQuery(last.slice(1));
+      setSlashIndex(0);
+    } else {
+      setSlashOpen(false);
+    }
+  };
+
   const handleKeyDown = (event) => {
+    if (slashOpen && filteredSkills.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashIndex((i) => (i + 1) % filteredSkills.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashIndex((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        selectSkill(filteredSkills[slashIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        setSlashOpen(false);
+        return;
+      }
+    }
     if (event.key !== "Enter") return;
     if (event.ctrlKey || event.metaKey) {
       // Ctrl/Cmd + Enter inserts a newline (default textarea behaviour).
@@ -606,8 +683,19 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
         </div>
         <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto" disabled={uploading}><Icon name="x" size={14}/></button>
       </div>}
+      {selectedSkills.length > 0 && <div className="composer-skill-tags">
+        {selectedSkills.map((skill) => (
+          <span key={skill.skill_id} className="skill-tag">
+            <Icon name="check" size={12}/>
+            {skill.name}
+            <button type="button" className="skill-tag-remove" onClick={() => removeSkill(skill.skill_id)} title="Quitar skill">
+              <Icon name="x" size={10}/>
+            </button>
+          </span>
+        ))}
+      </div>}
       <div className="composer-input-row">
-        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa @skill o /run.")} rows="2" disabled={disabled || uploading}/>
+        <textarea value={draft} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={placeholder || (attachmentPreview ? "¿Qué quieres saber sobre el archivo adjunto?" : "Escribe tu mensaje… Usa /skills para marcar marcos de trabajo.")} rows="2" disabled={disabled || uploading}/>
         <div className="composer-actions">
           <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} disabled={disabled || uploading || attachmentPreview}/>
           <button type="button" className="composer-tool" disabled={disabled || uploading || attachmentPreview} onClick={() => fileInputRef.current?.click()} title="Adjuntar archivo">
@@ -619,6 +707,19 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
           <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
         </div>
       </div>
+      {slashOpen && filteredSkills.length > 0 && <div className="composer-skill-picker">
+        {filteredSkills.map((skill, idx) => (
+          <div
+            key={skill.skill_id}
+            className={cx("composer-skill-option", idx === slashIndex && "active")}
+            onMouseEnter={() => setSlashIndex(idx)}
+            onClick={() => selectSkill(skill)}
+          >
+            <div className="composer-skill-name">{skill.name}</div>
+            <div className="composer-skill-desc">{skill.description}</div>
+          </div>
+        ))}
+      </div>}
     </div>
     {showModelPicker && <div className="composer-picker">
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -917,6 +1018,9 @@ function SpaceView({ activeWorkspace }) {
       }
       if (options.attachment_object_id) {
         body.attachment_object_id = options.attachment_object_id;
+      }
+      if (options.skill_ids && options.skill_ids.length) {
+        body.skill_ids = options.skill_ids;
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
       if (completion && completion.message) {

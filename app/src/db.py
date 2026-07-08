@@ -3634,3 +3634,92 @@ def create_generated_object(
 
     return row
 
+
+
+# ---------------------------------------------------------------------------
+# E3-4: global skill catalog (context for chat, not workspace-scoped)
+# ---------------------------------------------------------------------------
+
+
+def get_global_skills(
+    conn: sqlite3.Connection,
+    *,
+    tenant_id: str = "global",
+    active_only: bool = True,
+    pack_id: str | None = None,
+    query: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return global skills available for the skill picker."""
+
+    sql = "SELECT * FROM global_skill_catalog WHERE tenant_id = ?"
+    params: list[Any] = [tenant_id]
+    if active_only:
+        sql += " AND is_active = 1"
+    if pack_id:
+        sql += " AND pack_id = ?"
+        params.append(pack_id)
+    if query:
+        sql += " AND (skill_id LIKE ? OR name LIKE ? OR description LIKE ?)"
+        params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+    sql += " ORDER BY pack_id, name"
+    rows = conn.execute(sql, params).fetchall()
+    return [row_to_dict(r) for r in rows]
+
+
+def get_global_skill_by_id(
+    conn: sqlite3.Connection,
+    skill_id: str,
+    *,
+    tenant_id: str = "global",
+    active_only: bool = True,
+) -> dict[str, Any] | None:
+    """Return a single global skill by skill_id."""
+
+    sql = "SELECT * FROM global_skill_catalog WHERE tenant_id = ? AND skill_id = ?"
+    params: list[Any] = [tenant_id, skill_id]
+    if active_only:
+        sql += " AND is_active = 1"
+    row = conn.execute(sql, params).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def upsert_global_skill(
+    conn: sqlite3.Connection,
+    *,
+    id: str,
+    tenant_id: str = "global",
+    pack_id: str,
+    skill_id: str,
+    name: str,
+    description: str,
+    skill_md: str,
+    manifest_json: str,
+    is_active: int = 1,
+    approved_by: str | None = "system",
+) -> dict[str, Any]:
+    """Insert or replace a global skill catalog row."""
+
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO global_skill_catalog (
+            id, tenant_id, pack_id, skill_id, name, description, skill_md, manifest_json,
+            is_active, approved_by, schema_version, source_version, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(skill_id) DO UPDATE SET
+            pack_id = excluded.pack_id,
+            name = excluded.name,
+            description = excluded.description,
+            skill_md = excluded.skill_md,
+            manifest_json = excluded.manifest_json,
+            is_active = excluded.is_active,
+            approved_by = excluded.approved_by,
+            updated_at = excluded.updated_at
+        """,
+        (
+            id, tenant_id, pack_id, skill_id, name, description, skill_md, manifest_json,
+            is_active, approved_by, SCHEMA_VERSION, "v2", now, now,
+        ),
+    )
+    return get_global_skill_by_id(conn, skill_id, tenant_id=tenant_id, active_only=False)

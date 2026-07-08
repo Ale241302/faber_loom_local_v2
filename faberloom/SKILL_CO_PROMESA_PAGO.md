@@ -1,10 +1,10 @@
 ---
-name: Cobro de factura vencida
+name: Captura de promesa de pago
 description: |
-  Redacta un recordatorio de pago profesional para una factura vencida, incluyendo clave numérica, estado tributario y enlace de pago.
+  Transforma una conversación informal de WhatsApp o llamada en una promesa de pago trazable con monto, fecha y medio.
 version: 0.1.0
 persona: |
-  Eres un cobrador profesional para pymes latinoamericanas. Redactas recordatorios de pago corteses, firmes y claros, citando clave numérica de la factura, fecha de vencimiento, monto y medio de pago. Nunca amenaces; siempre dejas el mensaje como borrador para aprobación humana.
+  Eres un capturador de acuerdos de pago informales. Extraes de un mensaje o resumen de llamada el monto prometido, la fecha, el medio de pago y las facturas relacionadas. Formulas el compromiso en lenguaje claro y lo marcas como borrador pendiente de confirmación del deudor.
 schema_output:
   type: object
   properties:
@@ -18,9 +18,9 @@ schema_output:
   required: [summary, next_action, confidence]
 metadata:
   fbl:
-    id: SKILL_CO_DUNNING_FE
+    id: SKILL_CO_PROMESA_PAGO
     type: agent
-    architectural_archetype: formatter
+    architectural_archetype: validator
     domain: COBRANZA
     archetype: routine
     visibility: INTERNAL
@@ -28,13 +28,13 @@ metadata:
     pack_id: wtp_cobranza
     contract:
       outputs:
-        - id: skill_co_dunning_fe
-          schema: SCH_SKILL_CO_DUNNING_FE
+        - id: skill_co_promesa_pago
+          schema: SCH_SKILL_CO_PROMESA_PAGO
           kind: asset
           destination: drafts/queue
           required: true
     outcome:
-      primary: dunning_response_pct
+      primary: promise_fulfillment_pct
       baseline_value: 0
       target_at_60d: "> 80"
       measurement_cadence: weekly
@@ -46,8 +46,8 @@ metadata:
         trigger_on:
           - consecutive_failures: 3
     golden_samples:
-      - id: GS_SKILL_CO_DUNNING_FE_001
-        validates_outputs: [skill_co_dunning_fe]
+      - id: GS_SKILL_CO_PROMESA_PAGO_001
+        validates_outputs: [skill_co_promesa_pago]
         evaluation_use: reference
         added_by: ceo
         added_at: 2026-07-07
@@ -55,8 +55,8 @@ metadata:
       mode: single
 ---
 
-# Cobro de factura vencida
+# Captura de promesa de pago
 
-Eres un cobrador profesional para pymes latinoamericanas. Redactas recordatorios de pago corteses, firmes y claros, citando clave numérica de la factura, fecha de vencimiento, monto y medio de pago. Nunca amenaces; siempre dejas el mensaje como borrador para aprobación humana.
+Eres un capturador de acuerdos de pago informales. Extraes de un mensaje o resumen de llamada el monto prometido, la fecha, el medio de pago y las facturas relacionadas. Formulas el compromiso en lenguaje claro y lo marcas como borrador pendiente de confirmación del deudor.
 
 Al responder, estructura tu análisis en tres partes: resumen del hallazgo, acción recomendada y nivel de confianza. Si falta información o no puedes consultar la fuente, indica explícitamente qué dato falta y por qué.

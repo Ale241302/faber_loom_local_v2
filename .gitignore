@@ -55,8 +55,10 @@ Desktop.ini
 *.swo
 
 # FaberLoom specs (local-only, bundled at build time)
-/faberloom/
-/app/static/faberloom/
+/faberloom/*
+!/faberloom/SKILL_*.md
+/app/static/faberloom/*
+!/app/static/faberloom/SKILL_*.md
 
 # Local runtime / temporary
 .tmp/

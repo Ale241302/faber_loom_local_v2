@@ -23,6 +23,7 @@ from .auth import auth_router, get_current_user
 from .e3_3_router import e3_3_router, me_router
 from .foundation import foundation_router, init_foundation_db
 from .platform_admin import platform_admin_router
+from .context import system_context
 from .db import db_session, initialize_database, transaction
 from .features import is_email_connector_enabled, is_shared_instance
 from .models import FeaturesRead
@@ -33,6 +34,7 @@ from .seed import (
     seed_canary_workspace,
     seed_demo_workspace,
 )
+from .skill_catalog import seed_global_skill_catalog
 from .update import load_trusted_update_keys
 
 
@@ -60,6 +62,8 @@ async def lifespan(app: FastAPI):
     load_env_file()
     with db_session() as conn:
         initialize_database(conn)
+        with transaction(conn, ctx=system_context()):
+            seed_global_skill_catalog(conn)
         seed_demo_workspace(conn)
         seed_canary_workspace(conn)
         seed_ambient_for_all_tenants(conn)

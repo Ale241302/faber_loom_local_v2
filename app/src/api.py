@@ -46,6 +46,8 @@ from .db import (
     get_database_path,
     get_db,
     get_default_email_account,
+    get_global_skill_by_id,
+    get_global_skills,
     get_object,
     get_email_account,
     get_mail_message,
@@ -151,6 +153,7 @@ from .models import (
     DraftRead,
     DraftRejectRequest,
     DraftUpdateRequest,
+    GlobalSkillListRead,
     GoldCandidateRead,
     HealthRead,
     KBSourceCreate,
@@ -214,6 +217,7 @@ from .storage import (
     object_key,
     sha256_bytes,
 )
+from .skill_catalog import seed_global_skill_catalog
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
 from .ambient import (
     ambient_metrics,
@@ -779,6 +783,39 @@ def api_list_messages(
     return [_serialize_message(row) for row in get_messages(ctx, conn, chat_id)]
 
 
+def _build_skill_context(
+    conn: sqlite3.Connection,
+    skill_ids: list[str],
+) -> tuple[list[dict[str, Any]], str]:
+    """Return (skill badges, context block) for the selected global skills."""
+
+    badges: list[dict[str, Any]] = []
+    parts: list[str] = []
+    for skill_id in skill_ids:
+        skill = get_global_skill_by_id(conn, skill_id, tenant_id="global", active_only=True)
+        if skill is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Skill '{skill_id}' no existe o está inactiva",
+            )
+        badges.append({"skill_id": skill["skill_id"], "name": skill["name"]})
+        runtime = _extract_runtime(skill["skill_md"])
+        snippet = (runtime.get("persona") or skill["description"]).strip()
+        if len(snippet) > 400:
+            snippet = snippet[:397] + "..."
+        parts.append(f"- {skill['name']} ({skill['skill_id']}): {snippet}")
+
+    if not parts:
+        return [], ""
+
+    block = (
+        "El usuario ha seleccionado las siguientes skills para esta consulta:\n"
+        + "\n".join(parts)
+        + "\n\nUsa los marcos anteriores. No inventes datos; toda afirmación factual requiere lookup con evidencia citada."
+    )
+    return badges, block
+
+
 def _build_user_message_with_attachment(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -1016,6 +1053,19 @@ def api_create_completion(
             duration_ms=result.get("duration_ms", 0),
         )
 
+    # E3-4: skill context selected via the "/" picker is injected into the system
+    # prompt so the model knows which frameworks to use. It is mutually exclusive
+    # with @routine invocation.
+    skill_badges: list[dict[str, Any]] = []
+    skill_context = ""
+    if payload.skill_ids:
+        if mention_match:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No se pueden combinar @mention con skills seleccionadas",
+            )
+        skill_badges, skill_context = _build_skill_context(conn, payload.skill_ids)
+
     # Ensure the workspace catalog and default policy row exist before validating
     # manual/auto choices. This is a separate transaction so the policy row is
     # committed before any nested per-mode transactions begin.
@@ -1113,10 +1163,17 @@ def api_create_completion(
     _validate_completion_choice(payload, router)
 
     # Persist the user message first so the completion history includes it.
-    with transaction(conn, ctx=ctx):
-        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
+    user_route: dict[str, Any] | None = attachment_route
+    if skill_badges:
+        user_route = {**(user_route or {}), "skills": skill_badges}
 
-    history = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    with transaction(conn, ctx=ctx):
+        insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=user_route)
+
+    system_content = _SYSTEM_PROMPT
+    if skill_context:
+        system_content = f"{skill_context}\n\n{system_content}"
+    history = [{"role": "system", "content": system_content}]
     history.extend(get_message_history(ctx, conn, chat_id))
 
     # Vision: replace the freshly persisted user message (last in history) with
@@ -4484,6 +4541,42 @@ def api_list_routine_runs_for_routine(
     if get_routine(ctx, conn, routine_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found")
     return [RoutineRunRead(**row) for row in list_routine_runs(ctx, conn, routine_id=routine_id)]
+
+
+# -----------------------------------------------------------------------------
+# Global skill catalog (E3-4)
+# -----------------------------------------------------------------------------
+
+
+@router.get("/skills", response_model=GlobalSkillListRead)
+def api_list_global_skills(
+    pack_id: str | None = None,
+    query: str | None = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> GlobalSkillListRead:
+    """List active global skills available in the '/' chat picker."""
+
+    skills = get_global_skills(
+        conn,
+        tenant_id="global",
+        active_only=True,
+        pack_id=pack_id,
+        query=query,
+    )
+    return GlobalSkillListRead(skills=skills)
+
+
+@router.post("/admin/skills/reseed")
+def api_reseed_global_skills(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    """Force re-seed of the global skill catalog from SKILL.md files."""
+
+    ctx = context_from_request(request)
+    with transaction(conn, ctx=ctx):
+        upserted, warnings = seed_global_skill_catalog(conn)
+    return {"upserted": upserted, "warnings": warnings}
 
 
 # -----------------------------------------------------------------------------

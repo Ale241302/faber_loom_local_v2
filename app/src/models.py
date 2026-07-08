@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1306,6 +1306,28 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_pack_status_ws ON pack_status(workspace_id, tenant_id, status);
     """,
+    34: """
+    -- E3-4: catálogo global de skills (contexto para el chat, no workspace-scoped).
+    CREATE TABLE IF NOT EXISTS global_skill_catalog (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT 'global',
+        pack_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        skill_md TEXT NOT NULL,
+        manifest_json TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        approved_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 34,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_global_skill_tenant ON global_skill_catalog(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_global_skill_pack ON global_skill_catalog(pack_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_global_skill_active ON global_skill_catalog(is_active);
+    """,
 }
 
 
@@ -1779,6 +1801,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=1024, gt=0, le=4096)
     mode: Literal["manual", "auto"] = "manual"
     attachment_object_id: str | None = Field(default=None, max_length=120)
+    skill_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class ChatCompletionResponse(BaseModel):
@@ -1792,6 +1815,27 @@ class ChatCompletionResponse(BaseModel):
     chain_id: str | None = None
     steps: list[dict[str, Any]] | None = None
     mode: str | None = None
+
+
+class GlobalSkillRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    pack_id: str
+    skill_id: str
+    name: str
+    description: str
+    is_active: int
+    approved_by: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class GlobalSkillListRead(BaseModel):
+    skills: list[GlobalSkillRead]
 
 
 class UsageRecordRead(BaseModel):
