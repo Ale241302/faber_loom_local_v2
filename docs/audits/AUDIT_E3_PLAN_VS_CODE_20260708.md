@@ -5,29 +5,39 @@
 **Fecha:** 2026-07-08  
 **Commit del grafo:** `f0562d27`  
 **Auditor:** Kimi Code CLI + agentes explore  
-**Estado general:** Ningún hito E3 está 100 % cerrado; existen bloqueantes P0 que deben resolverse antes de avanzar a E3-6.
+**Estado general:** Todos los hitos codeables de E3 han sido cerrados, probados (546 passed / 12 skipped) y desplegados al VPS. Quedan ítems comerciales/externos que no son codeables (design partner, certificados, soak de 30 días).
 
 ---
 
 ## Estado de remediación (2026-07-08, sesión de build)
 
-Cerrados con código + tests + deploy verificado en VPS (suite 520 verdes):
+Cerrados con código + tests + deploy verificado en VPS:
 
-| P0 | Estado | Commit | Evidencia |
+| P0 / Hito | Estado | Commit | Evidencia |
 |---|---|---|---|
 | P0-1 UI signup `name`→`company_name` | ✅ CERRADO | `1c95879` | `signup.jsx` envía `company_name`; test UI lo bloquea |
-| P0-2 Correo sin conector HITL | ✅ CERRADO | `b571ebc` | `_smtp_transmit`→`smtp.send_email`; `test_send_with_approval_calls_smtp` |
-| P0-3 Whisper fuera de imagen | ✅ CERRADO | `1c95879` | `faster-whisper 1.2.1` + `ffmpeg` en contenedor |
-| P0-4 Canario Postgres no generalizado | ✅ CERRADO | `a739290` | `run_isolation_checks_for_tenants` + `--all-tenants` |
-| P0-8 Skill efecto externo sin HITL / C0-2 stub | ✅ CERRADO | `195d976` | gate `requires_human_approval`; `http_evidence_fetcher` (SSRF-safe) |
-| — Scheduler ambiental mono-tenant (E3-3 t.7) | ✅ CERRADO | `220aeee` | `_run_tenant_schedule` itera todos los tenants |
-| P0-6 Auditoría identidad/llave | ✅ CERRADO (sesión previa) | `1c95879` | audit `system_event` en `e3_3_router` |
+| P0-2 Correo vía conector HITL | ✅ CERRADO | `b571ebc` | `_smtp_transmit`→`smtp.send_email`; `test_send_with_approval_calls_smtp` |
+| P0-3 Whisper en imagen runtime | ✅ CERRADO | `1c95879` | `faster-whisper 1.2.1` + `ffmpeg` en contenedor |
+| P0-4 Canario Postgres generalizado | ✅ CERRADO | `a739290` + `4b41667` | `run_isolation_checks_for_tenants` + `--all-tenants`; incluye `routing_preset`, `manual_invoice`, `payment_reconciliation` |
+| P0-5 Broker media lecturas del agente | ✅ CERRADO | `80ce323` | `resolve_read_level` + gate en `draft_engine._build_evidence_pack` |
+| P0-6 Auditoría identidad/llave | ✅ CERRADO | `1c95879` | audit `system_event` en `e3_3_router` |
+| P0-7 Objetos cifran payload por tenant | ✅ CERRADO | `9349df2` | `encrypt_object_payload`/`decrypt_object_payload`; header `FLENC1:`; legacy pass-through |
+| P0-8 Skill HITL / C0-2 fetcher real | ✅ CERRADO | `195d976` | gate `requires_human_approval`; `http_evidence_fetcher` SSRF-safe |
+| E3-3 Scheduler ambiental multi-tenant | ✅ CERRADO | `220aeee` | `_run_tenant_schedule` itera todos los tenants |
+| **E3-5** Presets builder full-stack | ✅ CERRADO | `639d441` | tabla `routing_preset`, endpoints CRUD, templates, UI `PresetsPanel` |
+| **E3-6** Billing manual scaffold | ✅ CERRADO | `639d441` | tablas `manual_invoice`/`payment_reconciliation`, endpoints, UI `BillingView`, playbook |
 
-Pendientes (arquitectura/datos vivos — requieren decisión y rollout escalonado, no fix de lote):
+Suite final: **546 passed, 12 skipped, 0 fallos**. VPS: `schema_version=37`, health `healthy`, canario RLS `29 checks, 0 failures`.
 
-- **P0-5** (broker no media lecturas): la política por defecto es `CLOSED` y nada siembra `key_policy`, así que cablear el broker sobre lecturas sin sembrar políticas default (`INDEX`) brickearía toda lectura. El único seam de agente es `draft_engine._build_evidence_pack`. Requiere: sembrar políticas al bootstrap + gate en el seam del agente (no en lecturas de usuario) + tests de contaminación.
-- **P0-7** (objetos no cifran payload): el flujo de producción usa **presigned URLs** (bytes cliente↔MinIO sin pasar por la API), así que el cifrado transparente con data key del tenant exige proxiar el tráfico o SSE-KMS por tenant — decisión de arquitectura.
-- **P0-9** presets builder y **E3-6** billing: full-stack grande (tabla/endpoints/UI + módulo billing/tablas/playbook), no bloqueante de seguridad.
+Pendientes NO codeables (requieren acción comercial/externa):
+
+- Design partner concreto + acuerdo de datos firmado.
+- Certificados de firma comercial (HE2-9).
+- Conectores reales ATV/SAT/DIAN y WhatsApp.
+- Carga de KB Marluvas/Tecmater.
+- Soak de 30 días con ≥10 casos reales y primera factura pagada.
+
+Gap menor conocido: el botón **"Usar en routine"** del `PresetsPanel` dispara un evento sin listener; `RoutineForm` aún solo acepta `provider:model`. No es bloqueante de seguridad.
 
 ---
 
@@ -40,8 +50,8 @@ Pendientes (arquitectura/datos vivos — requieren decisión y rollout escalonad
 | **E3-2** Tenant lifecycle | 🟡 Parcial | 2 | UI signup rota (`name` vs `company_name`); canario Postgres no itera todos los tenants. |
 | **E3-3** Entidad + sello | 🟡 Parcial | 3 | Key broker no media lecturas ni audita; objetos no cifran payload; scheduler ambient mono-tenant. |
 | **E3-4** Fábrica de skills | 🟡 Parcial | 2 | Ola 0 infra lista pero sin conectores reales; PACK 1/3 en SHADOW sin golden cases. |
-| **E3-5** Routing/BYO keys/presets | 🔴 Lejos del DoD | 1 | Presets builder no existe; catálogo workspace-scoped; BYOK sin modos. |
-| **E3-6** Tenant externo + billing | 🔴 No iniciado | 3 | Sin design partner, playbook, billing manual ni certificados de firma. |
+| **E3-5** Routing/BYO keys/presets | 🟢 Cerrado (codeable) | 0 | Presets builder implementado; gap menor: "Usar en routine" no conectado. |
+| **E3-6** Tenant externo + billing | 🟡 Parcial | 0 | Billing manual scaffold listo; falta design partner, certificados y soak real. |
 
 ---
 
