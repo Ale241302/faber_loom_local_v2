@@ -433,7 +433,17 @@ def initialize_database(conn: sqlite3.Connection | None = None) -> None:
                 continue
             if version == 22:
                 _migrate_v22_correlation_id(conn)
-            conn.executescript(MIGRATIONS[version])
+            migration_sql = MIGRATIONS[version]
+            if is_postgres_connection(conn):
+                # SQLite trigger syntax (BEGIN...END) is not valid in Postgres.
+                # RLS already enforces tenant isolation; skip trigger creation.
+                migration_sql = re.sub(
+                    r"CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS\s+.*?(?=\nCREATE|\Z)",
+                    "",
+                    migration_sql,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            conn.executescript(migration_sql)
             conn.execute(
                 "INSERT INTO _schema_version(version, applied_at) VALUES (?, ?)",
                 (version, utc_now()),
