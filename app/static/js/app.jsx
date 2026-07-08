@@ -67,7 +67,9 @@ function statusClass(status) {
 }
 
 function parsePreset(presetId) {
-  if (!presetId || !presetId.includes(":")) return { provider_slug: "", model: "" };
+  if (!presetId) return { provider_slug: "", model: "" };
+  if (presetId.startsWith("@preset/")) return { provider_slug: "", model: "" };
+  if (!presetId.includes(":")) return { provider_slug: "", model: "" };
   const [provider_slug, model] = presetId.split(":");
   return { provider_slug: provider_slug || "", model: model || "" };
 }
@@ -75,6 +77,10 @@ function parsePreset(presetId) {
 function formatPreset(provider_slug, model) {
   if (!provider_slug || !model) return "";
   return `${provider_slug}:${model}`;
+}
+
+function isPresetRef(presetId) {
+  return typeof presetId === "string" && presetId.startsWith("@preset/");
 }
 
 function isExecutableCategory(category) {
@@ -1280,9 +1286,12 @@ function RoutineForm({ mode, initial, modelAllowlist, routerStatus, onSubmit, on
   const [form, setForm] = useState(initial);
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
+  const [usePreset, setUsePreset] = useState(false);
 
   useEffect(() => {
     setForm(initial);
+    const presetRef = isPresetRef(initial.preset_id) ? initial.preset_id : "";
+    setUsePreset(!!presetRef);
     const preset = parsePreset(initial.preset_id || "");
     setProvider(preset.provider_slug || "");
     setModel(preset.model || "");
@@ -1292,14 +1301,29 @@ function RoutineForm({ mode, initial, modelAllowlist, routerStatus, onSubmit, on
   const availableModels = modelAllowlist[provider] || [];
 
   const handleProviderChange = (p) => {
+    setUsePreset(false);
     setProvider(p);
     setModel("");
     setForm((prev) => ({ ...prev, preset_id: formatPreset(p, "") }));
   };
 
   const handleModelChange = (m) => {
+    setUsePreset(false);
     setModel(m);
     setForm((prev) => ({ ...prev, preset_id: formatPreset(provider, m) }));
+  };
+
+  const handlePresetChange = (value) => {
+    const ref = value.startsWith("@preset/") ? value : `@preset/${value}`;
+    setUsePreset(true);
+    setProvider("");
+    setModel("");
+    setForm((prev) => ({ ...prev, preset_id: ref }));
+  };
+
+  const clearPreset = () => {
+    setUsePreset(false);
+    setForm((prev) => ({ ...prev, preset_id: "" }));
   };
 
   const submit = (event) => {
@@ -1319,20 +1343,28 @@ function RoutineForm({ mode, initial, modelAllowlist, routerStatus, onSubmit, on
     <label style={S.label}>tools_allowlist (JSON array)<input style={S.input} value={form.tools_allowlist || "[]"} onChange={(e) => setForm({ ...form, tools_allowlist: e.target.value })}/></label>
     <label style={S.label}>schema_output_json (JSON schema)<textarea style={S.monoTextarea} value={form.schema_output_json || "{}"} onChange={(e) => setForm({ ...form, schema_output_json: e.target.value })} rows={5}/></label>
     <label style={S.label}>trigger_json (JSON array)<input style={S.input} value={form.trigger_json || "[]"} onChange={(e) => setForm({ ...form, trigger_json: e.target.value })}/></label>
-    {routerStatus && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-      <label style={S.label}>Provider
-        <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
-          <option value="">Sin preset</option>
-          {providers.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
-        </select>
+    {routerStatus && <>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: "pointer" }}>
+        <input type="checkbox" checked={usePreset} onChange={(e) => { if (!e.target.checked) clearPreset(); else handlePresetChange(form.preset_id || ""); }}/>
+        <span style={{ fontSize: 13, color: "var(--text-2)" }}>Usar preset de ruteo</span>
       </label>
-      <label style={S.label}>Modelo
-        <select style={S.select} value={model} onChange={(e) => handleModelChange(e.target.value)} disabled={!provider}>
-          <option value="">Seleccionar</option>
-          {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-      </label>
-    </div>}
+      {usePreset ? <label style={S.label}>Preset (slug o @preset/...)
+        <input style={S.input} value={form.preset_id || ""} onChange={(e) => handlePresetChange(e.target.value)} placeholder="@preset/mi-preset"/>
+      </label> : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <label style={S.label}>Provider
+          <select style={S.select} value={provider} onChange={(e) => handleProviderChange(e.target.value)}>
+            <option value="">Sin preset</option>
+            {providers.map((p) => <option key={p.provider_slug} value={p.provider_slug}>{PROVIDER_LABELS[p.provider_slug] || p.provider_slug}</option>)}
+          </select>
+        </label>
+        <label style={S.label}>Modelo
+          <select style={S.select} value={model} onChange={(e) => handleModelChange(e.target.value)} disabled={!provider}>
+            <option value="">Seleccionar</option>
+            {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </label>
+      </div>}
+    </>}
     <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
       <Toggle checked={form.is_active === 1} onChange={(checked) => setForm({ ...form, is_active: checked ? 1 : 0 })}/>
       Activo
@@ -1479,6 +1511,14 @@ function SkillAgentView({ activeWorkspace, category, title, subtitle }) {
 
   const [createForm, setCreateForm] = useState(initialForm);
   const [editForm, setEditForm] = useState(initialForm);
+
+  useEffect(() => {
+    const pending = window.__pendingPresetForRoutine;
+    if (!pending || !activeWorkspace) return;
+    setCreateForm((prev) => ({ ...prev, preset_id: pending }));
+    setShowCreate(true);
+    window.__pendingPresetForRoutine = null;
+  }, [activeWorkspace]);
 
   const startEdit = (routine) => {
     setEditing(routine.id);
@@ -3127,7 +3167,7 @@ function PresetsPanel({ user }) {
 
   const useInRoutine = (presetId) => {
     window.dispatchEvent(new CustomEvent("faberloom-use-preset", { detail: { preset_id: presetId } }));
-    setSuccess(`Preset "${presetId}" listo para usar en una routine. Abre Skills/Agentes y pégalo en el campo preset.`);
+    setSuccess(`Preset "${presetId}" listo. Redirigiendo a Skills para crear la routine…`);
   };
 
   return <section className="panel" aria-label="Presets de ruteo">
@@ -3517,6 +3557,19 @@ function App({ user, onLogout }) {
       .catch(() => { if (!cancelled) setStatus("error"); });
     return () => { cancelled = true; };
   }, [boot]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const { preset_id } = e.detail || {};
+      if (!preset_id) return;
+      window.__pendingPresetForRoutine = preset_id.startsWith("@preset/") ? preset_id : `@preset/${preset_id}`;
+      setMode("admin");
+      setNav("skills");
+      pushToast(`Preset listo para usar en una routine`, "success");
+    };
+    window.addEventListener("faberloom-use-preset", handler);
+    return () => window.removeEventListener("faberloom-use-preset", handler);
+  }, []);
 
   const pushToast = (message, type = "info", duration = 3000) => {
     const id = Math.random().toString(36).slice(2);
