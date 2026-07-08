@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 34
+SCHEMA_VERSION = 37
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -61,8 +61,12 @@ def _must_be_json_array_of_strings(value: str, field_name: str) -> str:
 
 
 def _validate_preset_id(value: str | None) -> str | None:
-    """Validate that a preset_id is in 'provider:model' format with a known provider
-    and a model that appears in the allowlist for that provider.
+    """Validate a routine preset_id.
+
+    Accepts:
+      - legacy 'provider:model' format with a known provider and allowlisted model;
+      - '@preset/<slug>' referencing a tenant routing preset;
+      - a plain preset slug (no ':') referencing a tenant routing preset.
     """
 
     if value is None:
@@ -70,8 +74,14 @@ def _validate_preset_id(value: str | None) -> str | None:
     stripped = value.strip()
     if not stripped:
         return None
-    if ":" not in stripped:
-        raise ValueError("preset_id must be in 'provider:model' format")
+    # Preset reference: either '@preset/<slug>' or a plain slug without ':'.
+    if stripped.startswith("@preset/") or ":" not in stripped:
+        slug = stripped.split("@preset/", 1)[-1].strip()
+        if not slug:
+            raise ValueError("preset slug must not be empty")
+        if "/" in slug or " " in slug:
+            raise ValueError("preset slug must not contain spaces or slashes")
+        return stripped
     provider, model = stripped.split(":", 1)
     if not provider or not model:
         raise ValueError("preset_id must have non-empty provider and model")
@@ -1328,6 +1338,119 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_global_skill_pack ON global_skill_catalog(pack_id, is_active);
     CREATE INDEX IF NOT EXISTS idx_global_skill_active ON global_skill_catalog(is_active);
     """,
+    35: """
+    -- E3-5: tenant-scoped routing presets (Pedal Commander model).
+    CREATE TABLE IF NOT EXISTS routing_preset (
+        tenant_id TEXT NOT NULL,
+        preset_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        description TEXT,
+        envelope_json TEXT NOT NULL DEFAULT '{}',
+        curve_json TEXT NOT NULL DEFAULT '{}',
+        task_overrides_json TEXT NOT NULL DEFAULT '{}',
+        caps_json TEXT NOT NULL DEFAULT '{}',
+        escalation_json TEXT NOT NULL DEFAULT '{}',
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        is_template INTEGER NOT NULL DEFAULT 0 CHECK (is_template IN (0, 1)),
+        created_by TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 35,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, preset_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_routing_preset_tenant_active
+        ON routing_preset(tenant_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_routing_preset_template
+        ON routing_preset(tenant_id, is_template);
+    """,
+    36: """
+    -- E3-5: latent-field backfill for routing_preset (tenant_id is part of PK).
+    CREATE TRIGGER IF NOT EXISTS trg_routing_preset_tenant_nn BEFORE INSERT ON routing_preset
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_routing_preset_tenant_nn_upd BEFORE UPDATE ON routing_preset
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    """,
+    37: """
+    -- E3-6: manual billing tables for first external tenant.
+    CREATE TABLE IF NOT EXISTS manual_invoice (
+        tenant_id TEXT NOT NULL,
+        invoice_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        customer_tax_id TEXT,
+        customer_email TEXT,
+        issue_date TEXT NOT NULL,
+        due_date TEXT,
+        line_items_json TEXT NOT NULL DEFAULT '[]',
+        subtotal REAL NOT NULL DEFAULT 0,
+        tax_total REAL NOT NULL DEFAULT 0,
+        total REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        status TEXT NOT NULL CHECK (status IN ('draft','sent','paid','void')),
+        paid_at TEXT,
+        paid_amount REAL,
+        payment_reference TEXT,
+        notes TEXT,
+        created_by TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 37,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, invoice_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_manual_invoice_tenant_status
+        ON manual_invoice(tenant_id, status);
+    CREATE INDEX IF NOT EXISTS idx_manual_invoice_tenant_issue_date
+        ON manual_invoice(tenant_id, issue_date);
+
+    CREATE TABLE IF NOT EXISTS payment_reconciliation (
+        tenant_id TEXT NOT NULL,
+        reconciliation_id TEXT NOT NULL,
+        bank_reference TEXT,
+        received_at TEXT NOT NULL,
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        payer_name TEXT,
+        payer_account TEXT,
+        matched_invoice_id TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending','matched','rejected')),
+        notes TEXT,
+        created_by TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 37,
+        source_version TEXT,
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, reconciliation_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_reconciliation_tenant_status
+        ON payment_reconciliation(tenant_id, status);
+    CREATE INDEX IF NOT EXISTS idx_payment_reconciliation_tenant_invoice
+        ON payment_reconciliation(tenant_id, matched_invoice_id);
+
+    CREATE TRIGGER IF NOT EXISTS trg_manual_invoice_tenant_nn BEFORE INSERT ON manual_invoice
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_manual_invoice_tenant_nn_upd BEFORE UPDATE ON manual_invoice
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_payment_reconciliation_tenant_nn BEFORE INSERT ON payment_reconciliation
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_payment_reconciliation_tenant_nn_upd BEFORE UPDATE ON payment_reconciliation
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    """,
 }
 
 
@@ -2399,3 +2522,228 @@ class DraftExportRead(BaseModel):
     subject: str | None = None
     exported_at: str
     object_id: str | None = None
+
+
+# -----------------------------------------------------------------------------
+# E3-5: Routing presets
+# -----------------------------------------------------------------------------
+
+
+class RoutingPresetEnvelope(BaseModel):
+    jurisdictions: list[str] = Field(default_factory=lambda: ["US", "EU"])
+    providers_allow: list[str] = Field(default_factory=lambda: ["anthropic", "openai"])
+    providers_deny: list[str] = Field(default_factory=list)
+    data_collection: str = Field(default="deny")
+    byo_keys: bool = False
+
+
+class RoutingPresetCurve(BaseModel):
+    mode: str = Field(default="balanceado")
+    borderline_policy: str = Field(default="premium")
+
+
+class RoutingPresetCaps(BaseModel):
+    monthly_budget_usd: float = Field(default=50.0, ge=0.0)
+    max_cost_per_task_usd: float | None = Field(default=None, ge=0.0)
+    max_latency_s: float | None = Field(default=None, ge=0.0)
+
+
+class RoutingPresetEscalation(BaseModel):
+    user_boost_button: bool = True
+    boost_cap_per_day: int = Field(default=10, ge=0)
+
+
+class RoutingPresetCreate(BaseModel):
+    preset_id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    envelope: RoutingPresetEnvelope = Field(default_factory=RoutingPresetEnvelope)
+    curve: RoutingPresetCurve = Field(default_factory=RoutingPresetCurve)
+    task_overrides: dict[str, Any] = Field(default_factory=dict)
+    caps: RoutingPresetCaps = Field(default_factory=RoutingPresetCaps)
+    escalation: RoutingPresetEscalation = Field(default_factory=RoutingPresetEscalation)
+    is_active: bool = True
+    is_template: bool = False
+
+    @field_validator("preset_id")
+    @classmethod
+    def preset_id_must_be_slug(cls, value: str) -> str:
+        value = value.strip()
+        if ":" in value or "/" in value or " " in value:
+            raise ValueError("preset_id must be a slug without ':', '/' or spaces")
+        return value
+
+
+class RoutingPresetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    envelope: RoutingPresetEnvelope | None = None
+    curve: RoutingPresetCurve | None = None
+    task_overrides: dict[str, Any] | None = None
+    caps: RoutingPresetCaps | None = None
+    escalation: RoutingPresetEscalation | None = None
+    is_active: bool | None = None
+    is_template: bool | None = None
+
+
+class RoutingPresetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str
+    preset_id: str
+    name: str
+    version: int
+    description: str | None = None
+    envelope: dict[str, Any]
+    curve: dict[str, Any]
+    task_overrides: dict[str, Any]
+    caps: dict[str, Any]
+    escalation: dict[str, Any]
+    is_active: bool
+    is_template: bool
+    created_by: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class RoutingPresetListRead(BaseModel):
+    presets: list[RoutingPresetRead]
+
+
+class RoutingPresetResolveRead(BaseModel):
+    preset_id: str
+    provider_slug: str | None = None
+    model: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    reason: str = "fallback"
+
+
+class InvoiceLineItem(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    quantity: float = Field(default=1.0, ge=0.0)
+    unit_price: float = Field(ge=0.0)
+    tax_pct: float = Field(default=0.0, ge=0.0)
+
+
+class InvoiceCreate(BaseModel):
+    invoice_id: str = Field(min_length=1, max_length=120)
+    customer_name: str = Field(min_length=1, max_length=200)
+    customer_tax_id: str | None = Field(default=None, max_length=50)
+    customer_email: str | None = Field(default=None, max_length=200)
+    issue_date: str = Field(min_length=1, max_length=30)
+    due_date: str | None = Field(default=None, max_length=30)
+    line_items: list[InvoiceLineItem] = Field(default_factory=list)
+    currency: str = Field(default="USD", max_length=10)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("invoice_id")
+    @classmethod
+    def invoice_id_must_be_slug(cls, value: str) -> str:
+        value = value.strip()
+        if ":" in value or "/" in value or " " in value:
+            raise ValueError("invoice_id must be a slug without ':', '/' or spaces")
+        return value
+
+
+class InvoiceStatusUpdate(BaseModel):
+    status: Literal["draft", "sent", "paid", "void"] | None = None
+    paid_at: str | None = Field(default=None, max_length=30)
+    paid_amount: float | None = Field(default=None, ge=0.0)
+    payment_reference: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class InvoiceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str
+    invoice_id: str
+    customer_name: str
+    customer_tax_id: str | None = None
+    customer_email: str | None = None
+    issue_date: str
+    due_date: str | None = None
+    line_items: list[dict[str, Any]]
+    subtotal: float
+    tax_total: float
+    total: float
+    currency: str
+    status: str
+    paid_at: str | None = None
+    paid_amount: float | None = None
+    payment_reference: str | None = None
+    notes: str | None = None
+    created_by: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class InvoiceListRead(BaseModel):
+    invoices: list[InvoiceRead]
+
+
+class ReconciliationCreate(BaseModel):
+    reconciliation_id: str = Field(min_length=1, max_length=120)
+    bank_reference: str | None = Field(default=None, max_length=200)
+    received_at: str = Field(min_length=1, max_length=30)
+    amount: float = Field(ge=0.0)
+    currency: str = Field(default="USD", max_length=10)
+    payer_name: str | None = Field(default=None, max_length=200)
+    payer_account: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reconciliation_id")
+    @classmethod
+    def reconciliation_id_must_be_slug(cls, value: str) -> str:
+        value = value.strip()
+        if ":" in value or "/" in value or " " in value:
+            raise ValueError("reconciliation_id must be a slug without ':', '/' or spaces")
+        return value
+
+
+class ReconciliationMatch(BaseModel):
+    invoice_id: str = Field(min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ReconciliationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str
+    reconciliation_id: str
+    bank_reference: str | None = None
+    received_at: str
+    amount: float
+    currency: str
+    payer_name: str | None = None
+    payer_account: str | None = None
+    matched_invoice_id: str | None = None
+    status: str
+    notes: str | None = None
+    created_by: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+
+
+class ReconciliationListRead(BaseModel):
+    reconciliations: list[ReconciliationRead]

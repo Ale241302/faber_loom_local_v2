@@ -1270,6 +1270,50 @@ WORKSPACE_MODEL_CATALOG_COLUMNS = """
     created_at
 """
 
+ROUTING_PRESET_COLUMNS = """
+    tenant_id,
+    preset_id,
+    name,
+    version,
+    description,
+    envelope_json,
+    curve_json,
+    task_overrides_json,
+    caps_json,
+    escalation_json,
+    is_active,
+    is_template,
+    created_by,
+    actor_id,
+    actor_role_at_decision,
+    routine_version,
+    skill_version,
+    schema_version,
+    source_version,
+    approved_by,
+    created_at,
+    updated_at
+"""
+
+
+def _routing_preset_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = row_to_dict(row)
+    for key in (
+        "envelope_json",
+        "curve_json",
+        "task_overrides_json",
+        "caps_json",
+        "escalation_json",
+    ):
+        try:
+            data[key.replace("_json", "")] = json.loads(data.get(key) or "{}")
+        except Exception:
+            data[key.replace("_json", "")] = {}
+        data.pop(key, None)
+    data["is_active"] = bool(data.get("is_active", 1))
+    data["is_template"] = bool(data.get("is_template", 0))
+    return data
+
 
 def _chat_user_id(ctx: Context) -> str:
     """Return the user_id value to use for chat/message filters.
@@ -3723,3 +3767,787 @@ def upsert_global_skill(
         ),
     )
     return get_global_skill_by_id(conn, skill_id, tenant_id=tenant_id, active_only=False)
+
+
+# ---------------------------------------------------------------------------
+# E3-5: Routing presets
+# ---------------------------------------------------------------------------
+
+
+def _default_preset_envelope() -> dict[str, Any]:
+    return {
+        "jurisdictions": ["US", "EU"],
+        "providers_allow": ["anthropic", "openai"],
+        "providers_deny": [],
+        "data_collection": "deny",
+        "byo_keys": False,
+    }
+
+
+def _default_preset_curve(mode: str = "balanceado") -> dict[str, Any]:
+    return {"mode": mode, "borderline_policy": "premium" if mode in {"sport", "sport_plus"} else "cheap" if mode == "eco" else "premium"}
+
+
+def _default_preset_caps() -> dict[str, Any]:
+    return {"monthly_budget_usd": 50.0, "max_cost_per_task_usd": 0.5, "max_latency_s": 12.0}
+
+
+def _default_preset_escalation() -> dict[str, Any]:
+    return {"user_boost_button": True, "boost_cap_per_day": 10}
+
+
+DEFAULT_PRESET_TEMPLATES: list[dict[str, Any]] = [
+    {
+        "preset_id": "conservador",
+        "name": "Conservador",
+        "description": "US/EU only, ZDR on, default seguro para onboarding.",
+        "envelope": {**_default_preset_envelope(), "providers_allow": ["anthropic", "openai"]},
+        "curve": _default_preset_curve("sport"),
+        "task_overrides": {},
+        "caps": _default_preset_caps(),
+        "escalation": _default_preset_escalation(),
+    },
+    {
+        "preset_id": "balanceado",
+        "name": "Balanceado",
+        "description": "US/EU only, modo balanceado recomendado interactivo.",
+        "envelope": _default_preset_envelope(),
+        "curve": _default_preset_curve("balanceado"),
+        "task_overrides": {},
+        "caps": _default_preset_caps(),
+        "escalation": _default_preset_escalation(),
+    },
+    {
+        "preset_id": "ahorro",
+        "name": "Ahorro",
+        "description": "US/EU + cost-mode para tareas batch y back-office.",
+        "envelope": {**_default_preset_envelope(), "providers_allow": ["anthropic", "openai", "kimi"]},
+        "curve": _default_preset_curve("eco"),
+        "task_overrides": {},
+        "caps": {**_default_preset_caps(), "monthly_budget_usd": 30.0},
+        "escalation": _default_preset_escalation(),
+    },
+    {
+        "preset_id": "sport",
+        "name": "Sport",
+        "description": "Siempre el mejor modelo; demos y tareas críticas.",
+        "envelope": _default_preset_envelope(),
+        "curve": _default_preset_curve("sport_plus"),
+        "task_overrides": {},
+        "caps": {**_default_preset_caps(), "monthly_budget_usd": 200.0},
+        "escalation": _default_preset_escalation(),
+    },
+]
+
+
+def seed_routing_presets(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    created_by: str = "system",
+) -> list[dict[str, Any]]:
+    """Seed the four default FaberLoom preset templates for a tenant.
+
+    Idempotent: skips existing (tenant_id, preset_id) pairs and bumps version
+    only when the template content changed.
+    """
+
+    ctx.require_tenant()
+    now = utc_now()
+    created: list[dict[str, Any]] = []
+    with transaction(conn, ctx=ctx):
+        for template in DEFAULT_PRESET_TEMPLATES:
+            existing = conn.execute(
+                "SELECT preset_id FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+                (ctx.require_tenant(), template["preset_id"]),
+            ).fetchone()
+            if existing is not None:
+                continue
+            conn.execute(
+                f"""
+                INSERT INTO routing_preset (
+                    tenant_id, preset_id, name, version, description,
+                    envelope_json, curve_json, task_overrides_json, caps_json, escalation_json,
+                    is_active, is_template, created_by, actor_id, actor_role_at_decision,
+                    routine_version, skill_version, schema_version, source_version,
+                    approved_by, created_at, updated_at
+                )
+                VALUES ({','.join('?' for _ in range(22))})
+                """,
+                (
+                    ctx.require_tenant(),
+                    template["preset_id"],
+                    template["name"],
+                    1,
+                    template.get("description"),
+                    json.dumps(template["envelope"], ensure_ascii=False),
+                    json.dumps(template["curve"], ensure_ascii=False),
+                    json.dumps(template["task_overrides"], ensure_ascii=False),
+                    json.dumps(template["caps"], ensure_ascii=False),
+                    json.dumps(template["escalation"], ensure_ascii=False),
+                    1,
+                    1,
+                    created_by,
+                    ctx.resolved_actor_id(),
+                    ctx.actor_role_at_decision,
+                    None,
+                    None,
+                    SCHEMA_VERSION,
+                    "v1",
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            created.append(template)
+    return created
+
+
+def list_routing_presets(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    active_only: bool = False,
+    templates_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Return routing presets for the current tenant."""
+
+    ctx.require_tenant()
+    query = f"SELECT {ROUTING_PRESET_COLUMNS} FROM routing_preset WHERE tenant_id = ?"
+    params: list[Any] = [ctx.require_tenant()]
+    if active_only:
+        query += " AND is_active = 1"
+    if templates_only:
+        query += " AND is_template = 1"
+    query += " ORDER BY is_template DESC, name ASC"
+    rows = conn.execute(query, params).fetchall()
+    return [_routing_preset_row_to_dict(row) for row in rows]
+
+
+def get_routing_preset(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    preset_id: str,
+) -> dict[str, Any] | None:
+    """Return a single routing preset if it belongs to the current tenant."""
+
+    ctx.require_tenant()
+    row = conn.execute(
+        f"SELECT {ROUTING_PRESET_COLUMNS} FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+        (ctx.require_tenant(), preset_id),
+    ).fetchone()
+    return _routing_preset_row_to_dict(row) if row else None
+
+
+def create_routing_preset(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    preset_id: str,
+    name: str,
+    description: str | None = None,
+    envelope: dict[str, Any] | None = None,
+    curve: dict[str, Any] | None = None,
+    task_overrides: dict[str, Any] | None = None,
+    caps: dict[str, Any] | None = None,
+    escalation: dict[str, Any] | None = None,
+    is_active: bool = True,
+    is_template: bool = False,
+) -> dict[str, Any]:
+    """Create a tenant-scoped routing preset."""
+
+    ctx.require_tenant()
+    now = utc_now()
+    with transaction(conn, ctx=ctx):
+        existing = conn.execute(
+            "SELECT preset_id FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            (ctx.require_tenant(), preset_id),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError(f"Preset '{preset_id}' already exists in this tenant")
+        conn.execute(
+            f"""
+            INSERT INTO routing_preset (
+                tenant_id, preset_id, name, version, description,
+                envelope_json, curve_json, task_overrides_json, caps_json, escalation_json,
+                is_active, is_template, created_by, actor_id, actor_role_at_decision,
+                routine_version, skill_version, schema_version, source_version,
+                approved_by, created_at, updated_at
+            )
+            VALUES ({','.join('?' for _ in range(22))})
+            """,
+            (
+                ctx.require_tenant(),
+                preset_id,
+                name.strip(),
+                1,
+                description,
+                json.dumps(envelope or _default_preset_envelope(), ensure_ascii=False),
+                json.dumps(curve or _default_preset_curve(), ensure_ascii=False),
+                json.dumps(task_overrides or {}, ensure_ascii=False),
+                json.dumps(caps or _default_preset_caps(), ensure_ascii=False),
+                json.dumps(escalation or _default_preset_escalation(), ensure_ascii=False),
+                1 if is_active else 0,
+                1 if is_template else 0,
+                ctx.resolved_actor_id(),
+                ctx.resolved_actor_id(),
+                ctx.actor_role_at_decision,
+                None,
+                None,
+                SCHEMA_VERSION,
+                "v1",
+                None,
+                now,
+                now,
+            ),
+        )
+        row = conn.execute(
+            f"SELECT {ROUTING_PRESET_COLUMNS} FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            (ctx.require_tenant(), preset_id),
+        ).fetchone()
+        assert row is not None
+        return _routing_preset_row_to_dict(row)
+
+
+def update_routing_preset(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    preset_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    envelope: dict[str, Any] | None = None,
+    curve: dict[str, Any] | None = None,
+    task_overrides: dict[str, Any] | None = None,
+    caps: dict[str, Any] | None = None,
+    escalation: dict[str, Any] | None = None,
+    is_active: bool | None = None,
+    is_template: bool | None = None,
+) -> dict[str, Any] | None:
+    """Update a routing preset, bumping version on content changes."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        existing = get_routing_preset(ctx, conn, preset_id)
+        if existing is None:
+            return None
+        updates: dict[str, Any] = {"updated_at": utc_now()}
+        if name is not None:
+            updates["name"] = name.strip()
+        if description is not None:
+            updates["description"] = description
+        if envelope is not None:
+            updates["envelope_json"] = json.dumps(envelope, ensure_ascii=False)
+        if curve is not None:
+            updates["curve_json"] = json.dumps(curve, ensure_ascii=False)
+        if task_overrides is not None:
+            updates["task_overrides_json"] = json.dumps(task_overrides, ensure_ascii=False)
+        if caps is not None:
+            updates["caps_json"] = json.dumps(caps, ensure_ascii=False)
+        if escalation is not None:
+            updates["escalation_json"] = json.dumps(escalation, ensure_ascii=False)
+        if is_active is not None:
+            updates["is_active"] = 1 if is_active else 0
+        if is_template is not None:
+            updates["is_template"] = 1 if is_template else 0
+        if len(updates) > 1:
+            updates["version"] = existing["version"] + 1
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE routing_preset SET {cols} WHERE tenant_id = ? AND preset_id = ?",
+            (*updates.values(), ctx.require_tenant(), preset_id),
+        )
+        return get_routing_preset(ctx, conn, preset_id)
+
+
+def delete_routing_preset(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    preset_id: str,
+) -> bool:
+    """Delete a routing preset. Returns True if it existed and was deleted."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        cursor = conn.execute(
+            "DELETE FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            (ctx.require_tenant(), preset_id),
+        )
+        return cursor.rowcount > 0
+
+
+def resolve_routing_preset(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    preset_ref: str | None,
+    *,
+    task_class: str | None = None,
+    complexity: str = "medium",
+) -> dict[str, Any] | None:
+    """Resolve a preset reference into provider/model/params.
+
+    Accepts '@preset/<slug>', a plain slug, or legacy 'provider:model'.
+    Returns None if the reference is empty or cannot be resolved.
+    """
+
+    if not preset_ref:
+        return None
+    ref = preset_ref.strip()
+    if not ref:
+        return None
+    if ":" in ref:
+        provider, model = ref.split(":", 1)
+        return {
+            "preset_id": ref,
+            "provider_slug": provider,
+            "model": model,
+            "params": {},
+            "reason": "legacy_provider_model",
+        }
+    slug = ref.split("@preset/", 1)[-1].strip()
+    preset = get_routing_preset(ctx, conn, slug)
+    if preset is None:
+        return None
+    envelope = preset.get("envelope") or {}
+    curve = preset.get("curve") or {}
+    task_overrides = preset.get("task_overrides") or {}
+    providers_allow = envelope.get("providers_allow") or ["anthropic", "openai"]
+    mode = curve.get("mode") or "balanceado"
+    borderline_policy = curve.get("borderline_policy") or "premium"
+    override = task_overrides.get(task_class) if task_class else None
+    if override and override.get("default"):
+        default_model = override["default"]
+        provider_guess = next((p for p in providers_allow if default_model in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+        return {
+            "preset_id": slug,
+            "provider_slug": provider_guess,
+            "model": default_model,
+            "params": {"mode": mode, "borderline_policy": borderline_policy},
+            "reason": "task_override",
+        }
+    # Mode-based fallback using the catalog.
+    if mode in {"eco", "cheap"}:
+        preferred = "gpt-4o-mini"
+        provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+        return {
+            "preset_id": slug,
+            "provider_slug": provider_guess,
+            "model": preferred,
+            "params": {"mode": mode, "borderline_policy": borderline_policy},
+            "reason": "mode_fallback_cheap",
+        }
+    if mode in {"sport_plus", "sport"}:
+        preferred = "claude-3-5-sonnet"
+        provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+        return {
+            "preset_id": slug,
+            "provider_slug": provider_guess,
+            "model": preferred,
+            "params": {"mode": mode, "borderline_policy": borderline_policy},
+            "reason": "mode_fallback_premium",
+        }
+    preferred = "gpt-4o"
+    provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+    return {
+        "preset_id": slug,
+        "provider_slug": provider_guess,
+        "model": preferred,
+        "params": {"mode": mode, "borderline_policy": borderline_policy},
+        "reason": "mode_fallback_balanced",
+    }
+
+
+# -----------------------------------------------------------------------------
+# E3-6: manual billing (invoices + payment reconciliation)
+# -----------------------------------------------------------------------------
+
+
+MANUAL_INVOICE_COLUMNS = """
+    tenant_id,
+    invoice_id,
+    customer_name,
+    customer_tax_id,
+    customer_email,
+    issue_date,
+    due_date,
+    line_items_json,
+    subtotal,
+    tax_total,
+    total,
+    currency,
+    status,
+    paid_at,
+    paid_amount,
+    payment_reference,
+    notes,
+    created_by,
+    actor_id,
+    actor_role_at_decision,
+    routine_version,
+    skill_version,
+    schema_version,
+    source_version,
+    approved_by,
+    created_at,
+    updated_at
+"""
+
+
+PAYMENT_RECONCILIATION_COLUMNS = """
+    tenant_id,
+    reconciliation_id,
+    bank_reference,
+    received_at,
+    amount,
+    currency,
+    payer_name,
+    payer_account,
+    matched_invoice_id,
+    status,
+    notes,
+    created_by,
+    actor_id,
+    actor_role_at_decision,
+    routine_version,
+    skill_version,
+    schema_version,
+    source_version,
+    approved_by,
+    created_at
+"""
+
+
+def _invoice_line_items_totals(line_items: list[dict[str, Any]]) -> tuple[float, float, float]:
+    """Return (subtotal, tax_total, total) for a list of line items."""
+
+    subtotal = 0.0
+    tax_total = 0.0
+    for item in line_items:
+        quantity = float(item.get("quantity", 1) or 1)
+        unit_price = float(item.get("unit_price", 0) or 0)
+        tax_pct = float(item.get("tax_pct", 0) or 0)
+        line_subtotal = quantity * unit_price
+        line_tax = line_subtotal * tax_pct / 100.0
+        subtotal += line_subtotal
+        tax_total += line_tax
+    return round(subtotal, 4), round(tax_total, 4), round(subtotal + tax_total, 4)
+
+
+def _manual_invoice_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = row_to_dict(row)
+    try:
+        data["line_items"] = json.loads(data.get("line_items_json") or "[]")
+    except Exception:
+        data["line_items"] = []
+    data.pop("line_items_json", None)
+    return data
+
+
+def _payment_reconciliation_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return row_to_dict(row)
+
+
+def list_manual_invoices(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return manual invoices for the current tenant."""
+
+    ctx.require_tenant()
+    query = f"SELECT {MANUAL_INVOICE_COLUMNS} FROM manual_invoice WHERE tenant_id = ?"
+    params: list[Any] = [ctx.require_tenant()]
+    if status is not None:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY issue_date DESC, created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    return [_manual_invoice_row_to_dict(row) for row in rows]
+
+
+def get_manual_invoice(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    invoice_id: str,
+) -> dict[str, Any] | None:
+    """Return a single manual invoice if it belongs to the current tenant."""
+
+    ctx.require_tenant()
+    row = conn.execute(
+        f"SELECT {MANUAL_INVOICE_COLUMNS} FROM manual_invoice WHERE tenant_id = ? AND invoice_id = ?",
+        (ctx.require_tenant(), invoice_id),
+    ).fetchone()
+    return _manual_invoice_row_to_dict(row) if row else None
+
+
+def create_manual_invoice(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    invoice_id: str,
+    customer_name: str,
+    customer_tax_id: str | None = None,
+    customer_email: str | None = None,
+    issue_date: str,
+    due_date: str | None = None,
+    line_items: list[dict[str, Any]] | None = None,
+    currency: str = "USD",
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Create a manual invoice for the current tenant."""
+
+    ctx.require_tenant()
+    line_items = line_items or []
+    subtotal, tax_total, total = _invoice_line_items_totals(line_items)
+    now = utc_now()
+    with transaction(conn, ctx=ctx):
+        existing = conn.execute(
+            "SELECT invoice_id FROM manual_invoice WHERE tenant_id = ? AND invoice_id = ?",
+            (ctx.require_tenant(), invoice_id),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError(f"Invoice '{invoice_id}' already exists in this tenant")
+        conn.execute(
+            f"""
+            INSERT INTO manual_invoice (
+                tenant_id, invoice_id, customer_name, customer_tax_id, customer_email,
+                issue_date, due_date, line_items_json, subtotal, tax_total, total,
+                currency, status, paid_at, paid_amount, payment_reference, notes,
+                created_by, actor_id, actor_role_at_decision, routine_version, skill_version,
+                schema_version, source_version, approved_by, created_at, updated_at
+            )
+            VALUES ({','.join('?' for _ in range(27))})
+            """,
+            (
+                ctx.require_tenant(),
+                invoice_id,
+                customer_name.strip(),
+                customer_tax_id,
+                customer_email,
+                issue_date,
+                due_date,
+                json.dumps(line_items, ensure_ascii=False),
+                subtotal,
+                tax_total,
+                total,
+                currency,
+                "draft",
+                None,
+                None,
+                None,
+                notes,
+                ctx.resolved_actor_id(),
+                ctx.resolved_actor_id(),
+                ctx.actor_role_at_decision,
+                None,
+                None,
+                SCHEMA_VERSION,
+                "v1",
+                None,
+                now,
+                now,
+            ),
+        )
+        row = conn.execute(
+            f"SELECT {MANUAL_INVOICE_COLUMNS} FROM manual_invoice WHERE tenant_id = ? AND invoice_id = ?",
+            (ctx.require_tenant(), invoice_id),
+        ).fetchone()
+        assert row is not None
+        return _manual_invoice_row_to_dict(row)
+
+
+def update_manual_invoice(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    invoice_id: str,
+    *,
+    status: str | None = None,
+    paid_at: str | None = None,
+    paid_amount: float | None = None,
+    payment_reference: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Update a manual invoice (status / payment fields)."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        existing = get_manual_invoice(ctx, conn, invoice_id)
+        if existing is None:
+            return None
+        updates: dict[str, Any] = {"updated_at": utc_now()}
+        if status is not None:
+            updates["status"] = status
+        if paid_at is not None:
+            updates["paid_at"] = paid_at
+        if paid_amount is not None:
+            updates["paid_amount"] = paid_amount
+        if payment_reference is not None:
+            updates["payment_reference"] = payment_reference
+        if notes is not None:
+            updates["notes"] = notes
+        if not updates:
+            return existing
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE manual_invoice SET {cols} WHERE tenant_id = ? AND invoice_id = ?",
+            (*updates.values(), ctx.require_tenant(), invoice_id),
+        )
+        return get_manual_invoice(ctx, conn, invoice_id)
+
+
+def delete_manual_invoice(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    invoice_id: str,
+) -> bool:
+    """Delete a manual invoice. Returns True if it existed and was deleted."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        cursor = conn.execute(
+            "DELETE FROM manual_invoice WHERE tenant_id = ? AND invoice_id = ?",
+            (ctx.require_tenant(), invoice_id),
+        )
+        return cursor.rowcount > 0
+
+
+def list_reconciliations(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return payment reconciliations for the current tenant."""
+
+    ctx.require_tenant()
+    query = f"SELECT {PAYMENT_RECONCILIATION_COLUMNS} FROM payment_reconciliation WHERE tenant_id = ?"
+    params: list[Any] = [ctx.require_tenant()]
+    if status is not None:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY received_at DESC, created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    return [_payment_reconciliation_row_to_dict(row) for row in rows]
+
+
+def get_reconciliation(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    reconciliation_id: str,
+) -> dict[str, Any] | None:
+    """Return a single reconciliation if it belongs to the current tenant."""
+
+    ctx.require_tenant()
+    row = conn.execute(
+        f"SELECT {PAYMENT_RECONCILIATION_COLUMNS} FROM payment_reconciliation WHERE tenant_id = ? AND reconciliation_id = ?",
+        (ctx.require_tenant(), reconciliation_id),
+    ).fetchone()
+    return _payment_reconciliation_row_to_dict(row) if row else None
+
+
+def create_reconciliation(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    reconciliation_id: str,
+    bank_reference: str | None = None,
+    received_at: str,
+    amount: float,
+    currency: str = "USD",
+    payer_name: str | None = None,
+    payer_account: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Create a payment reconciliation entry for the current tenant."""
+
+    ctx.require_tenant()
+    now = utc_now()
+    with transaction(conn, ctx=ctx):
+        existing = conn.execute(
+            "SELECT reconciliation_id FROM payment_reconciliation WHERE tenant_id = ? AND reconciliation_id = ?",
+            (ctx.require_tenant(), reconciliation_id),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError(f"Reconciliation '{reconciliation_id}' already exists in this tenant")
+        conn.execute(
+            f"""
+            INSERT INTO payment_reconciliation (
+                tenant_id, reconciliation_id, bank_reference, received_at, amount,
+                currency, payer_name, payer_account, matched_invoice_id, status, notes,
+                created_by, actor_id, actor_role_at_decision, routine_version, skill_version,
+                schema_version, source_version, approved_by, created_at
+            )
+            VALUES ({','.join('?' for _ in range(20))})
+            """,
+            (
+                ctx.require_tenant(),
+                reconciliation_id,
+                bank_reference,
+                received_at,
+                amount,
+                currency,
+                payer_name,
+                payer_account,
+                None,
+                "pending",
+                notes,
+                ctx.resolved_actor_id(),
+                ctx.resolved_actor_id(),
+                ctx.actor_role_at_decision,
+                None,
+                None,
+                SCHEMA_VERSION,
+                "v1",
+                None,
+                now,
+            ),
+        )
+        row = conn.execute(
+            f"SELECT {PAYMENT_RECONCILIATION_COLUMNS} FROM payment_reconciliation WHERE tenant_id = ? AND reconciliation_id = ?",
+            (ctx.require_tenant(), reconciliation_id),
+        ).fetchone()
+        assert row is not None
+        return _payment_reconciliation_row_to_dict(row)
+
+
+def match_reconciliation(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    reconciliation_id: str,
+    *,
+    matched_invoice_id: str,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Match a pending reconciliation to an invoice and optionally mark it paid."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        reconciliation = get_reconciliation(ctx, conn, reconciliation_id)
+        if reconciliation is None:
+            return None
+        invoice = get_manual_invoice(ctx, conn, matched_invoice_id)
+        if invoice is None:
+            raise ValueError(f"Invoice '{matched_invoice_id}' not found in this tenant")
+        updates_recon: dict[str, Any] = {
+            "matched_invoice_id": matched_invoice_id,
+            "status": "matched",
+        }
+        if notes is not None:
+            updates_recon["notes"] = notes
+        cols = ", ".join(f"{k} = ?" for k in updates_recon)
+        conn.execute(
+            f"UPDATE payment_reconciliation SET {cols} WHERE tenant_id = ? AND reconciliation_id = ?",
+            (*updates_recon.values(), ctx.require_tenant(), reconciliation_id),
+        )
+        # Mirror the payment on the invoice when amounts match (best-effort hint).
+        if invoice.get("total") is not None and abs(float(invoice["total"]) - float(reconciliation["amount"])) < 0.001:
+            update_manual_invoice(
+                ctx,
+                conn,
+                matched_invoice_id,
+                status="paid",
+                paid_at=reconciliation.get("received_at"),
+                paid_amount=reconciliation["amount"],
+                payment_reference=f"reconciliation:{reconciliation_id}",
+            )
+        return get_reconciliation(ctx, conn, reconciliation_id)

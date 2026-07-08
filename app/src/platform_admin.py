@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from .ambient import seed_ambient_config
 from .auth import get_current_user
 from .context import SYSTEM_WORKSPACE_ID, Context
-from .db import create_workspace, db_session, get_db, transaction
+from .db import create_workspace, db_session, get_db, seed_routing_presets, transaction
 from .models import WorkspaceCreate
 from .foundation.core import (
     audit_log,
@@ -519,5 +519,14 @@ def _bootstrap_approved_tenant(
             )
 
             seed_ambient_config(app_conn, tenant_id)
+
+            seed_ctx = Context(
+                workspace_id=SYSTEM_WORKSPACE_ID,
+                tenant_id=tenant_id,
+                user_id="system",
+                actor_id="system",
+                actor_role_at_decision="platform_admin",
+            )
+            seed_routing_presets(seed_ctx, app_conn, created_by="system")
 
     return {"tenant_id": tenant_id, "workspace_id": workspace_id}

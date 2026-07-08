@@ -298,7 +298,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     kb: "kb-acc", "hitl-signals": "kb-acc",
     gold: "gold-acc",
     skills: "caps-acc", agents: "caps-acc",
-    routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc",
+    routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc", billing: "tenant-acc",
     foundation: "tenant-acc",
   }[nav];
 
@@ -361,6 +361,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <Accordion items={[
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
+            <RailItem label="Facturación" icon="credit-card" active={nav === "billing"} onClick={() => setNav("billing")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
             <RailItem label="Config. en cascada" icon="settings" active={nav === "tenant-settings"} onClick={() => setNav("tenant-settings")} />
             {isPlatformAdmin(user) && <RailItem label="Admin de plataforma" icon="shield" active={nav === "tenant-admin"} onClick={() => setNav("tenant-admin")} />}
@@ -1129,7 +1130,7 @@ function SpaceView({ activeWorkspace }) {
 }
 
 function PlaceholderView({ nav }) {
-  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría", skills: "Skills", agents: "Agentes", gold: "Gold Samples", routing: "IA: modelos y ruteo", users: "Usuarios", inbox: "Inbox", mail: "Correo", stackloom: "StackLoom", "hitl-signals": "Señales HITL" };
+  const labels = { workloom: "WorkLoom", kb: "Knowledge Base", routines: "Routine Hub", settings: "Ajustes", audit: "Auditoría", skills: "Skills", agents: "Agentes", gold: "Gold Samples", routing: "IA: modelos y ruteo", users: "Usuarios", inbox: "Inbox", mail: "Correo", stackloom: "StackLoom", "hitl-signals": "Señales HITL", billing: "Facturación" };
   return <div className="placeholder"><div className="placeholder-card"><Icon name="loom"/><h2>{labels[nav] || "Vista futura"}</h2><p>Esta superficie queda señalizada en SL0, pero se implementa en hitos posteriores del plan FaberLoom.</p></div></div>;
 }
 
@@ -1577,8 +1578,223 @@ function AgentsView({ activeWorkspace }) {
 }
 
 function GoldView({ activeWorkspace }) { return <PlaceholderView nav="gold" />; }
-function RoutingView({ activeWorkspace }) { return <SettingsView activeWorkspace={activeWorkspace} title="IA: modelos y ruteo" subtitle="Estado del router, proveedores y presupuesto" />; }
+function RoutingView({ activeWorkspace, user }) { return <SettingsView activeWorkspace={activeWorkspace} user={user} title="IA: modelos y ruteo" subtitle="Estado del router, proveedores y presupuesto" />; }
 function UsersView({ activeWorkspace }) { return <PlaceholderView nav="users" />; }
+
+function BillingView({ user }) {
+  const tenantId = user?.tenant_id;
+  const [invoices, setInvoices] = useState([]);
+  const [reconciliations, setReconciliations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [activeTab, setActiveTab] = useState("invoices");
+  const emptyInvoice = {
+    invoice_id: "",
+    customer_name: "",
+    customer_tax_id: "",
+    customer_email: "",
+    issue_date: new Date().toISOString().slice(0, 10),
+    due_date: "",
+    line_items: JSON.stringify([{ description: "Servicio FaberLoom", quantity: 1, unit_price: 0, tax_pct: 0 }], null, 2),
+    currency: "USD",
+    notes: "",
+  };
+  const [invoiceForm, setInvoiceForm] = useState({ ...emptyInvoice });
+  const emptyRecon = {
+    reconciliation_id: "",
+    bank_reference: "",
+    received_at: new Date().toISOString().slice(0, 10),
+    amount: "",
+    currency: "USD",
+    payer_name: "",
+    payer_account: "",
+    notes: "",
+  };
+  const [reconForm, setReconForm] = useState({ ...emptyRecon });
+
+  const load = async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const inv = await apiGet(`/api/tenants/${tenantId}/invoices`);
+      const rec = await apiGet(`/api/tenants/${tenantId}/reconciliations`);
+      setInvoices(Array.isArray(inv.invoices) ? inv.invoices : []);
+      setReconciliations(Array.isArray(rec.reconciliations) ? rec.reconciliations : []);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [tenantId]);
+
+  const parseJson = (text, field) => {
+    try {
+      return JSON.parse(text || "[]");
+    } catch (err) {
+      throw new Error(`${field}: JSON inválido`);
+    }
+  };
+
+  const createInvoice = async () => {
+    if (!tenantId) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = {
+        invoice_id: invoiceForm.invoice_id.trim(),
+        customer_name: invoiceForm.customer_name.trim(),
+        customer_tax_id: invoiceForm.customer_tax_id.trim() || null,
+        customer_email: invoiceForm.customer_email.trim() || null,
+        issue_date: invoiceForm.issue_date,
+        due_date: invoiceForm.due_date || null,
+        line_items: parseJson(invoiceForm.line_items, "line_items"),
+        currency: invoiceForm.currency.trim() || "USD",
+        notes: invoiceForm.notes.trim() || null,
+      };
+      await apiPost(`/api/tenants/${tenantId}/invoices`, payload);
+      setInvoiceForm({ ...emptyInvoice });
+      await load();
+      setSuccess("Factura creada.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const markPaid = async (invoice) => {
+    if (!tenantId || !window.confirm(`¿Marcar la factura ${invoice.invoice_id} como pagada?`)) return;
+    setError(null);
+    try {
+      await apiPatch(`/api/tenants/${tenantId}/invoices/${invoice.invoice_id}`, { status: "paid", paid_at: new Date().toISOString() });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const createReconciliation = async () => {
+    if (!tenantId) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = {
+        reconciliation_id: reconForm.reconciliation_id.trim(),
+        bank_reference: reconForm.bank_reference.trim() || null,
+        received_at: reconForm.received_at,
+        amount: parseFloat(reconForm.amount),
+        currency: reconForm.currency.trim() || "USD",
+        payer_name: reconForm.payer_name.trim() || null,
+        payer_account: reconForm.payer_account.trim() || null,
+        notes: reconForm.notes.trim() || null,
+      };
+      await apiPost(`/api/tenants/${tenantId}/reconciliations`, payload);
+      setReconForm({ ...emptyRecon });
+      await load();
+      setSuccess("Reconciliación registrada.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const matchReconciliation = async (reconciliation) => {
+    if (!tenantId) return;
+    const invoiceId = window.prompt(`¿A qué factura emparejas la reconciliación ${reconciliation.reconciliation_id}?`);
+    if (!invoiceId) return;
+    setError(null);
+    try {
+      await apiPatch(`/api/tenants/${tenantId}/reconciliations/${reconciliation.reconciliation_id}/match`, { invoice_id: invoiceId.trim() });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (!tenantId) return <div className="placeholder"><div className="placeholder-card"><Icon name="credit-card"/><h2>Facturación</h2><p>No hay tenant activo para gestionar facturas.</p></div></div>;
+
+  return <div className="classic" style={S.view}>
+    <div className="vhead"><div><div className="vtitle">Facturación</div><div className="vsub">Facturas manuales y conciliación de pagos (E3-6)</div></div></div>
+    {error && <div style={S.error}>{error}</div>}
+    {success && <div style={S.success}>{success}</div>}
+    {loading && <div style={S.loading}>Cargando…</div>}
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+      <button style={activeTab === "invoices" ? S.buttonPrimary : S.button} onClick={() => setActiveTab("invoices")}>Facturas</button>
+      <button style={activeTab === "reconciliations" ? S.buttonPrimary : S.button} onClick={() => setActiveTab("reconciliations")}>Reconciliaciones</button>
+    </div>
+    {activeTab === "invoices" && <div style={S.grid2}>
+      <section className="panel" aria-label="Facturas">
+        <div className="panel-header"><div><div className="panel-kicker">Billing</div><div className="panel-title">Facturas ({invoices.length})</div></div></div>
+        <div style={S.panelBody}>
+          {invoices.length === 0 && !loading && <div style={S.empty}>Sin facturas.</div>}
+          {invoices.map((inv) => <div key={inv.invoice_id} style={S.card}>
+            <div style={S.cardTitle}>{inv.invoice_id} · {inv.customer_name} <span style={S.badge}>{inv.status}</span></div>
+            <div style={S.cardMeta}>{inv.currency} {inv.total?.toFixed(2)} · emisión {inv.issue_date}{inv.due_date ? ` · vence ${inv.due_date}` : ""}</div>
+            <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>{(inv.line_items || []).length} líneas · subtotal {inv.subtotal?.toFixed(2)} · impuesto {inv.tax_total?.toFixed(2)}</div>
+            <div style={S.inlineGroup}>
+              {inv.status !== "paid" && <button style={S.buttonPrimary} onClick={() => markPaid(inv)}>Marcar pagada</button>}
+            </div>
+          </div>)}
+        </div>
+      </section>
+      <section className="panel" aria-label="Nueva factura">
+        <div className="panel-header"><div><div className="panel-kicker">Billing</div><div className="panel-title">Nueva factura</div></div></div>
+        <div style={S.panelBody}>
+          <div style={S.form}>
+            <label style={S.label}>ID factura<input style={S.input} value={invoiceForm.invoice_id} onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_id: e.target.value })} placeholder="FAC-001"/></label>
+            <label style={S.label}>Cliente<input style={S.input} value={invoiceForm.customer_name} onChange={(e) => setInvoiceForm({ ...invoiceForm, customer_name: e.target.value })} placeholder="Nombre"/></label>
+            <label style={S.label}>NIT/ID fiscal<input style={S.input} value={invoiceForm.customer_tax_id} onChange={(e) => setInvoiceForm({ ...invoiceForm, customer_tax_id: e.target.value })}/></label>
+            <label style={S.label}>Email<input style={S.input} value={invoiceForm.customer_email} onChange={(e) => setInvoiceForm({ ...invoiceForm, customer_email: e.target.value })}/></label>
+            <label style={S.label}>Emisión<input style={S.input} type="date" value={invoiceForm.issue_date} onChange={(e) => setInvoiceForm({ ...invoiceForm, issue_date: e.target.value })}/></label>
+            <label style={S.label}>Vencimiento<input style={S.input} type="date" value={invoiceForm.due_date} onChange={(e) => setInvoiceForm({ ...invoiceForm, due_date: e.target.value })}/></label>
+            <label style={S.label}>Líneas (JSON)<textarea style={S.textarea} rows={5} value={invoiceForm.line_items} onChange={(e) => setInvoiceForm({ ...invoiceForm, line_items: e.target.value })}/></label>
+            <label style={S.label}>Moneda<input style={S.input} value={invoiceForm.currency} onChange={(e) => setInvoiceForm({ ...invoiceForm, currency: e.target.value })}/></label>
+            <label style={S.label}>Notas<textarea style={S.textarea} rows={2} value={invoiceForm.notes} onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}/></label>
+            <button type="button" style={S.buttonPrimary} onClick={createInvoice} disabled={saving || !invoiceForm.invoice_id || !invoiceForm.customer_name}>{saving ? "Guardando…" : "Crear factura"}</button>
+          </div>
+        </div>
+      </section>
+    </div>}
+    {activeTab === "reconciliations" && <div style={S.grid2}>
+      <section className="panel" aria-label="Reconciliaciones">
+        <div className="panel-header"><div><div className="panel-kicker">Billing</div><div className="panel-title">Reconciliaciones ({reconciliations.length})</div></div></div>
+        <div style={S.panelBody}>
+          {reconciliations.length === 0 && !loading && <div style={S.empty}>Sin reconciliaciones.</div>}
+          {reconciliations.map((rec) => <div key={rec.reconciliation_id} style={S.card}>
+            <div style={S.cardTitle}>{rec.reconciliation_id} <span style={S.badge}>{rec.status}</span></div>
+            <div style={S.cardMeta}>{rec.currency} {rec.amount?.toFixed(2)} · {rec.received_at}{rec.bank_reference ? ` · ref: ${rec.bank_reference}` : ""}</div>
+            {rec.payer_name && <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>Pagador: {rec.payer_name}</div>}
+            {rec.matched_invoice_id && <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>Factura emparejada: {rec.matched_invoice_id}</div>}
+            <div style={S.inlineGroup}>
+              {rec.status === "pending" && <button style={S.buttonPrimary} onClick={() => matchReconciliation(rec)}>Emparejar con factura</button>}
+            </div>
+          </div>)}
+        </div>
+      </section>
+      <section className="panel" aria-label="Nueva reconciliación">
+        <div className="panel-header"><div><div className="panel-kicker">Billing</div><div className="panel-title">Nueva reconciliación</div></div></div>
+        <div style={S.panelBody}>
+          <div style={S.form}>
+            <label style={S.label}>ID reconciliación<input style={S.input} value={reconForm.reconciliation_id} onChange={(e) => setReconForm({ ...reconForm, reconciliation_id: e.target.value })} placeholder="REC-001"/></label>
+            <label style={S.label}>Referencia bancaria<input style={S.input} value={reconForm.bank_reference} onChange={(e) => setReconForm({ ...reconForm, bank_reference: e.target.value })}/></label>
+            <label style={S.label}>Fecha recepción<input style={S.input} type="date" value={reconForm.received_at} onChange={(e) => setReconForm({ ...reconForm, received_at: e.target.value })}/></label>
+            <label style={S.label}>Monto<input style={S.input} type="number" step="0.01" value={reconForm.amount} onChange={(e) => setReconForm({ ...reconForm, amount: e.target.value })}/></label>
+            <label style={S.label}>Moneda<input style={S.input} value={reconForm.currency} onChange={(e) => setReconForm({ ...reconForm, currency: e.target.value })}/></label>
+            <label style={S.label}>Pagador<input style={S.input} value={reconForm.payer_name} onChange={(e) => setReconForm({ ...reconForm, payer_name: e.target.value })}/></label>
+            <label style={S.label}>Cuenta pagador<input style={S.input} value={reconForm.payer_account} onChange={(e) => setReconForm({ ...reconForm, payer_account: e.target.value })}/></label>
+            <label style={S.label}>Notas<textarea style={S.textarea} rows={2} value={reconForm.notes} onChange={(e) => setReconForm({ ...reconForm, notes: e.target.value })}/></label>
+            <button type="button" style={S.buttonPrimary} onClick={createReconciliation} disabled={saving || !reconForm.reconciliation_id || reconForm.amount === ""}>{saving ? "Guardando…" : "Registrar pago"}</button>
+          </div>
+        </div>
+      </section>
+    </div>}
+  </div>;
+}
 
 function KBView({ activeWorkspace }) {
   const [sources, setSources] = useState([]);
@@ -2209,7 +2425,7 @@ const PROVIDER_LABELS = {
   ollama: "Ollama (local)",
 };
 
-function SettingsView({ activeWorkspace, title = "Ajustes", subtitle = "Router, proveedores y API keys" }) {
+function SettingsView({ activeWorkspace, user, title = "Ajustes", subtitle = "Router, proveedores y API keys" }) {
   const [configs, setConfigs] = useState([]);
   const [modelAllowlist, setModelAllowlist] = useState({});
   const [routerStatus, setRouterStatus] = useState(null);
@@ -2448,6 +2664,7 @@ function SettingsView({ activeWorkspace, title = "Ajustes", subtitle = "Router, 
           {routerStatus && <pre style={S.pre}>{prettyJson(routerStatus)}</pre>}
         </div>
       </section>
+      <PresetsPanel user={user} />
     </div>
     {deleteTarget && <DeleteConfirmModal
       title={`Borrar API key de ${PROVIDER_LABELS[deleteTarget] || deleteTarget}`}
@@ -2798,7 +3015,163 @@ function EmailSignaturePanel({ activeWorkspace }) {
   </section>;
 }
 
-window.FaberLoomMailPanels = { IMAPConfigPanel, SMTPConfigPanel, EmailSignaturePanel };
+function PresetsPanel({ user }) {
+  const [presets, setPresets] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const tenantId = user?.tenant_id;
+  const emptyForm = {
+    preset_id: "",
+    name: "",
+    description: "",
+    envelope: JSON.stringify({ jurisdictions: ["US", "EU"], providers_allow: ["anthropic", "openai"], providers_deny: [], data_collection: "deny", byo_keys: false }, null, 2),
+    curve: JSON.stringify({ mode: "balanceado", borderline_policy: "premium" }, null, 2),
+    task_overrides: JSON.stringify({}, null, 2),
+    caps: JSON.stringify({ monthly_budget_usd: 50, max_cost_per_task_usd: 0.5, max_latency_s: 12 }, null, 2),
+    escalation: JSON.stringify({ user_boost_button: true, boost_cap_per_day: 10 }, null, 2),
+    is_active: true,
+  };
+  const [form, setForm] = useState({ ...emptyForm });
+
+  const load = async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiGet(`/api/tenants/${tenantId}/presets`);
+      setPresets(Array.isArray(data.presets) ? data.presets : []);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [tenantId]);
+
+  const update = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const reset = () => {
+    setEditing(null);
+    setForm({ ...emptyForm });
+  };
+
+  const edit = (preset) => {
+    setEditing(preset.preset_id);
+    setForm({
+      preset_id: preset.preset_id,
+      name: preset.name || "",
+      description: preset.description || "",
+      envelope: JSON.stringify(preset.envelope || {}, null, 2),
+      curve: JSON.stringify(preset.curve || {}, null, 2),
+      task_overrides: JSON.stringify(preset.task_overrides || {}, null, 2),
+      caps: JSON.stringify(preset.caps || {}, null, 2),
+      escalation: JSON.stringify(preset.escalation || {}, null, 2),
+      is_active: preset.is_active ?? true,
+    });
+  };
+
+  const parseJson = (text, field) => {
+    try {
+      return JSON.parse(text || "{}");
+    } catch (err) {
+      throw new Error(`${field}: JSON inválido`);
+    }
+  };
+
+  const save = async () => {
+    if (!tenantId) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = {
+        preset_id: form.preset_id.trim(),
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        envelope: parseJson(form.envelope, "envelope"),
+        curve: parseJson(form.curve, "curve"),
+        task_overrides: parseJson(form.task_overrides, "task_overrides"),
+        caps: parseJson(form.caps, "caps"),
+        escalation: parseJson(form.escalation, "escalation"),
+        is_active: Boolean(form.is_active),
+      };
+      if (editing) {
+        await apiPatch(`/api/tenants/${tenantId}/presets/${editing}`, payload);
+      } else {
+        await apiPost(`/api/tenants/${tenantId}/presets`, payload);
+      }
+      await load();
+      reset();
+      setSuccess(editing ? "Preset actualizado." : "Preset creado.");
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const remove = async (presetId) => {
+    if (!tenantId || !confirm(`¿Eliminar preset ${presetId}?`)) return;
+    setError(null);
+    try {
+      await apiDelete(`/api/tenants/${tenantId}/presets/${presetId}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const useInRoutine = (presetId) => {
+    window.dispatchEvent(new CustomEvent("faberloom-use-preset", { detail: { preset_id: presetId } }));
+    setSuccess(`Preset "${presetId}" listo para usar en una routine. Abre Skills/Agentes y pégalo en el campo preset.`);
+  };
+
+  return <section className="panel" aria-label="Presets de ruteo">
+    <div className="panel-header"><div><div className="panel-kicker">Routing</div><div className="panel-title">Presets de ruteo</div></div></div>
+    <div style={S.panelBody}>
+      {loading && <div style={S.loading}>Cargando presets…</div>}
+      {error && <div style={S.error}>{error}</div>}
+      {success && <div style={S.success}>{success}</div>}
+      <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
+        <label style={S.label}>ID (slug){!editing && <input style={S.input} value={form.preset_id} onChange={(e) => update("preset_id", e.target.value)} placeholder="mi-preset"/>}{editing && <div style={{ ...S.input, color: "var(--text-muted)" }}>{form.preset_id}</div>}</label>
+        <label style={S.label}>Nombre<input style={S.input} value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Mi preset"/></label>
+        <label style={S.label}>Descripción<textarea style={S.textarea} rows={2} value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Para qué sirve"/></label>
+        <label style={S.label}>Envelope (JSON)<textarea style={S.textarea} rows={4} value={form.envelope} onChange={(e) => update("envelope", e.target.value)}/></label>
+        <label style={S.label}>Curve (JSON)<textarea style={S.textarea} rows={3} value={form.curve} onChange={(e) => update("curve", e.target.value)}/></label>
+        <label style={S.label}>Task overrides (JSON)<textarea style={S.textarea} rows={3} value={form.task_overrides} onChange={(e) => update("task_overrides", e.target.value)}/></label>
+        <label style={S.label}>Caps (JSON)<textarea style={S.textarea} rows={3} value={form.caps} onChange={(e) => update("caps", e.target.value)}/></label>
+        <label style={S.label}>Escalation (JSON)<textarea style={S.textarea} rows={2} value={form.escalation} onChange={(e) => update("escalation", e.target.value)}/></label>
+        <div style={{ ...S.label, display: "flex", alignItems: "center", gap: 8 }}>
+          <Toggle checked={!!form.is_active} onChange={(checked) => update("is_active", checked)}/>
+          Activo
+        </div>
+        <div style={S.inlineGroup}>
+          <button type="button" style={S.buttonPrimary} onClick={save} disabled={saving || !form.preset_id || !form.name}>{saving ? "Guardando…" : (editing ? "Actualizar" : "Crear")}</button>
+          {editing && <button type="button" style={S.button} onClick={reset}>Cancelar</button>}
+        </div>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>PRESETS ({presets.length})</div>
+        {presets.map((p) => <div key={p.preset_id} style={S.card}>
+          <div style={S.cardTitle}>{p.name} <span style={S.badge}>{p.preset_id}</span> {p.is_template ? <span style={S.badge}>template</span> : null}</div>
+          <div style={S.cardMeta}>{p.description || "Sin descripción"} · v{p.version}</div>
+          <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>curve: {JSON.stringify(p.curve)}</div>
+          <div style={S.inlineGroup}>
+            <button style={S.button} onClick={() => edit(p)}>Editar</button>
+            <button style={S.button} onClick={() => useInRoutine(p.preset_id)}>Usar en routine</button>
+            {!p.is_template && <button style={S.buttonDanger} onClick={() => remove(p.preset_id)}>Eliminar</button>}
+          </div>
+        </div>)}
+      </div>
+    </div>
+  </section>;
+}
+
+window.FaberLoomMailPanels = { IMAPConfigPanel, SMTPConfigPanel, EmailSignaturePanel, PresetsPanel };
 window.WorkspaceRequired = WorkspaceRequired;
 
 function AuditView({ activeWorkspace, features }) {
@@ -2948,13 +3321,14 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "kb" ? <KBView activeWorkspace={activeWorkspace}/>
      : nav === "routines" ? <RoutinesView activeWorkspace={activeWorkspace}/>
      : nav === "workloom" ? <WorkloomView activeWorkspace={activeWorkspace}/>
-     : nav === "settings" || nav === "config" || nav === "routing" ? <SettingsView activeWorkspace={activeWorkspace}/>
+     : nav === "settings" || nav === "config" || nav === "routing" ? <SettingsView activeWorkspace={activeWorkspace} user={user}/>
      : nav === "audit" ? <AuditView activeWorkspace={activeWorkspace} features={features}/>
      : (nav === "mail" || nav === "inbox") && features?.email_connector_enabled ? <MailView activeWorkspace={activeWorkspace}/>
      : nav === "skills" ? <SkillsView activeWorkspace={activeWorkspace}/>
      : nav === "agents" ? <AgentsView activeWorkspace={activeWorkspace}/>
      : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
+     : nav === "billing" ? <BillingView user={user}/>
      : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>

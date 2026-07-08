@@ -92,6 +92,12 @@ ALTER TABLE workspace_routing_policy ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_routing_policy FORCE ROW LEVEL SECURITY;
 ALTER TABLE workspace_model_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_model_catalog FORCE ROW LEVEL SECURITY;
+ALTER TABLE routing_preset ENABLE ROW LEVEL SECURITY;
+ALTER TABLE routing_preset FORCE ROW LEVEL SECURITY;
+ALTER TABLE manual_invoice ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manual_invoice FORCE ROW LEVEL SECURITY;
+ALTER TABLE payment_reconciliation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_reconciliation FORCE ROW LEVEL SECURITY;
 ALTER TABLE ambient_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ambient_config FORCE ROW LEVEL SECURITY;
 ALTER TABLE ambient_workspace_config ENABLE ROW LEVEL SECURITY;
@@ -126,7 +132,8 @@ BEGIN
               'draft', 'routine', 'routine_run', 'gold_candidate', 'usage_record',
               'mail_message', 'mail_outbox', 'email_account', 'audit_log',
               'editorial_history', 'workspace_smtp_config', 'workspace_routing_policy',
-              'workspace_model_catalog', 'ambient_config', 'ambient_workspace_config',
+              'workspace_model_catalog', 'routing_preset', 'manual_invoice', 'payment_reconciliation',
+              'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
               'ambient_proposal', 'object'
           )
@@ -229,6 +236,21 @@ CREATE POLICY tenant_workspace_policy ON ambient_detector_run
 -- ---------------------------------------------------------------------------
 -- 8. Tenant-scoped tables (no workspace_id)
 -- ---------------------------------------------------------------------------
+CREATE POLICY tenant_policy ON routing_preset
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE POLICY tenant_policy ON manual_invoice
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE POLICY tenant_policy ON payment_reconciliation
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
 CREATE POLICY tenant_policy ON ambient_config
     FOR ALL
     USING (tenant_id = current_setting('app.current_tenant', true))

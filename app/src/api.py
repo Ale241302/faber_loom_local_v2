@@ -89,6 +89,7 @@ from .db import (
     record_editorial_event,
     record_routine_run_edit,
     reject_routine_run,
+    resolve_routing_preset,
     set_routine_run_output,
     set_workspace_email_signature,
     set_workspace_smtp_config,
@@ -958,7 +959,7 @@ def api_create_completion(
             )
 
         router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
-        provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
+        provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
         if router.has_available_provider():
             _validate_completion_choice(
                 ChatCompletionRequest(
@@ -1513,7 +1514,7 @@ def api_invoke_routine(
         )
 
     router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
-    provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
+    provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
             ChatCompletionRequest(
@@ -1703,7 +1704,9 @@ def _preset_to_provider_model(preset_id: str | None) -> tuple[str | None, str | 
     return provider, model
 
 
-def _resolve_routine_provider_model(
+def _resolve_provider_model_for_routine(
+    ctx: Context,
+    conn: sqlite3.Connection,
     routine: dict[str, Any],
     override_provider: str | None,
     override_model: str | None,
@@ -1713,13 +1716,18 @@ def _resolve_routine_provider_model(
 
     Priority:
     1. Caller override (legacy @mention compatibility, audited).
-    2. Routine preset_id.
+    2. Routine preset_id (legacy provider:model or tenant routing preset).
     3. Router default/fallback.
     """
 
     if override_provider is not None or override_model is not None:
         return override_provider, override_model
-    preset_provider, preset_model = _preset_to_provider_model(routine.get("preset_id"))
+    preset_id = routine.get("preset_id")
+    if preset_id:
+        resolved = resolve_routing_preset(ctx, conn, preset_id)
+        if resolved and resolved.get("provider_slug") and resolved.get("model"):
+            return resolved["provider_slug"], resolved["model"]
+    preset_provider, preset_model = _preset_to_provider_model(preset_id)
     if preset_provider and preset_model:
         return preset_provider, preset_model
     if router.has_available_provider():
@@ -4564,7 +4572,7 @@ def api_run_routine(
         )
 
     router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
-    provider_slug, model = _resolve_routine_provider_model(routine, None, None, router)
+    provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
             ChatCompletionRequest(
