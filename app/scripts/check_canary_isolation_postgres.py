@@ -799,6 +799,86 @@ def run_isolation_checks(
     return results, ok
 
 
+def list_all_tenant_ids(owner_conn, schema: str = "public") -> list[str]:
+    """Enumerate every real tenant from an owner/superuser connection.
+
+    RLS hides other tenants from the app role, so enumeration must use a
+    connection that is not scoped (owner). Tenants are taken from ``workspace``
+    and ``ambient_config`` (tenant-scoped tables that always carry tenant_id).
+    """
+
+    schema_q = _quote_identifier(schema)
+    cursor = owner_conn.cursor()
+    try:
+        cursor.execute(
+            f"""
+            SELECT DISTINCT tenant_id FROM {schema_q}.workspace WHERE tenant_id IS NOT NULL
+            UNION
+            SELECT DISTINCT tenant_id FROM {schema_q}.ambient_config WHERE tenant_id IS NOT NULL
+            """
+        )
+        return sorted(row[0] for row in cursor.fetchall() if row[0])
+    finally:
+        cursor.close()
+
+
+def _count_foreign_rows(conn, schema: str, table: str, tenant_id: str) -> int:
+    """Rows visible under the current scope whose tenant_id is NOT ``tenant_id``."""
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT COUNT(*) FROM {_quote_identifier(schema)}.{_quote_identifier(table)} "
+            f"WHERE tenant_id IS DISTINCT FROM %s",
+            (tenant_id,),
+        )
+        return cursor.fetchone()[0]
+    finally:
+        cursor.close()
+
+
+def run_isolation_checks_for_tenants(
+    app_conn,
+    tenant_ids: list[str],
+    schema: str = "public",
+) -> tuple[list[CheckResult], bool]:
+    """Generalized N-tenant leak check against a real (already-seeded) database.
+
+    For every tenant, scope the session to that tenant and assert that NO row of
+    any other tenant is visible in any tenant/workspace table. This is O(N) in
+    tenants (each tenant proves it cannot see foreign rows) and works on the live
+    database without seeding synthetic canary/default rows. Also re-runs the
+    fail-closed no-scope check.
+    """
+
+    results: list[CheckResult] = []
+    all_tables = WORKSPACE_TABLES + OPTIONAL_WORKSPACE_TABLES + TENANT_TABLES + ["workspace"]
+
+    for tenant_id in tenant_ids:
+        _set_scope(app_conn, tenant_id)
+        for table in all_tables:
+            foreign = _count_foreign_rows(app_conn, schema, table, tenant_id)
+            results.append(
+                CheckResult(
+                    table=table,
+                    scope=f"tenant={tenant_id}",
+                    expected=0,
+                    actual=foreign,
+                    ok=foreign == 0,
+                )
+            )
+
+    # Fail-closed: without a scope the app user must see nothing.
+    _set_scope(app_conn, "")
+    for table in all_tables:
+        actual = _count_table(app_conn, schema, table)
+        results.append(
+            CheckResult(table=table, scope="no-scope", expected=0, actual=actual, ok=actual == 0)
+        )
+
+    return results, all(r.ok for r in results)
+
+
 def print_results(results: list[CheckResult]) -> None:
     print("\nRLS isolation check results:")
     print("-" * 70)
@@ -857,6 +937,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Only run isolation checks (skip seeding and RLS setup).",
     )
+    parser.add_argument(
+        "--all-tenants",
+        action="store_true",
+        help=(
+            "Verify isolation for EVERY real tenant in the database (no synthetic "
+            "seeding): each tenant scope must see zero foreign-tenant rows. Use in "
+            "deploy smoke tests against the live migrated DB."
+        ),
+    )
     args = parser.parse_args(argv)
 
     owner_conn = _connect_postgres(args.postgres_url)
@@ -892,7 +981,12 @@ def main(argv: list[str] | None = None) -> int:
         app_conn = _connect_postgres(app_url)
         try:
             _assert_app_user_nobypassrls(app_conn, args.app_user)
-            results, ok = run_isolation_checks(app_conn, args.schema)
+            if args.all_tenants:
+                tenant_ids = list_all_tenant_ids(owner_conn, args.schema)
+                print(f"Checking isolation for {len(tenant_ids)} real tenants: {tenant_ids}")
+                results, ok = run_isolation_checks_for_tenants(app_conn, tenant_ids, args.schema)
+            else:
+                results, ok = run_isolation_checks(app_conn, args.schema)
             print_results(results)
             if not ok:
                 print("\nRLS isolation check FAILED.", file=sys.stderr)

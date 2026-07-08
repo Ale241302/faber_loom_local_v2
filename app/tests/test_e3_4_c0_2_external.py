@@ -123,16 +123,29 @@ class _FakeResp:
         return 200
 
 
+class _FakeOpener:
+    def __init__(self, resp: Any = None, exc: Exception | None = None) -> None:
+        self._resp = resp
+        self._exc = exc
+
+    def open(self, req: Any, timeout: float = 10.0) -> Any:
+        if self._exc is not None:
+            raise self._exc
+        return self._resp
+
+
 def test_http_evidence_fetcher_builds_evidence_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     import urllib.request
 
-    from app.src.skill_primitives import http_evidence_fetcher
+    import app.src.skill_primitives as sp
 
+    # Skip the real DNS/SSRF resolution; intercept the HTTP GET.
+    monkeypatch.setattr(sp, "_assert_public_url", lambda url: None)
     monkeypatch.setattr(
-        urllib.request, "urlopen", lambda req, timeout=10.0: _FakeResp(b"Estado: aceptado")
+        urllib.request, "build_opener", lambda *a, **k: _FakeOpener(resp=_FakeResp(b"Estado: aceptado"))
     )
 
-    evidence = http_evidence_fetcher(
+    evidence = sp.http_evidence_fetcher(
         "estado comprobante 001",
         ["https://atv.hacienda.go.cr/estado?clave=001"],
     )
@@ -153,33 +166,54 @@ def test_http_evidence_fetcher_rejects_non_http_scheme() -> None:
         http_evidence_fetcher("q", ["file:///etc/passwd"])
 
 
+def test_http_evidence_fetcher_blocks_ssrf_to_private_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A source whose host resolves to a loopback/metadata/private IP is refused."""
+    import socket
+
+    import app.src.skill_primitives as sp
+
+    # Pretend the host resolves to the cloud metadata address.
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", port))],
+    )
+
+    with pytest.raises(RuntimeError, match="source_blocked_non_public_address"):
+        sp.http_evidence_fetcher("q", ["https://evil.example/metadata"])
+
+
 def test_http_evidence_fetcher_fails_closed_when_source_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import urllib.error
     import urllib.request
 
-    from app.src.skill_primitives import http_evidence_fetcher
+    import app.src.skill_primitives as sp
 
-    def _boom(req: Any, timeout: float = 10.0) -> None:
-        raise urllib.error.URLError("connection refused")
-
-    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    monkeypatch.setattr(sp, "_assert_public_url", lambda url: None)
+    monkeypatch.setattr(
+        urllib.request,
+        "build_opener",
+        lambda *a, **k: _FakeOpener(exc=urllib.error.URLError("connection refused")),
+    )
 
     with pytest.raises(RuntimeError, match="source_unreachable"):
-        http_evidence_fetcher("q", ["https://atv.example/estado"])
+        sp.http_evidence_fetcher("q", ["https://atv.example/estado"])
 
 
 def test_external_lookup_uses_real_http_fetcher(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """external_lookup wired to the real HTTP fetcher yields a stored evidence bundle."""
     import urllib.request
 
+    import app.src.skill_primitives as sp
     from app.src.context import Context
     from app.src.db import db_session
     from app.src.skill_primitives import external_lookup, http_evidence_fetcher
 
+    monkeypatch.setattr(sp, "_assert_public_url", lambda url: None)
     monkeypatch.setattr(
-        urllib.request, "urlopen", lambda req, timeout=10.0: _FakeResp(b"Estado: aceptado")
+        urllib.request, "build_opener", lambda *a, **k: _FakeOpener(resp=_FakeResp(b"Estado: aceptado"))
     )
     workspace_id = _demo_workspace_id(client)
     ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local")

@@ -199,6 +199,37 @@ def approve_informal_capture(
 ExternalFetcher = Callable[[str, list[str]], list[dict[str, Any]]]
 
 
+def _assert_public_url(url: str) -> None:
+    """Reject non-http(s) schemes and any host that resolves to a non-public IP.
+
+    SSRF guard: a required source URL can come from a skill definition, so it is
+    untrusted. We resolve every address the host maps to and refuse loopback,
+    private (RFC1918), link-local (incl. cloud metadata 169.254.169.254),
+    reserved, or unspecified addresses.
+    """
+
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https"):
+        raise RuntimeError(f"unsupported_source_scheme: {url}")
+    host = parts.hostname
+    if not host:
+        raise RuntimeError(f"source_missing_host: {url}")
+
+    try:
+        infos = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
+    except OSError as exc:
+        raise RuntimeError(f"source_unreachable: {url} ({exc})") from exc
+
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified:
+            raise RuntimeError(f"source_blocked_non_public_address: {url} -> {ip}")
+
+
 def http_evidence_fetcher(
     query: str,
     required_sources: list[str],
@@ -210,10 +241,11 @@ def http_evidence_fetcher(
 
     Every source becomes one evidence item (URL + capture timestamp + content
     hash + snippet). Fail-closed by contract: if ANY required source is
-    unreachable, uses a non-http(s) scheme, or does not return HTTP 200, the
-    whole lookup raises so ``external_lookup`` reports the failure instead of
-    fabricating an answer from model memory (catalog rule: "jamás rellena de
-    memoria"). Inject a fake fetcher in tests; wire this one in production.
+    unreachable, uses a non-http(s) scheme, resolves to a non-public address
+    (SSRF guard), or does not return HTTP 200, the whole lookup raises so
+    ``external_lookup`` reports the failure instead of fabricating an answer from
+    model memory (catalog rule: "jamás rellena de memoria"). Inject a fake
+    fetcher in tests; wire this one in production.
     """
 
     import urllib.error
@@ -222,14 +254,21 @@ def http_evidence_fetcher(
     if not required_sources:
         raise RuntimeError("http_evidence_fetcher requires at least one source URL")
 
+    class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+            # Re-run the SSRF guard on every redirect hop before following it.
+            _assert_public_url(newurl)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(_ValidatingRedirectHandler())
+
     evidence: list[dict[str, Any]] = []
     for url in required_sources:
-        if not str(url).lower().startswith(("http://", "https://")):
-            raise RuntimeError(f"unsupported_source_scheme: {url}")
-        req = urllib.request.Request(url, headers={"User-Agent": "FaberLoom-C0-2/1.0"})
+        _assert_public_url(str(url))
+        req = urllib.request.Request(str(url), headers={"User-Agent": "FaberLoom-C0-2/1.0"})
         try:
-            # Scheme is guarded to http(s) above.
-            with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310
+            # Scheme + resolved address are guarded above and on every redirect.
+            with opener.open(req, timeout=timeout_s) as resp:  # noqa: S310
                 http_status = getattr(resp, "status", None) or resp.getcode()
                 if http_status != 200:
                     raise RuntimeError(f"source_unavailable: {url} returned {http_status}")
@@ -239,7 +278,7 @@ def http_evidence_fetcher(
         evidence.append(
             {
                 "source_type": "web",
-                "source_locator": url,
+                "source_locator": str(url),
                 "captured_at": utc_now(),
                 "content_text": body.decode("utf-8", errors="replace"),
                 "content_hash": hashlib.sha256(body).hexdigest()[:16],
