@@ -310,10 +310,11 @@ def ingest_kb_source(
         obj = get_object(ctx, conn, object_id)
         if obj is None:
             raise ValueError(f"Object {object_id} not found")
-        from .storage import get_object_store
+        from .storage import decrypt_object_payload, get_object_store
 
         store = get_object_store()
-        content_blob = store.get_object(obj["bucket"], obj["object_key"])
+        # Payload is envelope-encrypted at rest (P0-7); legacy plaintext passes through.
+        content_blob = decrypt_object_payload(ctx, store.get_object(obj["bucket"], obj["object_key"]))
         file_name = file_name or obj.get("file_name")
         mime_type = mime_type or obj.get("mime_type")
         file_size = file_size or obj.get("size_bytes")

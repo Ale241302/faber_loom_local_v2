@@ -254,6 +254,19 @@ class TenantSecretStore:
 
         return self._repo.get_or_create_data_key(self._tenant_id(ctx))
 
+    def data_key_by_id(self, ctx: Any, key_id: str) -> TenantDataKey:
+        """Return the tenant data key with ``key_id`` (for decrypting old blobs).
+
+        Falls back to the active key when the id is unknown, so a freshly created
+        key still resolves. Enables decryption across data-key rotation.
+        """
+
+        tenant_id = self._tenant_id(ctx)
+        for record in self._repo._records_for(tenant_id):
+            if record.get("key_id") == key_id:
+                return self._repo._record_to_key(record)
+        return self._repo.get_or_create_data_key(tenant_id)
+
     def encrypt_for_tenant(self, ctx: Any, plaintext: str | None) -> str | None:
         """Encrypt ``plaintext`` scoped to the tenant in ``ctx``.
 

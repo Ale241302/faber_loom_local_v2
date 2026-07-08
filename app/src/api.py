@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -219,6 +219,8 @@ from .seal import compute_workspace_hmac
 from .storage import (
     GENERATED_BUCKET,
     UPLOAD_BUCKET,
+    decrypt_object_payload,
+    encrypt_object_payload,
     get_object_store,
     object_key,
     sha256_bytes,
@@ -2500,7 +2502,13 @@ def api_upload_kb_source(
                 object_id=object_id,
             )
         store = get_object_store()
-        store.put_object(UPLOAD_BUCKET, key, content_blob, file.content_type or "application/octet-stream")
+        # Encrypt the payload at rest with the tenant data key (E3-3 P0-7).
+        store.put_object(
+            UPLOAD_BUCKET,
+            key,
+            encrypt_object_payload(ctx, content_blob),
+            file.content_type or "application/octet-stream",
+        )
         created = ingest_kb_source(
             ctx,
             conn,
@@ -2806,11 +2814,50 @@ def api_get_object_url(
     if obj is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
 
+    # Encrypted (upload-origin) payloads cannot be served straight from MinIO —
+    # a presigned URL would hand the browser ciphertext. Route them through the
+    # API-proxied content endpoint, which decrypts with the tenant key. Generated
+    # assets (e.g. images) stay on the fast presigned path.
+    if obj.get("origin") == "upload":
+        proxied = f"/api/workspaces/{workspace_id}/objects/{object_id}/content"
+        return PresignedDownloadResponse(download_url=proxied, expires_in_seconds=expires_seconds)
+
     store = get_object_store()
     url = store.presigned_download_url(
         obj["bucket"], obj["object_key"], expires=max(60, min(expires_seconds, 3600))
     )
     return PresignedDownloadResponse(download_url=url, expires_in_seconds=expires_seconds)
+
+
+@router.get("/workspaces/{workspace_id}/objects/{object_id}/content")
+def api_get_object_content(
+    workspace_id: str,
+    object_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> Response:
+    """Stream an object's decrypted bytes through the API (tenant-key at rest)."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    obj = get_object(ctx, conn, object_id)
+    if obj is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
+
+    store = get_object_store()
+    try:
+        raw = store.get_object(obj["bucket"], obj["object_key"])
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object payload not found") from exc
+
+    data = decrypt_object_payload(ctx, raw)
+    filename = obj.get("file_name") or object_id
+    return Response(
+        content=data,
+        media_type=obj.get("mime_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/workspaces/{workspace_id}/objects/{object_id}", status_code=status.HTTP_204_NO_CONTENT)

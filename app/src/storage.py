@@ -47,11 +47,44 @@ def get_tenant_encryption_key(ctx: Context) -> Any:
 
     Object storage itself does not persist tenant-scoped credentials (MinIO
     service credentials are supplied via environment variables). This helper
-    lets future features encrypt object metadata or payloads with the tenant
-    key before they reach the backend.
+    lets features encrypt object metadata or payloads with the tenant key before
+    they reach the backend.
     """
 
     return TenantSecretStore().get_or_create_data_key(ctx)
+
+
+# Envelope-encryption for object payloads (E3-3 P0-7) --------------------------
+#
+# The stored blob is self-describing: an encrypted payload is prefixed with
+# ``FLENC1:<key_id>:`` followed by the tenant-key Fernet token. Legacy objects
+# stored before this feature have no prefix and are returned unchanged, so no
+# data migration is required.
+
+_OBJECT_ENC_MAGIC = b"FLENC1:"
+
+
+def encrypt_object_payload(ctx: Context, data: bytes) -> bytes:
+    """Encrypt an object payload with the tenant's data key (at rest)."""
+
+    key = TenantSecretStore().get_or_create_data_key(ctx)
+    token = key.encrypt_blob(data)
+    return _OBJECT_ENC_MAGIC + key.key_id.encode("utf-8") + b":" + token.encode("utf-8")
+
+
+def is_encrypted_payload(blob: bytes) -> bool:
+    return blob.startswith(_OBJECT_ENC_MAGIC)
+
+
+def decrypt_object_payload(ctx: Context, blob: bytes) -> bytes:
+    """Decrypt an object payload; legacy plaintext (no prefix) is returned as-is."""
+
+    if not blob.startswith(_OBJECT_ENC_MAGIC):
+        return blob
+    rest = blob[len(_OBJECT_ENC_MAGIC):]
+    key_id_b, _, token_b = rest.partition(b":")
+    key = TenantSecretStore().data_key_by_id(ctx, key_id_b.decode("utf-8"))
+    return key.decrypt_blob(token_b.decode("utf-8"))
 
 
 def object_key(
