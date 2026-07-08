@@ -161,6 +161,51 @@ def request_access(
     return granted
 
 
+def resolve_read_level(
+    conn: Any,
+    tenant_id: str,
+    space_id: str,
+    user_roles: set[str],
+    *,
+    default: KeyLevel = KeyLevel.CONTENT,
+) -> tuple[KeyLevel, bool]:
+    """Resolve how much of a space a caller may READ, without a confirmation token.
+
+    This is the mediation path for reads (distinct from ``request_access``, which
+    gates the interactive graduation of a key). It returns ``(level, sealed)``:
+
+    - When no ``key_policy`` row exists the space is open at ``default`` (CONTENT)
+      so normal operation is unaffected and reads are never bricked. ``sealed`` is
+      False, so callers know this was not a graduated-key decision worth auditing.
+    - When an owner has set an explicit policy the space is *sealed*: CEO-only
+      spaces close to non-CEOs, a CONTENT space exposes only the INDEX to callers
+      without an approver role, and CLOSED closes to everyone. ``sealed`` is True.
+    """
+
+    import json
+
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            """SELECT level, approver_roles_json, ceo_only
+               FROM key_policy
+               WHERE tenant_id = ? AND space_id = ?""",
+            (tenant_id, space_id),
+        ).fetchone()
+
+    if row is None:
+        return default, False
+
+    roles = frozenset(json.loads(row["approver_roles_json"] or "[]")) or DEFAULT_APPROVER_ROLES
+    level = KeyLevel(row["level"])
+    if bool(row["ceo_only"]) and "ceo" not in {r.lower() for r in user_roles}:
+        return KeyLevel.CLOSED, True
+    if level == KeyLevel.CONTENT and not ({r.lower() for r in user_roles} & roles):
+        # Non-approvers can see the index of a sealed space but not its content.
+        return KeyLevel.INDEX, True
+    return level, True
+
+
 def _allowed_levels(policy: KeyPolicy, user_roles: set[str]) -> set[KeyLevel]:
     if not user_roles & policy.approver_roles:
         return {KeyLevel.CLOSED}

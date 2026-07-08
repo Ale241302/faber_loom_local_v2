@@ -14,6 +14,7 @@ from app.src.key_broker import (
     KeyLevel,
     get_policy,
     request_access,
+    resolve_read_level,
     set_policy,
 )
 
@@ -93,3 +94,43 @@ def test_ceo_only_blocks_non_ceo(conn: sqlite3.Connection) -> None:
             user_roles={"owner"},
             confirmation_token="yes",
         )
+
+
+# ---------------------------------------------------------------------------
+# resolve_read_level — token-free read mediation (P0-5)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_read_level_defaults_open_when_unset(conn: sqlite3.Connection) -> None:
+    level, sealed = resolve_read_level(conn, "tenant-a", "space-1", {"am"})
+    assert level == KeyLevel.CONTENT
+    assert sealed is False
+
+
+def test_resolve_read_level_closed_seals_everyone(conn: sqlite3.Connection) -> None:
+    set_policy(conn, "tenant-a", "space-1", KeyLevel.CLOSED)
+    level, sealed = resolve_read_level(conn, "tenant-a", "space-1", {"owner"})
+    assert level == KeyLevel.CLOSED
+    assert sealed is True
+
+
+def test_resolve_read_level_index_is_index_for_all(conn: sqlite3.Connection) -> None:
+    set_policy(conn, "tenant-a", "space-1", KeyLevel.INDEX)
+    level, sealed = resolve_read_level(conn, "tenant-a", "space-1", {"owner"})
+    assert level == KeyLevel.INDEX
+    assert sealed is True
+
+
+def test_resolve_read_level_content_gates_non_approvers_to_index(conn: sqlite3.Connection) -> None:
+    set_policy(conn, "tenant-a", "space-1", KeyLevel.CONTENT)  # approvers default {owner, ceo}
+    owner_level, _ = resolve_read_level(conn, "tenant-a", "space-1", {"owner"})
+    am_level, _ = resolve_read_level(conn, "tenant-a", "space-1", {"am"})
+    assert owner_level == KeyLevel.CONTENT
+    assert am_level == KeyLevel.INDEX
+
+
+def test_resolve_read_level_ceo_only_closes_non_ceo(conn: sqlite3.Connection) -> None:
+    set_policy(conn, "tenant-a", "space-1", KeyLevel.CONTENT, ceo_only=True)
+    level, sealed = resolve_read_level(conn, "tenant-a", "space-1", {"owner"})
+    assert level == KeyLevel.CLOSED
+    assert sealed is True

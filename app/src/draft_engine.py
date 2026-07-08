@@ -12,7 +12,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .context import Context
+from .audit import audit_writer
+from .context import DEFAULT_TENANT_ID, Context
 from .db import get_workspace_field_aliases
 from .kb import (
     find_kb_fact,
@@ -22,6 +23,7 @@ from .kb import (
     search_kb_chunks,
     search_kb_facts,
 )
+from .key_broker import KeyLevel, resolve_read_level
 from .router import ProviderError, build_router
 from .router.models import CompletionRequest
 
@@ -263,7 +265,34 @@ def _build_evidence_pack(
     chunk_limit: int = 5,
     fact_limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Retrieve and deduplicate chunks and facts relevant to the request."""
+    """Retrieve and deduplicate chunks and facts relevant to the request.
+
+    The graduated key broker mediates this read: the agent never holds the key,
+    it receives only what the space's policy grants. A sealed space at CLOSED
+    yields no evidence; at INDEX the agent learns which sources exist (titles /
+    pointers) but not their content; at CONTENT (the default when no policy is
+    set) it reads normally. Every sealed-space read is audited.
+    """
+
+    read_level, sealed = resolve_read_level(
+        conn,
+        ctx.tenant_id or DEFAULT_TENANT_ID,
+        ctx.workspace_id,
+        {ctx.actor_role_at_decision} if ctx.actor_role_at_decision else set(),
+    )
+    if sealed:
+        try:
+            audit_writer.write(
+                ctx,
+                conn,
+                action="kb.read.mediated",
+                payload={"space_id": ctx.workspace_id, "granted_level": read_level.value},
+            )
+        except Exception:
+            # Auditing a read must never break draft generation.
+            pass
+    if read_level == KeyLevel.CLOSED:
+        return []
 
     chunks = search_kb_chunks(ctx, conn, user_request, limit=chunk_limit)
     # Search facts term-by-term so multi-word queries still find structured rows.
@@ -346,6 +375,13 @@ def _build_evidence_pack(
         if entry.get("source_type") == "csv":
             for full_fact in get_kb_facts_by_source(ctx, conn, source_id):
                 _append_fact(entry, full_fact)
+
+    if read_level == KeyLevel.INDEX:
+        # Sealed at INDEX: the agent may know a source exists (title / pointer)
+        # but not its sealed content, so strip every excerpt and fact value.
+        for entry in pack:
+            entry["excerpt"] = ""
+            entry["facts"] = []
 
     # Trim if too long.
     total = sum(len(json.dumps(item, ensure_ascii=False)) for item in pack)
