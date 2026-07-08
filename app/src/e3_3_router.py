@@ -52,6 +52,36 @@ def _require_owner(request: Request) -> dict[str, Any]:
     return user
 
 
+def _user_tenant_id(user: dict[str, Any]) -> str | None:
+    return user.get("tenant_id")
+
+
+def _require_tenant_member(tenant_id: str, user: dict[str, Any]) -> None:
+    """Fail unless the authenticated user belongs to the requested tenant.
+
+    platform_admin is intentionally NOT granted access here: these endpoints
+    expose tenant-scoped identity/key metadata and must remain tenant-bound.
+    """
+
+    user_tenant = _user_tenant_id(user)
+    if user_tenant != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant mismatch",
+        )
+
+
+def _require_tenant_owner(tenant_id: str, user: dict[str, Any]) -> None:
+    _require_tenant_member(tenant_id, user)
+    role = (user.get("role") or "").lower()
+    roles = {r.lower() for r in (user.get("roles") or [])}
+    if role != "owner" and "owner" not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner role required",
+        )
+
+
 def _tenant_context(request: Request, tenant_id: str) -> Context:
     user = getattr(request.state, "user", None) or {}
     return Context(
@@ -92,6 +122,7 @@ def read_identity(
 ) -> dict[str, Any]:
     """Return the current immutable identity for the tenant."""
 
+    _require_tenant_member(tenant_id, user)
     identity = get_identity(conn, tenant_id)
     if identity is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Identity not found")
@@ -113,10 +144,11 @@ def create_tenant_identity(
     body: IdentityCreate,
     request: Request,
     conn: Any = Depends(get_db),
-    user: dict[str, Any] = Depends(_require_owner),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create the initial immutable identity for the tenant."""
 
+    _require_tenant_owner(tenant_id, user)
     try:
         identity = create_identity(
             conn,
@@ -126,6 +158,7 @@ def create_tenant_identity(
             user.get("user_id") or user.get("sub") or "local",
             tax_id=body.tax_id,
             jurisdiction=body.jurisdiction,
+            actor_role=(user.get("role") or "owner").lower(),
         )
     except IdentityError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
@@ -148,10 +181,11 @@ def update_tenant_identity(
     body: IdentityUpdate,
     request: Request,
     conn: Any = Depends(get_db),
-    user: dict[str, Any] = Depends(_require_owner),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Append a new immutable identity version (requires confirmation token)."""
 
+    _require_tenant_owner(tenant_id, user)
     _require_confirmation(tenant_id, body.confirmation_token)
     try:
         identity = update_identity(
@@ -216,6 +250,7 @@ def read_key_policy(
 ) -> KeyPolicyRead:
     """Return the active key policy for a space."""
 
+    _require_tenant_member(tenant_id, user)
     policy = get_policy(conn, tenant_id, space_id)
     return KeyPolicyRead(
         tenant_id=policy.tenant_id,
@@ -233,10 +268,11 @@ def write_key_policy(
     body: KeyPolicyWrite,
     request: Request,
     conn: Any = Depends(get_db),
-    user: dict[str, Any] = Depends(_require_owner),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> KeyPolicyRead:
     """Set the key policy for a space (owner only, HITL confirmation)."""
 
+    _require_tenant_owner(tenant_id, user)
     _require_confirmation(f"{tenant_id}:{space_id}", body.confirmation_token)
     try:
         level = KeyLevel(body.level.lower())
@@ -272,6 +308,7 @@ def request_key_access(
 ) -> dict[str, Any]:
     """Request access to a key at a given level."""
 
+    _require_tenant_member(tenant_id, user)
     try:
         level = KeyLevel(body.requested_level.lower())
     except ValueError as exc:

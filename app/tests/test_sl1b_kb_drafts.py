@@ -172,7 +172,7 @@ def _patch_router_available(monkeypatch: pytest.MonkeyPatch) -> None:
         def has_available_provider(self) -> bool:
             return True
 
-    monkeypatch.setattr(api_module, "build_router", lambda user_id=None: FakeRouter())
+    monkeypatch.setattr(api_module, "build_router", lambda user_id=None, tenant_id=None, **kwargs: FakeRouter())
 
 
 def test_generate_draft_stores_blockers_and_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -464,7 +464,7 @@ def test_draft_generation_returns_503_without_providers(client: TestClient, monk
 
     import app.src.api as api_module
 
-    def no_provider_router(user_id: str | None = None):
+    def no_provider_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs):
         class FakeRouter:
             def has_available_provider(self):
                 return False
@@ -556,7 +556,7 @@ def test_generate_draft_with_fake_provider_parses_json(monkeypatch: pytest.Monke
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -682,7 +682,7 @@ def test_hard_fact_undisclosed_in_body_is_flagged(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -778,7 +778,7 @@ def test_stale_fact_marks_requires_confirmation(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -875,7 +875,7 @@ def test_fact_not_yet_valid_is_blocked(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -1024,7 +1024,7 @@ def test_invented_hard_value_in_body_is_flagged(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -1116,7 +1116,7 @@ def test_edit_pct_is_calculated_on_approval(
                     duration_ms=1,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 
@@ -1230,7 +1230,7 @@ def test_unknown_source_label_in_body_is_blocked(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 

@@ -56,7 +56,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from app.src.router.config_store import ProviderConfigStore
 
     # Prevent locally-stored provider keys from leaking into isolated tests.
-    monkeypatch.setattr(ProviderConfigStore, "all", lambda self, user_id=None: {})
+    monkeypatch.setattr(ProviderConfigStore, "all", lambda self, user_id=None, tenant_id=None, **kwargs: {})
 
     audit_writer.audit_path = audit_path
     with TestClient(create_app()) as test_client:
@@ -158,7 +158,7 @@ def _patch_fake_router(
                 duration_ms=5,
             )
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         budget_cap = 5.0
         try:
             budget_cap = float(os.getenv("FABERLOOM_BUDGET_CAP_USD", "5.0"))

@@ -157,6 +157,7 @@ def _resolve_value(env_value: str | None, stored_value: Any) -> str | None:
 def build_router(
     user_id: str | None = None,
     *,
+    tenant_id: str | None = None,
     budget_cap_usd: float | None = None,
     provider_allowlist: list[str] | None = None,
 ) -> Router:
@@ -165,6 +166,9 @@ def build_router(
     When ``user_id`` is provided (typically the JWT ``sub`` claim), provider
     configuration is resolved from that user's encrypted slice. Local/test mode
     passes ``None`` or ``"local"`` and uses the shared/global configuration.
+
+    ``tenant_id`` scopes the provider configuration to the caller's tenant; when
+    omitted it falls back to the default tenant for local/single-tenant mode.
 
     Optional ``budget_cap_usd`` and ``provider_allowlist`` override the
     environment defaults for workspace-aware routing.
@@ -180,7 +184,7 @@ def build_router(
     )
 
     store = ProviderConfigStore()
-    stored = store.all(user_id)
+    stored = store.all(user_id, tenant_id=tenant_id)
     providers: list[Provider] = []
 
     openai_stored = stored.get("openai", {})

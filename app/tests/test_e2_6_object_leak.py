@@ -116,4 +116,4 @@ def test_object_key_contains_workspace_id_as_seal_prefix(client: TestClient) -> 
     )
     assert resp.status_code == 201
     key = resp.json()["object_key"]
-    assert key.startswith(f"ws-{ws['id']}/")
+    assert key.startswith(f"t-default/ws-{ws['id']}/")

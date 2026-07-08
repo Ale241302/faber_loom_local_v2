@@ -72,7 +72,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from app.src.router import cost as cost_module
 
     monkeypatch.setitem(cost_module.MODEL_ALLOWLIST, "fake", {"fake-model"})
-    monkeypatch.setattr(api_module, "build_router", lambda user_id=None: Router(providers=[FakeProvider()]))
+    monkeypatch.setattr(api_module, "build_router", lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()]))
 
     audit_writer.audit_path = audit_path
     with TestClient(create_app()) as test_client:

@@ -13,6 +13,7 @@ lifecycle events.
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -20,8 +21,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from .ambient import seed_ambient_config
 from .auth import get_current_user
-from .db import get_db
+from .context import SYSTEM_WORKSPACE_ID, Context
+from .db import create_workspace, db_session, get_db, transaction
+from .models import WorkspaceCreate
 from .foundation.core import (
     audit_log,
     connect as connect_foundation,
@@ -222,6 +226,14 @@ def approve_tenant(
             payload={"reason": body.reason},
         )
         conn.commit()
+
+        # Bootstrap the approved tenant with a workspace and default settings.
+        _bootstrap_approved_tenant(
+            tenant_id=tenant_id,
+            tenant_name=tenant["name"],
+            tenant_slug=tenant["slug"],
+            plan_name=tenant["plan"],
+        )
 
         tenant = conn.execute(
             "SELECT * FROM fnd_tenants WHERE id = ?", (tenant_id,)
@@ -429,3 +441,83 @@ def update_tenant_plan(
         return _tenant_payload(conn, tenant)
     finally:
         conn.close()
+
+
+def _bootstrap_approved_tenant(
+    tenant_id: str,
+    tenant_name: str,
+    tenant_slug: str,
+    plan_name: str,
+) -> dict[str, Any]:
+    """Seed an approved tenant with its first workspace and default settings.
+
+    This is the programatic equivalent of the MWT bootstrap seed
+    (SPEC_FB_TENANT_BOOTSTRAP_SEED_v1). It runs inside the app DB, which may be
+    SQLite or Postgres depending on the runtime engine.
+    """
+
+    from .plans import PLANS
+
+    plan = PLANS.get(plan_name) or PLANS["enterprise"]
+    monthly_budget = plan.max_monthly_budget_usd if plan.max_monthly_budget_usd is not None else 50.0
+
+    with db_session() as app_conn:
+        bootstrap_ctx = Context(
+            workspace_id=SYSTEM_WORKSPACE_ID,
+            tenant_id=tenant_id,
+            user_id="system",
+            actor_id="system",
+            actor_role_at_decision="platform_admin",
+        )
+        with transaction(app_conn, ctx=bootstrap_ctx):
+            workspace = create_workspace(
+                bootstrap_ctx,
+                app_conn,
+                WorkspaceCreate(
+                    name=f"{tenant_name} Workspace",
+                    slug=tenant_slug,
+                ),
+            )
+            workspace_id = workspace["id"]
+
+            now = utcnow()
+            tenant_defaults: list[tuple[str, Any]] = [
+                ("ambient.enabled", False),
+                ("routing.auto_dispatch", False),
+                ("routing.max_budget_usd", 2.0),
+                ("routing.max_steps", 4),
+                ("tenant.plan.monthly_budget_usd", monthly_budget),
+            ]
+            for key, value in tenant_defaults:
+                app_conn.execute(
+                    """
+                    INSERT INTO tenant_settings (tenant_id, key, value_json, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(tenant_id, key) DO UPDATE SET
+                        value_json = excluded.value_json,
+                        updated_at = excluded.updated_at
+                    """,
+                    (tenant_id, key, json.dumps(value, ensure_ascii=False, sort_keys=True), now),
+                )
+
+            app_conn.execute(
+                """
+                INSERT INTO workspace_routing_policy
+                    (workspace_id, tenant_id, provider_allowlist_json, model_allowlist_json,
+                     budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(workspace_id) DO UPDATE SET
+                    provider_allowlist_json = excluded.provider_allowlist_json,
+                    model_allowlist_json = excluded.model_allowlist_json,
+                    budget_cap_usd = excluded.budget_cap_usd,
+                    auto_mode_enabled = excluded.auto_mode_enabled,
+                    max_auto_steps = excluded.max_auto_steps,
+                    require_local_only = excluded.require_local_only,
+                    updated_at = excluded.updated_at
+                """,
+                (workspace_id, tenant_id, "[]", "{}", 2.0, 0, 4, 0, now),
+            )
+
+            seed_ambient_config(app_conn, tenant_id)
+
+    return {"tenant_id": tenant_id, "workspace_id": workspace_id}

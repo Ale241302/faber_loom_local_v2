@@ -110,7 +110,7 @@ def _patch_router_available(monkeypatch: pytest.MonkeyPatch) -> None:
         def has_available_provider(self) -> bool:
             return True
 
-    monkeypatch.setattr(api_module, "build_router", lambda user_id=None: FakeRouter())
+    monkeypatch.setattr(api_module, "build_router", lambda user_id=None, tenant_id=None, **kwargs: FakeRouter())
 
 
 def _patch_generate_draft(monkeypatch: pytest.MonkeyPatch) -> None:

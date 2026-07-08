@@ -1119,14 +1119,18 @@ def insert_audit_log(
     source_version: str | None = None,
     correlation_id: str | None = None,
     created_at: str | None = None,
+    system_event: bool = False,
 ) -> None:
     """Insert an audit event row.
 
     This helper intentionally does not commit; callers decide transaction scope.
+    When ``system_event`` is True the workspace may be the system scope (used for
+    tenant-level lifecycle events such as identity or key-policy mutations).
     """
 
     with transaction(conn, ctx=ctx):
-        ctx.require_scoped_workspace()
+        if not system_event:
+            ctx.require_scoped_workspace()
         conn.execute(
             """
             INSERT INTO audit_log(
@@ -3608,7 +3612,7 @@ def create_generated_object(
     from .db import new_id  # local import to avoid circular reference at module load
 
     object_id = new_id("obj")
-    key = object_key(ctx.require_scoped_workspace(), "generated", file_name, object_id)
+    key = object_key(ctx.require_scoped_workspace(), "generated", file_name, object_id, tenant_id=ctx.tenant_id)
 
     with transaction(conn, ctx=ctx):
         row = create_object(

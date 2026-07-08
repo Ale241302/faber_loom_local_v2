@@ -153,8 +153,15 @@ def _local_user() -> dict[str, Any]:
     return {"sub": "local", "role": "owner", "tenant_id": DEFAULT_TENANT_ID}
 
 
-def _resolve_user_from_foundation(email: str) -> dict[str, Any] | None:
-    """Resolve a Foundation user by email and return real identity claims.
+def _resolve_user_from_foundation(
+    email: str, token_tenant_id: str | None = None
+) -> dict[str, Any] | None:
+    """Resolve a Foundation user by email and optional tenant, returning identity claims.
+
+    When the incoming JWT already carries a tenant_id (e.g. login tokens, manually
+    minted test tokens), we match (email, tenant_id) so a single email across
+    multiple tenants resolves to the correct membership. Fallback to the oldest
+    active tenant only when the token has no tenant hint.
 
     This is intentionally import-local to avoid a circular import: foundation/core
     already imports get_current_user from this module for the SSO bridge.
@@ -171,15 +178,27 @@ def _resolve_user_from_foundation(email: str) -> dict[str, Any] | None:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        user = conn.execute(
-            """
-            SELECT u.* FROM fnd_users u
-            JOIN fnd_tenants t ON t.id = u.tenant_id
-            WHERE LOWER(u.email) = LOWER(?) AND u.status = 'active' AND t.status = 'active'
-            ORDER BY t.created_at ASC LIMIT 1
-            """,
-            (email,),
-        ).fetchone()
+        if token_tenant_id:
+            user = conn.execute(
+                """
+                SELECT u.* FROM fnd_users u
+                JOIN fnd_tenants t ON t.id = u.tenant_id
+                WHERE LOWER(u.email) = LOWER(?) AND u.tenant_id = ?
+                  AND u.status = 'active' AND t.status = 'active'
+                LIMIT 1
+                """,
+                (email, token_tenant_id),
+            ).fetchone()
+        else:
+            user = conn.execute(
+                """
+                SELECT u.* FROM fnd_users u
+                JOIN fnd_tenants t ON t.id = u.tenant_id
+                WHERE LOWER(u.email) = LOWER(?) AND u.status = 'active' AND t.status = 'active'
+                ORDER BY t.created_at ASC LIMIT 1
+                """,
+                (email,),
+            ).fetchone()
         if user is None:
             return None
 
@@ -245,7 +264,7 @@ def get_current_user(request: Request) -> dict[str, Any]:
 
     email = (payload.get("sub") or "").strip().lower()
     if email and email != "local" and "@" in email:
-        foundation_user = _resolve_user_from_foundation(email)
+        foundation_user = _resolve_user_from_foundation(email, payload.get("tenant_id"))
         if foundation_user:
             payload["tenant_id"] = foundation_user["tenant_id"]
             payload["user_id"] = foundation_user["user_id"]

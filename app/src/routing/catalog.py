@@ -105,7 +105,7 @@ def seed_workspace_catalog(
     # Ensure the policy row exists first.
     get_routing_policy(ctx, conn, workspace_id)
 
-    router = build_router(user_id=ctx.user_id)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
     now = utc_now()
 
     with transaction(conn, ctx=ctx):

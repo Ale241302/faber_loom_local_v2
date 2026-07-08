@@ -139,7 +139,7 @@ def test_citation_traces_field_to_source_sheet_and_locator(
                     duration_ms=10,
                 )
 
-        make_fake_router = lambda user_id=None: Router(providers=[FakeProvider()])  # noqa: E731
+        make_fake_router = lambda user_id=None, tenant_id=None, **kwargs: Router(providers=[FakeProvider()])  # noqa: E731
         monkeypatch.setattr(api_module, "build_router", make_fake_router)
         monkeypatch.setattr(draft_engine_module, "build_router", make_fake_router)
 

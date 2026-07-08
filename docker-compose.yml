@@ -1,14 +1,13 @@
 # ════════════════════════════════════════════════════════════════════
 # FaberLoom · VPS docker-compose
-# Replaces the old FastAPI + Next.js + Postgres stack with the new
-# FastAPI + static React (UMD) + SQLite stack.
+# FastAPI + static React (UMD) + PostgreSQL/RLS runtime.
 #
 # The mwt nginx proxy routes app.faberloom.ai to the faberloom-api
 # container on the shared mwt_default network.
 #
-# E2-0: a PostgreSQL service is included for migration rehearsal and the
-# eventual E2-1 Postgres runtime. SQLite remains the active runtime until
-# E2-1 is explicitly enabled via DATABASE_URL.
+# E3-1: PostgreSQL is the active app runtime with Row Level Security.
+# Foundation remains SQLite. To revert to SQLite set
+# FABERLOOM_DB_ENGINE=sqlite in the container environment.
 # ════════════════════════════════════════════════════════════════════
 
 services:
@@ -46,7 +45,11 @@ services:
       FABERLOOM_HOST: 0.0.0.0
       FABERLOOM_PORT: 8000
       FABERLOOM_CONFIG_DIR: /data
+      FABERLOOM_DB_ENGINE: ${FABERLOOM_DB_ENGINE:-postgres}
+      FABERLOOM_POSTGRES_URL: ${FABERLOOM_POSTGRES_URL:-postgresql://faberloom:faberloom@postgres:5432/faberloom}
       FABERLOOM_DB_PATH: /data/faberloom.sqlite3
+      FABERLOOM_FOUNDATION_DB_ENGINE: ${FABERLOOM_FOUNDATION_DB_ENGINE:-sqlite}
+      FABERLOOM_FOUNDATION_DB: /data/foundation.sqlite3
       FABERLOOM_PUBLIC_HOST: app.faberloom.ai
       FL_STORAGE_BACKEND: minio
       FL_MINIO_ENDPOINT: faberloom-minio:9000

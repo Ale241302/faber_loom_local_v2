@@ -78,7 +78,7 @@ def _patch_router_and_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     import app.src.draft_engine as engine_module
 
     class FakeRouter:
-        def __init__(self, user_id: str | None = None) -> None:
+        def __init__(self, user_id: str | None = None, tenant_id: str | None = None, **kwargs: Any) -> None:
             pass
 
         def has_available_provider(self) -> bool:

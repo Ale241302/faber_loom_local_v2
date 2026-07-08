@@ -201,7 +201,7 @@ def test_chat_completion_with_fake_provider(monkeypatch: pytest.MonkeyPatch, tmp
     original_allowlist = {k: v.copy() for k, v in cost_module.MODEL_ALLOWLIST.items()}
     cost_module.MODEL_ALLOWLIST["fake"] = {"fake-model"}
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(providers=[FakeProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
@@ -337,7 +337,7 @@ def test_fallback_uses_allowed_model_per_provider(monkeypatch: pytest.MonkeyPatc
     original_build_router = api_module.build_router
     original_allowlist = {k: v.copy() for k, v in cost_module.MODEL_ALLOWLIST.items()}
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(providers=[FailingProvider(), BackupProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
@@ -430,7 +430,7 @@ def test_accumulated_budget_cap_blocks_requests(monkeypatch: pytest.MonkeyPatch,
 
     real_router = api_module.build_router()
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(settings=real_router.settings, providers=[ExpensiveProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
@@ -592,7 +592,7 @@ def test_fallback_to_cheaper_provider_when_first_exceeds_budget(monkeypatch: pyt
 
     real_router = api_module.build_router()
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(settings=real_router.settings, providers=[ExpensiveProvider(), CheapProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
@@ -708,7 +708,7 @@ def test_audit_mirror_failure_does_not_break_response(monkeypatch: pytest.Monkey
     original_allowlist = {k: v.copy() for k, v in cost_module.MODEL_ALLOWLIST.items()}
     cost_module.MODEL_ALLOWLIST["fake"] = {"fake-model"}
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(providers=[FakeProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)
@@ -775,7 +775,7 @@ def test_no_allowed_model_records_usage_and_audit(monkeypatch: pytest.MonkeyPatc
     # Intentionally empty allowlist for this provider so no model is allowed.
     cost_module.MODEL_ALLOWLIST["misconfigured"] = set()
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(providers=[MisconfiguredProvider()])
 
     monkeypatch.setattr(api_module, "build_router", fake_build_router)

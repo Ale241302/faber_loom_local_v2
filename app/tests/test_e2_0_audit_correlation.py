@@ -150,7 +150,7 @@ def _patch_fake_router(
                 duration_ms=5,
             )
 
-    def fake_build_router(user_id: str | None = None) -> Router:
+    def fake_build_router(user_id: str | None = None, *, tenant_id: str | None = None, **kwargs) -> Router:
         return Router(
             settings=RouterSettings(budget_cap_usd=5.0),
             providers=[FakeProvider()],

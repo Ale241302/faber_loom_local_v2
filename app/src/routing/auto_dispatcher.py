@@ -292,7 +292,7 @@ def _build_plan(
             local_only=policy.get("require_local_only", False),
         )
 
-    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
     planner_provider = router.providers.get(planner_entry["provider_slug"])
     if planner_provider is None:
         raise NoCapacityError(f"Planner provider {planner_entry['provider_slug']} is not available")
@@ -443,7 +443,7 @@ def _execute_openai_image_step(
     import time as _time
 
     start = _time.perf_counter()
-    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
     provider = router.providers.get("openai")
     if provider is None or not provider.is_available():
         raise NoCapacityError("OpenAI image provider is not configured")
@@ -558,7 +558,7 @@ def _execute_step(
             "duration_ms": comp.duration_ms,
         }
 
-    router = build_router(budget_cap_usd=policy.get("budget_cap_usd"))
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
     provider = router.providers.get(provider_slug)
 
     from ..router.engine import _estimate_input_tokens, DEFAULT_ESTIMATED_OUTPUT_TOKENS

@@ -58,6 +58,7 @@ def create_identity(
     tax_id: str | None = None,
     jurisdiction: str | None = None,
     timestamp: str | None = None,
+    actor_role: str = "owner",
 ) -> EntityIdentity:
     """Create the initial identity for a tenant. Fails if one already exists."""
 
@@ -74,7 +75,9 @@ def create_identity(
         owner_user_id=owner_user_id,
         updated_at=timestamp or _now(),
     )
-    _persist(conn, tenant_id, identity)
+    ctx = _identity_ctx(tenant_id, owner_user_id, actor_role)
+    with transaction(conn, ctx=ctx):
+        _persist_raw(conn, identity)
     return identity
 
 
@@ -121,29 +124,39 @@ def update_identity(
         owner_user_id=current.owner_user_id,
         updated_at=timestamp or _now(),
     )
-    _persist(conn, tenant_id, new_identity)
+    ctx = _identity_ctx(tenant_id, actor_user_id, actor_role)
+    with transaction(conn, ctx=ctx):
+        _persist_raw(conn, new_identity)
     return new_identity
 
 
-def _persist(conn: Any, tenant_id: str, identity: EntityIdentity) -> None:
-    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
-    with transaction(conn, ctx=ctx):
-        conn.execute(
-            """INSERT INTO entity_identity_version
-               (tenant_id, version, name, slug, tax_id, jurisdiction,
-                owner_user_id, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                identity.tenant_id,
-                identity.version,
-                identity.name,
-                identity.slug,
-                identity.tax_id,
-                identity.jurisdiction,
-                identity.owner_user_id,
-                identity.updated_at,
-            ),
-        )
+def _persist_raw(conn: Any, identity: EntityIdentity) -> None:
+    conn.execute(
+        """INSERT INTO entity_identity_version
+           (tenant_id, version, name, slug, tax_id, jurisdiction,
+            owner_user_id, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            identity.tenant_id,
+            identity.version,
+            identity.name,
+            identity.slug,
+            identity.tax_id,
+            identity.jurisdiction,
+            identity.owner_user_id,
+            identity.updated_at,
+        ),
+    )
+
+
+def _identity_ctx(tenant_id: str, user_id: str, actor_role: str) -> Context:
+    return Context(
+        workspace_id=SYSTEM_WORKSPACE_ID,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        actor_id=user_id,
+        actor_role_at_decision=actor_role,
+    )
 
 
 def _now() -> str:

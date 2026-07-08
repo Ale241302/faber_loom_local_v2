@@ -91,7 +91,14 @@ def set_policy(
     from datetime import datetime, timezone
 
     roles = frozenset(approver_roles) if approver_roles else DEFAULT_APPROVER_ROLES
-    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    actor_id = updated_by or "system"
+    ctx = Context(
+        workspace_id=SYSTEM_WORKSPACE_ID,
+        tenant_id=tenant_id,
+        user_id=actor_id,
+        actor_id=actor_id,
+        actor_role_at_decision="owner",
+    )
     with transaction(conn, ctx=ctx):
         conn.execute(
             """INSERT INTO key_policy (tenant_id, space_id, level, approver_roles_json, ceo_only, updated_at, updated_by)

@@ -36,7 +36,9 @@ class ObjectNotFoundError(ObjectStoreError):
     """Raised when an object is not found."""
 
 
-def workspace_object_prefix(workspace_id: str) -> str:
+def workspace_object_prefix(workspace_id: str, tenant_id: str | None = None) -> str:
+    if tenant_id:
+        return f"t-{tenant_id}/ws-{workspace_id}"
     return f"ws-{workspace_id}"
 
 
@@ -52,10 +54,16 @@ def get_tenant_encryption_key(ctx: Context) -> Any:
     return TenantSecretStore().get_or_create_data_key(ctx)
 
 
-def object_key(workspace_id: str, origin: str, file_name: str, object_id: str) -> str:
+def object_key(
+    workspace_id: str,
+    origin: str,
+    file_name: str,
+    object_id: str,
+    tenant_id: str | None = None,
+) -> str:
     if origin not in OBJECT_ORIGINS:
         raise ValueError(f"Invalid object origin: {origin}")
-    prefix = workspace_object_prefix(workspace_id)
+    prefix = workspace_object_prefix(workspace_id, tenant_id=tenant_id)
     safe_name = os.path.basename(file_name or "object")
     return f"{prefix}/{origin}/{object_id}/{safe_name}"
 

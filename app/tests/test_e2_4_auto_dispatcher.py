@@ -89,7 +89,7 @@ def client(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setitem(cost_module.MODEL_ALLOWLIST, "fake", {"fake-model"})
 
-    def fake_build_router(*, budget_cap_usd=None, provider_allowlist=None):
+    def fake_build_router(*, budget_cap_usd=None, provider_allowlist=None, tenant_id=None, **kwargs):
         return Router(providers=[FakeTextProvider()])
 
     monkeypatch.setattr(auto_dispatcher_module, "build_router", fake_build_router)
