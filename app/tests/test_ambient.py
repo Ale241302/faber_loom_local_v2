@@ -212,3 +212,39 @@ def test_deduplication_merges_same_finding(client: TestClient) -> None:
     assert resp2.status_code == 201
     second_count = resp2.json()["proposals_created"]
     assert second_count == 0
+
+
+def test_scheduler_runs_a_cycle_per_tenant(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The scheduler is no longer hardcoded to the default tenant: each enabled
+    tenant gets its own cycle, scoped to itself."""
+
+    import app.src.ambient as ambient
+    from app.src.db import connect
+
+    ran: list[str] = []
+
+    class _FakeOrch:
+        def run_cycle(self, conn: Any, tenant_id: str, workspace_id: str | None = None, trigger: str = "manual") -> dict[str, Any]:
+            ran.append(tenant_id)
+            return {"tenant_id": tenant_id, "trigger": trigger}
+
+    monkeypatch.setattr(ambient, "get_orchestrator", lambda: _FakeOrch())
+    monkeypatch.setattr(ambient, "is_within_window", lambda config: True)
+
+    conn = connect()
+    try:
+        for tenant_id in ("default", "tnt_second"):
+            ambient.seed_ambient_config(conn, tenant_id)
+            ambient.update_ambient_config(conn, tenant_id, {"global_enabled": 1})
+        # A disabled tenant must be skipped.
+        ambient.seed_ambient_config(conn, "tnt_disabled")
+
+        ambient._run_tenant_schedule(conn, "default")
+        ambient._run_tenant_schedule(conn, "tnt_second")
+        ambient._run_tenant_schedule(conn, "tnt_disabled")
+    finally:
+        conn.close()
+
+    assert "default" in ran
+    assert "tnt_second" in ran
+    assert "tnt_disabled" not in ran

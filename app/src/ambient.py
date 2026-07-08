@@ -999,42 +999,88 @@ _scheduler_thread: threading.Thread | None = None
 _scheduler_stop_event = threading.Event()
 
 
+def _scheduled_tenant_ids() -> list[str]:
+    """Every active tenant the scheduler must consider, one cycle each.
+
+    Tenants are enumerated from Foundation (the authoritative tenant registry).
+    This deliberately sidesteps app-DB RLS: a tenant-scoped ``SELECT`` cannot see
+    other tenants' ``ambient_config`` rows, so cross-tenant enumeration has to
+    come from a source outside the RLS boundary. ``DEFAULT_TENANT_ID`` is always
+    included so the single-tenant local stack keeps working before Foundation is
+    seeded.
+    """
+
+    tenant_ids: set[str] = {DEFAULT_TENANT_ID}
+    try:
+        from .platform_admin import _open_foundation
+
+        fconn = _open_foundation()
+        try:
+            rows = fconn.execute(
+                "SELECT id FROM fnd_tenants WHERE status = 'active'"
+            ).fetchall()
+            for row in rows:
+                tenant_id = row["id"]
+                if tenant_id:
+                    tenant_ids.add(tenant_id)
+        finally:
+            fconn.close()
+    except Exception:
+        logger.exception("Ambient scheduler could not enumerate tenants from Foundation")
+    return sorted(tenant_ids)
+
+
+def _run_tenant_schedule(conn: sqlite3.Connection, tenant_id: str) -> None:
+    """Evaluate the global-cycle frequency/window for one tenant and run if due.
+
+    Each tenant carries its own ambient_config (enable flag, frequency, window,
+    budget), so the schedule is fully per-tenant; the platform only supplies
+    defaults at bootstrap. A tenant's evaluation never reads another tenant.
+    """
+
+    config = get_ambient_config(conn, tenant_id)
+    if config is None or not config.get("global_enabled", False):
+        return
+
+    min_global_minutes = int(config.get("global_frequency_min", 30))
+    # RLS-scoped read: SET LOCAL app.tenant_id must be active or Postgres RLS
+    # would return no rows and the frequency guard would misfire.
+    with transaction(conn, ctx=Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)):
+        last_global = conn.execute(
+            """
+            SELECT started_at FROM ambient_cycle
+            WHERE tenant_id = ? AND workspace_id IS NULL AND status = 'completed'
+            ORDER BY started_at DESC LIMIT 1
+            """,
+            (tenant_id,),
+        ).fetchone()
+
+    run_global = True
+    if last_global:
+        last_dt = datetime.fromisoformat(last_global["started_at"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) - last_dt < timedelta(minutes=min_global_minutes):
+            run_global = False
+
+    if run_global and (is_within_window(config) or _any_critical_event(conn, tenant_id)):
+        try:
+            get_orchestrator().run_cycle(conn, tenant_id, trigger="scheduled")
+        except Exception:
+            logger.exception("Scheduled ambient cycle failed for tenant %s", tenant_id)
+
+
 def _scheduler_loop() -> None:
-    """Background scheduler loop: wakes every minute and triggers cycles."""
+    """Background scheduler loop: wakes every minute and triggers cycles for
+    every active tenant independently."""
 
     logger.info("Ambient scheduler started")
     while not _scheduler_stop_event.is_set():
         try:
             with db_session() as conn:
-                # Support default tenant only for this MVP. Multi-tenant scheduler is E2-3+.
-                tenant_id = DEFAULT_TENANT_ID
-                config = get_ambient_config(conn, tenant_id)
-                if config is None or not config.get("global_enabled", False):
-                    time.sleep(AMBIENT_SCHEDULER_INTERVAL_SECONDS)
-                    continue
-
-                # Global frequency guard
-                last_global = conn.execute(
-                    """
-                    SELECT started_at FROM ambient_cycle
-                    WHERE tenant_id = ? AND workspace_id IS NULL AND status = 'completed'
-                    ORDER BY started_at DESC LIMIT 1
-                    """,
-                    (tenant_id,),
-                ).fetchone()
-
-                min_global_minutes = int(config.get("global_frequency_min", 30))
-                run_global = True
-                if last_global:
-                    last_dt = datetime.fromisoformat(last_global["started_at"].replace("Z", "+00:00"))
-                    if datetime.now(timezone.utc) - last_dt < timedelta(minutes=min_global_minutes):
-                        run_global = False
-
-                if run_global and (is_within_window(config) or _any_critical_event(conn, tenant_id)):
+                for tenant_id in _scheduled_tenant_ids():
                     try:
-                        get_orchestrator().run_cycle(conn, tenant_id, trigger="scheduled")
+                        _run_tenant_schedule(conn, tenant_id)
                     except Exception:
-                        logger.exception("Scheduled ambient cycle failed")
+                        logger.exception("Ambient schedule failed for tenant %s", tenant_id)
         except Exception:
             logger.exception("Ambient scheduler error")
 
