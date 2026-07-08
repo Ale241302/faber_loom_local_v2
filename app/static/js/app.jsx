@@ -634,6 +634,18 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   }, [slashOpen]);
 
   useEffect(() => {
+    const handler = (e) => {
+      const skill = e.detail?.skill;
+      if (!skill || !skill.skill_id) return;
+      setSelectedSkills((prev) =>
+        prev.find((s) => s.skill_id === skill.skill_id) ? prev : [...prev, skill]
+      );
+    };
+    window.addEventListener("faberloom:select-global-skill", handler);
+    return () => window.removeEventListener("faberloom:select-global-skill", handler);
+  }, []);
+
+  useEffect(() => {
     if (!slashOpen) return;
     const onDocClick = (e) => {
       if (inputWrapRef.current && !inputWrapRef.current.contains(e.target)) {
@@ -1147,6 +1159,7 @@ function WorkspaceRequired({ icon, title }) {
 function ToolsetPanel({ activeWorkspace }) {
   const [tab, setTab] = useState("agents");
   const [routines, setRoutines] = useState([]);
+  const [globalSkills, setGlobalSkills] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -1155,8 +1168,12 @@ function ToolsetPanel({ activeWorkspace }) {
     setLoading(true);
     setError(null);
     try {
-      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/routines`);
+      const [list, skillsRes] = await Promise.all([
+        apiGet(`/api/workspaces/${activeWorkspace.id}/routines`),
+        apiGet("/api/skills").catch(() => ({ skills: [] })),
+      ]);
       setRoutines(Array.isArray(list) ? list : []);
+      setGlobalSkills(Array.isArray(skillsRes.skills) ? skillsRes.skills : []);
     } catch (err) {
       setError(err.message);
     }
@@ -1170,21 +1187,34 @@ function ToolsetPanel({ activeWorkspace }) {
     return () => window.removeEventListener("faberloom-refresh", handler);
   }, [activeWorkspace]);
 
-  const invoke = (routine) => {
-    window.dispatchEvent(new CustomEvent("faberloom:invoke-routine", {
-      detail: { routine_id: routine.id },
-    }));
+  const invoke = (item) => {
+    if (item._type === "global_skill") {
+      window.dispatchEvent(new CustomEvent("faberloom:select-global-skill", {
+        detail: { skill: item },
+      }));
+    } else {
+      window.dispatchEvent(new CustomEvent("faberloom:invoke-routine", {
+        detail: { routine_id: item.id },
+      }));
+    }
   };
 
-  const filtered = routines.filter((r) => {
-    if (!r.is_active || !r.approved_by) return false;
-    if (tab === "skills") return r.category === "skill";
-    if (tab === "agents") return r.category === "agent";
-    if (tab === "templates") return r.category === "template";
-    if (tab === "knowledge") return r.category === "reference";
-    return false;
-  });
+  const routineItems = routines
+    .filter((r) => r.is_active && r.approved_by)
+    .filter((r) => {
+      if (tab === "skills") return r.category === "skill";
+      if (tab === "agents") return r.category === "agent";
+      if (tab === "templates") return r.category === "template";
+      if (tab === "knowledge") return r.category === "reference";
+      return false;
+    })
+    .map((r) => ({ ...r, _type: "routine" }));
 
+  const skillItems = tab === "skills"
+    ? globalSkills.map((s) => ({ ...s, _type: "global_skill", name: s.name, id: s.skill_id }))
+    : [];
+
+  const filtered = [...routineItems, ...skillItems];
   const isExecutableTab = tab === "skills" || tab === "agents";
 
   return <div className="toolset-panel">
@@ -1205,10 +1235,10 @@ function ToolsetPanel({ activeWorkspace }) {
       {error && <div style={S.error}>{error}</div>}
       {!loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
       <div className="toolset-list">
-        {filtered.map((routine) => (
+        {filtered.map((item) => (
           <ToolsetItem
-            key={routine.id}
-            routine={routine}
+            key={item.id}
+            item={item}
             onInvoke={isExecutableTab ? invoke : null}
           />
         ))}
@@ -1217,17 +1247,19 @@ function ToolsetPanel({ activeWorkspace }) {
   </div>;
 }
 
-function ToolsetItem({ routine, onInvoke }) {
+function ToolsetItem({ item, onInvoke }) {
+  const isGlobalSkill = item._type === "global_skill";
   return <div className="toolset-card">
     <div className="toolset-card-head">
-      <div className="toolset-card-title">{routine.name}</div>
-      <span style={S.badge}>{routine.category}</span>
+      <div className="toolset-card-title">{item.name}</div>
+      <span style={S.badge}>{isGlobalSkill ? "global" : item.category}</span>
     </div>
-    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{routine.id}</div>
-    {routine.preset_id && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}><Icon name="route" size={12}/> {routine.preset_id}</div>}
+    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{isGlobalSkill ? `/${item.skill_id}` : item.id}</div>
+    {!isGlobalSkill && item.preset_id && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}><Icon name="route" size={12}/> {item.preset_id}</div>}
+    {isGlobalSkill && item.description && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.4 }}>{item.description}</div>}
     {onInvoke && (
-      <button className="toolset-invoke" onClick={() => onInvoke(routine)}>
-        <Icon name="send" size={14}/>Invocar en chat
+      <button className="toolset-invoke" onClick={() => onInvoke(item)}>
+        <Icon name="send" size={14}/>{isGlobalSkill ? "Usar en chat" : "Invocar en chat"}
       </button>
     )}
     {!onInvoke && (
