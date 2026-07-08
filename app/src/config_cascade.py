@@ -41,7 +41,7 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
         if row is None:
             return None
         mapping = {
-            "smtp.server": row["server"],
+            "smtp.host": row["host"],
             "smtp.port": row["port"],
             "smtp.use_ssl": row["use_ssl"],
             "smtp.username": row["username"],
@@ -64,11 +64,15 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
 
     if key == "model.default":
         row = conn.execute(
-            "SELECT * FROM workspace_model_catalog WHERE workspace_id = ? AND is_default = 1 LIMIT 1",
-            (ctx.workspace_id,),
+            """
+            SELECT model FROM workspace_model_catalog
+            WHERE workspace_id = ? AND tenant_id = ? AND is_enabled = 1
+            ORDER BY priority ASC, provider_slug ASC, model ASC LIMIT 1
+            """,
+            (ctx.workspace_id, ctx.tenant_id),
         ).fetchone()
         if row is not None:
-            return row["model_id"]
+            return row["model"]
 
     return None
 

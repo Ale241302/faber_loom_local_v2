@@ -22,7 +22,7 @@ def conn():
             """
             CREATE TABLE workspace_smtp_config (
                 workspace_id TEXT PRIMARY KEY,
-                server TEXT,
+                host TEXT,
                 port INTEGER,
                 use_ssl INTEGER,
                 username TEXT

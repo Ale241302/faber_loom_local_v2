@@ -2747,3 +2747,19 @@ class ReconciliationRead(BaseModel):
 
 class ReconciliationListRead(BaseModel):
     reconciliations: list[ReconciliationRead]
+
+
+class SettingItem(BaseModel):
+    key: str
+    label: str
+    value: Any
+    description: str = ""
+    source: str = "default"
+
+
+class SettingsRead(BaseModel):
+    settings: list[SettingItem]
+
+
+class SettingsUpdate(BaseModel):
+    overrides: dict[str, Any]

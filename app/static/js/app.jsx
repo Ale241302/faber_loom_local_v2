@@ -1203,7 +1203,7 @@ function ToolsetPanel({ activeWorkspace }) {
     <div className="toolset-body">
       {loading && <div style={S.loading}>Cargando…</div>}
       {error && <div style={S.error}>{error}</div>}
-      {!loading && filtered.length === 0 && <div style={S.empty}>No hay {tab} activos y aprobados.</div>}
+      {!loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
       <div className="toolset-list">
         {filtered.map((routine) => (
           <ToolsetItem
@@ -1504,9 +1504,9 @@ function SkillAgentView({ activeWorkspace, category, title, subtitle }) {
     tools_allowlist: "[]",
     schema_output_json: "{}",
     trigger_json: "[]",
-    source_version: "",
+    source_version: "v1",
     preset_id: "",
-    is_active: 0,
+    is_active: 1,
   };
 
   const [createForm, setCreateForm] = useState(initialForm);

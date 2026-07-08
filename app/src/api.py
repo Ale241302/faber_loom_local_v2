@@ -21,7 +21,9 @@ from pydantic import BaseModel, Field
 
 from .audit import audit_writer
 from .auth import get_current_user
+from .config_cascade import DEFAULTS, ConfigCascadeError, resolve
 from .context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context, system_context
+from .foundation.core import get_foundation_db_path
 from .connectors.imap import fetch_unread_messages
 from .connectors.smtp import (
     SMTPConfig,
@@ -95,6 +97,7 @@ from .db import (
     set_workspace_smtp_config,
     sum_workspace_usage_cost,
     transaction,
+    utc_now,
     update_chat,
     update_email_account,
     update_mail_message_status,
@@ -205,6 +208,9 @@ from .models import (
     WorkspaceEmailSignatureUpdate,
     WorkspaceFieldAliasesUpdate,
     WorkspaceListRead,
+    SettingItem,
+    SettingsRead,
+    SettingsUpdate,
     WorkspaceRead,
     WorkspaceRoutingPolicyRead,
     WorkspaceRoutingPolicyUpdate,
@@ -374,6 +380,263 @@ def get_workspace_db(
         data_conn.close()
 
 
+# ---------------------------------------------------------------------------
+# E3-2: Settings cascade UI endpoints
+# ---------------------------------------------------------------------------
+
+_SETTING_REGISTRY: dict[str, dict[str, Any]] = {
+    "smtp.host": {"label": "Servidor SMTP", "description": "Hostname del servidor de correo saliente."},
+    "smtp.port": {"label": "Puerto SMTP", "description": "Puerto del servidor SMTP."},
+    "smtp.use_ssl": {"label": "SMTP usa SSL", "description": "Usar conexión SSL/TLS al enviar correo."},
+    "smtp.username": {"label": "Usuario SMTP", "description": "Usuario para autenticación SMTP."},
+    "routing.auto_dispatch": {"label": "Despacho automático", "description": "Ejecutar acciones sin confirmación HITL."},
+    "routing.max_budget_usd": {"label": "Presupuesto máximo (USD)", "description": "Presupuesto máximo por ejecución automática."},
+    "routing.max_steps": {"label": "Pasos máximos", "description": "Número máximo de pasos en modo automático."},
+    "model.default": {"label": "Modelo por defecto", "description": "Modelo usado cuando no hay otro seleccionado."},
+}
+
+
+def _coerce_setting_value(key: str, raw: Any) -> Any:
+    """Convert UI strings to the expected Python type for a setting."""
+
+    if key in ("smtp.use_ssl", "routing.auto_dispatch"):
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).lower() in ("1", "true", "yes", "on")
+    if key in ("smtp.port", "routing.max_steps"):
+        return int(raw)
+    if key == "routing.max_budget_usd":
+        return float(raw)
+    return str(raw)
+
+
+def _open_foundation_db() -> sqlite3.Connection | None:
+    """Open the Foundation user database if it exists."""
+
+    path = get_foundation_db_path()
+    if not path.exists():
+        return None
+    conn = sqlite3.connect(str(path), timeout=20.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _tenant_settings_list(conn: sqlite3.Connection, ctx: Context) -> list[SettingItem]:
+    rows = {
+        row["key"]: row["value_json"]
+        for row in conn.execute(
+            "SELECT key, value_json FROM tenant_settings WHERE tenant_id = ?",
+            (ctx.tenant_id,),
+        ).fetchall()
+    }
+    settings: list[SettingItem] = []
+    for key, meta in _SETTING_REGISTRY.items():
+        value: Any = DEFAULTS.get(key)
+        source = "default"
+        if key in rows:
+            value = json.loads(rows[key])
+            source = "tenant"
+        settings.append(
+            SettingItem(key=key, label=meta["label"], value=value, description=meta["description"], source=source)
+        )
+    return settings
+
+
+def _workspace_settings_list(conn: sqlite3.Connection, ctx: Context, workspace_id: str) -> list[SettingItem]:
+    smtp = get_workspace_smtp_config(ctx, conn)
+    policy = get_routing_policy(ctx, conn, workspace_id)
+    default_model_row = conn.execute(
+        """
+        SELECT model FROM workspace_model_catalog
+        WHERE workspace_id = ? AND tenant_id = ? AND is_enabled = 1
+        ORDER BY priority ASC, provider_slug ASC, model ASC LIMIT 1
+        """,
+        (workspace_id, ctx.require_tenant()),
+    ).fetchone()
+    default_model = default_model_row["model"] if default_model_row else None
+
+    mapping: dict[str, tuple[Any, str]] = {
+        "smtp.host": (smtp["host"] if smtp else None, "workspace"),
+        "smtp.port": (smtp["port"] if smtp else None, "workspace"),
+        "smtp.use_ssl": (bool(smtp["use_ssl"]) if smtp else None, "workspace"),
+        "smtp.username": (smtp["username"] if smtp else None, "workspace"),
+        "routing.auto_dispatch": (bool(policy.get("auto_mode_enabled")), "workspace"),
+        "routing.max_budget_usd": (policy.get("budget_cap_usd"), "workspace"),
+        "routing.max_steps": (policy.get("max_auto_steps"), "workspace"),
+        "model.default": (default_model, "workspace"),
+    }
+
+    settings: list[SettingItem] = []
+    for key, meta in _SETTING_REGISTRY.items():
+        value: Any = DEFAULTS.get(key)
+        source = "default"
+        mapped_value, mapped_source = mapping.get(key, (None, "default"))
+        if mapped_value is not None:
+            value = mapped_value
+            source = mapped_source
+        settings.append(
+            SettingItem(key=key, label=meta["label"], value=value, description=meta["description"], source=source)
+        )
+    return settings
+
+
+def _update_workspace_settings(
+    conn: sqlite3.Connection,
+    ctx: Context,
+    workspace_id: str,
+    overrides: dict[str, Any],
+) -> None:
+    smtp_overrides: dict[str, Any] = {}
+    routing_overrides: dict[str, Any] = {}
+    default_model: str | None = None
+
+    for key, raw in overrides.items():
+        if key not in _SETTING_REGISTRY:
+            continue
+        value = _coerce_setting_value(key, raw)
+        if key.startswith("smtp."):
+            smtp_overrides[key.split(".", 1)[1]] = value
+        elif key == "model.default":
+            default_model = value
+        elif key.startswith("routing."):
+            routing_overrides[key.split(".", 1)[1]] = value
+
+    if routing_overrides:
+        update_routing_policy(
+            ctx,
+            conn,
+            auto_mode_enabled=routing_overrides.get("auto_dispatch"),
+            budget_cap_usd=routing_overrides.get("max_budget_usd"),
+            max_auto_steps=routing_overrides.get("max_steps"),
+        )
+
+    if smtp_overrides:
+        existing = get_workspace_smtp_config(ctx, conn, include_password=True) or {}
+        set_workspace_smtp_config(
+            ctx,
+            conn,
+            host=smtp_overrides.get("host", existing.get("host", "")),
+            port=smtp_overrides.get("port", existing.get("port", 465)),
+            use_ssl=smtp_overrides.get("use_ssl", existing.get("use_ssl", True)),
+            username=smtp_overrides.get("username", existing.get("username", "")),
+            password=existing.get("password", ""),
+            from_email=existing.get("from_email", ""),
+            is_app_password=existing.get("is_app_password", 0),
+        )
+
+    if default_model is not None:
+        conn.execute(
+            "UPDATE workspace_model_catalog SET is_default = 0 WHERE workspace_id = ? AND tenant_id = ?",
+            (workspace_id, ctx.require_tenant()),
+        )
+        updated = conn.execute(
+            """
+            UPDATE workspace_model_catalog SET is_default = 1
+            WHERE workspace_id = ? AND tenant_id = ? AND model = ?
+            """,
+            (workspace_id, ctx.require_tenant(), default_model),
+        ).rowcount
+        if updated == 0:
+            create_model_catalog_entry(
+                ctx,
+                conn,
+                provider_slug="openai",
+                model=default_model,
+                capabilities=[],
+            )
+
+
+def _user_settings_list(ctx: Context) -> list[SettingItem]:
+    fnd_conn = _open_foundation_db()
+    prefs: dict[str, Any] = {}
+    if fnd_conn is not None:
+        try:
+            row = fnd_conn.execute(
+                "SELECT preferences_json FROM fnd_users WHERE id = ?",
+                (ctx.user_id,),
+            ).fetchone()
+            if row is not None and row["preferences_json"]:
+                prefs = json.loads(row["preferences_json"])
+        finally:
+            fnd_conn.close()
+
+    settings: list[SettingItem] = []
+    for key, meta in _SETTING_REGISTRY.items():
+        value: Any = DEFAULTS.get(key)
+        source = "default"
+        if key in prefs and prefs[key] is not None:
+            value = prefs[key]
+            source = "user"
+        settings.append(
+            SettingItem(key=key, label=meta["label"], value=value, description=meta["description"], source=source)
+        )
+    return settings
+
+
+def _update_user_settings(ctx: Context, overrides: dict[str, Any]) -> None:
+    fnd_conn = _open_foundation_db()
+    if fnd_conn is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Foundation database not available",
+        )
+    try:
+        row = fnd_conn.execute(
+            "SELECT preferences_json FROM fnd_users WHERE id = ?",
+            (ctx.user_id,),
+        ).fetchone()
+        prefs: dict[str, Any] = json.loads(row["preferences_json"]) if row is not None and row["preferences_json"] else {}
+        for key, raw in overrides.items():
+            if key not in _SETTING_REGISTRY:
+                continue
+            prefs[key] = _coerce_setting_value(key, raw)
+        fnd_conn.execute(
+            "UPDATE fnd_users SET preferences_json = ? WHERE id = ?",
+            (json.dumps(prefs, ensure_ascii=False), ctx.user_id),
+        )
+        fnd_conn.commit()
+    finally:
+        fnd_conn.close()
+
+
+def _resolve_with_source(
+    conn: sqlite3.Connection,
+    ctx: Context,
+    key: str,
+) -> tuple[Any, str]:
+    """Resolve a setting and report which level won."""
+
+    from .config_cascade import _tenant_config, _workspace_config
+
+    if ctx.user_id:
+        fnd_conn = _open_foundation_db()
+        if fnd_conn is not None:
+            try:
+                row = fnd_conn.execute(
+                    "SELECT preferences_json FROM fnd_users WHERE id = ?",
+                    (ctx.user_id,),
+                ).fetchone()
+                if row is not None and row["preferences_json"]:
+                    prefs = json.loads(row["preferences_json"])
+                    if key in prefs and prefs[key] is not None:
+                        return prefs[key], "user"
+            finally:
+                fnd_conn.close()
+
+    value = _workspace_config(conn, ctx, key)
+    if value is not None:
+        return value, "workspace"
+
+    value = _tenant_config(conn, ctx, key)
+    if value is not None:
+        return value, "tenant"
+
+    if key in DEFAULTS:
+        return DEFAULTS[key], "default"
+
+    return None, "default"
+
+
 @public_router.get("/health", response_model=HealthRead)
 def health() -> HealthRead:
     return HealthRead(
@@ -381,6 +644,114 @@ def health() -> HealthRead:
         schema_version=get_schema_version(),
         database_path=str(get_database_path()),
     )
+
+
+@router.get("/tenant/settings", response_model=SettingsRead)
+def api_get_tenant_settings(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> SettingsRead:
+    """List tenant-scoped settings with inheritance from defaults."""
+
+    ctx = context_from_request(request)
+    return SettingsRead(settings=_tenant_settings_list(conn, ctx))
+
+
+@router.put("/tenant/settings", response_model=SettingsRead)
+def api_put_tenant_settings(
+    request: Request,
+    payload: SettingsUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> SettingsRead:
+    """Write tenant-level setting overrides."""
+
+    ctx = context_from_request(request)
+    with transaction(conn, ctx=ctx):
+        for key, raw in payload.overrides.items():
+            if key not in _SETTING_REGISTRY:
+                continue
+            value = _coerce_setting_value(key, raw)
+            value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            conn.execute(
+                """
+                INSERT INTO tenant_settings (tenant_id, key, value_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(tenant_id, key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at
+                """,
+                (ctx.tenant_id, key, value_json, utc_now()),
+            )
+    return SettingsRead(settings=_tenant_settings_list(conn, ctx))
+
+
+@router.get("/workspaces/{workspace_id}/settings", response_model=SettingsRead)
+def api_get_workspace_settings(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> SettingsRead:
+    """List workspace-scoped settings with inheritance from defaults."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return SettingsRead(settings=_workspace_settings_list(conn, ctx, workspace_id))
+
+
+@router.put("/workspaces/{workspace_id}/settings", response_model=SettingsRead)
+def api_put_workspace_settings(
+    workspace_id: str,
+    request: Request,
+    payload: SettingsUpdate,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> SettingsRead:
+    """Write workspace-level setting overrides."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    with transaction(conn, ctx=ctx):
+        _update_workspace_settings(conn, ctx, workspace_id, payload.overrides)
+    return SettingsRead(settings=_workspace_settings_list(conn, ctx, workspace_id))
+
+
+@router.get("/users/me/settings", response_model=SettingsRead)
+def api_get_user_settings(request: Request) -> SettingsRead:
+    """List user-scoped settings with inheritance from defaults."""
+
+    ctx = context_from_request(request)
+    return SettingsRead(settings=_user_settings_list(ctx))
+
+
+@router.put("/users/me/settings", response_model=SettingsRead)
+def api_put_user_settings(
+    request: Request,
+    payload: SettingsUpdate,
+) -> SettingsRead:
+    """Write user-level setting overrides into the Foundation profile."""
+
+    ctx = context_from_request(request)
+    _update_user_settings(ctx, payload.overrides)
+    return SettingsRead(settings=_user_settings_list(ctx))
+
+
+@router.get("/settings/resolved", response_model=SettingsRead)
+def api_get_settings_resolved(
+    request: Request,
+    workspace_id: str | None = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> SettingsRead:
+    """Resolve all registered settings through user > workspace > tenant > default."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    settings: list[SettingItem] = []
+    for key, meta in _SETTING_REGISTRY.items():
+        value, source = _resolve_with_source(conn, ctx, key)
+        settings.append(
+            SettingItem(key=key, label=meta["label"], value=value, description=meta["description"], source=source)
+        )
+    return SettingsRead(settings=settings)
 
 
 @router.get("/me", response_model=UserRead)
