@@ -71,17 +71,15 @@ def _sample_smtp_config() -> dict[str, Any]:
 
 def _patch_send_message(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     import app.src.api as api_module
-    import app.src.connectors.imap as imap_module
 
     calls: list[dict[str, Any]] = []
 
-    def fake_send_message(*args: Any, **kwargs: Any) -> None:
-        calls.append({"args": args, "kwargs": kwargs})
+    def fake_transmit(smtp_config: dict[str, Any], *, to: str, subject: str, body: str) -> None:
+        calls.append({"smtp_config": smtp_config, "to": to, "subject": subject, "body": body})
 
-    # api.py imports send_message into its own namespace, so patch both the
-    # source module and the consumer module.
-    monkeypatch.setattr(imap_module, "send_message", fake_send_message)
-    monkeypatch.setattr(api_module, "send_message", fake_send_message)
+    # The mail send/test endpoints route transmission through _smtp_transmit,
+    # which wraps the hardened smtp.send_email connector.
+    monkeypatch.setattr(api_module, "_smtp_transmit", fake_transmit)
     return calls
 
 
@@ -126,14 +124,14 @@ def test_smtp_test_endpoint_sends_to_local_user(client: TestClient, monkeypatch:
 
     assert len(calls) == 1
     call = calls[0]
-    assert call["args"][0] == "mail.example.com"
-    assert call["args"][1] == 465
-    assert call["args"][2] == "info@example.com"
-    assert call["kwargs"]["to"] == "local"
-    assert call["kwargs"]["subject"] == "FaberLoom: prueba SMTP"
-    assert call["kwargs"]["body"] == "Este es un correo de prueba desde FaberLoom."
-    assert call["kwargs"]["use_ssl"] is True
-    assert call["kwargs"]["from_email"] == "info@example.com"
+    assert call["smtp_config"]["host"] == "mail.example.com"
+    assert call["smtp_config"]["port"] == 465
+    assert call["smtp_config"]["username"] == "info@example.com"
+    assert call["to"] == "local"
+    assert call["subject"] == "FaberLoom: prueba SMTP"
+    assert call["body"] == "Este es un correo de prueba desde FaberLoom."
+    assert call["smtp_config"]["use_ssl"] is True
+    assert call["smtp_config"]["from_email"] == "info@example.com"
 
 
 def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,7 +160,7 @@ def test_smtp_test_endpoint_uses_jwt_sub(client: TestClient, monkeypatch: pytest
     assert response.json()["sent_to"] == "admin@mwt.one"
 
     assert len(calls) == 1
-    assert calls[0]["kwargs"]["to"] == "admin@mwt.one"
+    assert calls[0]["to"] == "admin@mwt.one"
 
 
 def test_send_message_supports_use_ssl_false(monkeypatch: pytest.MonkeyPatch) -> None:

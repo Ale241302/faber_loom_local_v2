@@ -22,7 +22,13 @@ from pydantic import BaseModel, Field
 from .audit import audit_writer
 from .auth import get_current_user
 from .context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context, system_context
-from .connectors.imap import fetch_unread_messages, send_message
+from .connectors.imap import fetch_unread_messages
+from .connectors.smtp import (
+    SMTPConfig,
+    SMTPError,
+    confirmation_token as smtp_confirmation_token,
+    send_email as smtp_send_email,
+)
 from .features import is_email_connector_enabled, is_shared_instance
 from .db import (
     approve_routine,
@@ -3428,6 +3434,46 @@ def api_draft_mail_reply(
     return DraftRead(**draft)
 
 
+def _smtp_transmit(
+    smtp_config: dict[str, Any],
+    *,
+    to: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Transmit an email through the hardened ``smtp.send_email`` connector.
+
+    User-facing HITL is enforced at the endpoint layer (``_require_confirmation``
+    on the mail send route); this helper builds the ``SMTPConfig`` and echoes
+    ``send_email``'s internal confirmation token so the message is actually
+    transmitted. ``SMTPError`` is normalized to ``RuntimeError`` so the existing
+    outbox failure handling keeps working unchanged.
+    """
+
+    config = SMTPConfig(
+        server=smtp_config["host"],
+        port=smtp_config["port"],
+        username=smtp_config["username"],
+        password=smtp_config["password"],
+        use_ssl=smtp_config.get("use_ssl", True),
+        from_email=smtp_config.get("from_email"),
+    )
+    from_addr = config.from_email or config.username
+    token = smtp_confirmation_token({"to": to, "from": from_addr, "subject": subject})
+    try:
+        result = smtp_send_email(
+            config,
+            to=to,
+            subject=subject,
+            body=body,
+            confirmation_token_value=token,
+        )
+    except SMTPError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if not result.get("sent"):
+        raise RuntimeError("SMTP send did not complete")
+
+
 @router.post("/workspaces/{workspace_id}/mail/{mail_id}/send", response_model=MailMessageRead)
 def api_send_mail_reply(
     workspace_id: str,
@@ -3522,17 +3568,7 @@ def api_send_mail_reply(
         body = f"{body}\n\n--\n{signature}"
 
     try:
-        send_message(
-            smtp_config["host"],
-            smtp_config["port"],
-            smtp_config["username"],
-            smtp_config["password"],
-            to=recipient,
-            subject=subject,
-            body=body,
-            use_ssl=smtp_config.get("use_ssl", True),
-            from_email=smtp_config.get("from_email"),
-        )
+        _smtp_transmit(smtp_config, to=recipient, subject=subject, body=body)
     except RuntimeError as exc:
         error_json = json.dumps({"error": str(exc)}, ensure_ascii=False)
         with transaction(conn, ctx=ctx):
@@ -3650,17 +3686,7 @@ def api_test_smtp_config(
     body = "Este es un correo de prueba desde FaberLoom."
 
     try:
-        send_message(
-            config["host"],
-            config["port"],
-            config["username"],
-            config["password"],
-            to=sent_to,
-            subject=subject,
-            body=body,
-            use_ssl=config.get("use_ssl", True),
-            from_email=config.get("from_email"),
-        )
+        _smtp_transmit(config, to=sent_to, subject=subject, body=body)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
