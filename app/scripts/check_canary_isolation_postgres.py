@@ -292,6 +292,9 @@ WORKSPACE_TABLES: list[str] = [
 TENANT_TABLES: list[str] = [
     "ambient_config",
     "ambient_detector",
+    "routing_preset",
+    "manual_invoice",
+    "payment_reconciliation",
 ]
 
 OPTIONAL_WORKSPACE_TABLES: list[str] = [
@@ -540,6 +543,30 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
                 f"""
                 INSERT INTO {schema_quoted}.ambient_detector (id, tenant_id, slug, name, created_at, updated_at)
                 VALUES ('ad-{tenant}', %s, 'det-{tenant}', '{tenant.title()} Detector', %s, %s)
+                """,
+                (tenant, now, now),
+            )
+            cursor.execute(
+                f"""
+                INSERT INTO {schema_quoted}.routing_preset
+                    (tenant_id, preset_id, name, version, envelope, curve, task_overrides, caps, escalation, is_active, is_template, created_by, created_at, updated_at)
+                VALUES (%s, 'preset-{tenant}', 'Preset {tenant}', 1, '{{}}', '{{}}', '{{}}', '{{}}', '{{}}', 1, 0, 'test', %s, %s)
+                """,
+                (tenant, now, now),
+            )
+            cursor.execute(
+                f"""
+                INSERT INTO {schema_quoted}.manual_invoice
+                    (tenant_id, invoice_id, customer_name, issue_date, line_items_json, status, created_at, updated_at)
+                VALUES (%s, 'inv-{tenant}', 'Customer {tenant}', %s, '[]', 'draft', %s, %s)
+                """,
+                (tenant, now[:10], now, now),
+            )
+            cursor.execute(
+                f"""
+                INSERT INTO {schema_quoted}.payment_reconciliation
+                    (tenant_id, reconciliation_id, received_at, amount, status, created_at)
+                VALUES (%s, 'rec-{tenant}', %s, 100.0, 'pending', %s)
                 """,
                 (tenant, now, now),
             )
