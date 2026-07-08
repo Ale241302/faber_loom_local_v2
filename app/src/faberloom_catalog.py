@@ -19,10 +19,35 @@ from pydantic import BaseModel, Field
 
 from .context import Context
 from .db import create_routine, get_routine_by_name, update_routine
-from .skills import _detect_dangerous, compile_skill_md
+from .skill_primitives import ensure_skill_factory_rows, infer_pack_id
+from .skills import _detect_dangerous, compile_skill_md, compile_skill_md_v2
 
 
 _PERSONA_MD_MAX_LEN = 20000
+
+
+def _coerce_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _coerce_list_field(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
 
 
 class FaberloomCatalogItem(BaseModel):
@@ -38,6 +63,8 @@ class FaberloomCatalogItem(BaseModel):
     schema_output_json: str
     trigger_json: str
     source_version: str
+    golden_samples: list[dict[str, Any]] = Field(default_factory=list)
+    manifest: dict[str, Any] = Field(default_factory=dict)
 
 
 class FaberloomImportRequest(BaseModel):
@@ -192,7 +219,27 @@ def _catalog_item(file_path: Path, catalog_dir: Path) -> FaberloomCatalogItem | 
     triggers = [str(t) for t in triggers]
 
     source_text = _truncate(text, _PERSONA_MD_MAX_LEN)
-    skill_md = _build_minimal_skill_md(name, version, description, triggers)
+    # If the catalog document declares a v2 manifest, keep the full document as
+    # the skill_md so the compiler can validate the canonical schema. Otherwise
+    # fall back to the minimal safe placeholder used for legacy v1 items.
+    fbl = (_coerce_dict(metadata.get("metadata")).get("fbl")
+           or _coerce_dict(metadata.get("metadata")).get("mwt"))
+    if fbl:
+        skill_md = text
+    else:
+        skill_md = _build_minimal_skill_md(name, version, description, triggers)
+
+    golden_samples = _coerce_list_field(
+        _coerce_dict(_coerce_dict(metadata.get("metadata")).get("fbl")).get("golden_samples")
+        or _coerce_dict(_coerce_dict(metadata.get("metadata")).get("mwt")).get("golden_samples")
+    )
+    manifest: dict[str, Any] = {}
+    try:
+        manifest = compile_skill_md_v2(skill_md)
+    except ValueError:
+        # Malformed v2 documents are still listed in the catalog so a human can
+        # inspect them, but they cannot be imported until fixed.
+        manifest = {}
 
     return FaberloomCatalogItem(
         id=item_id,
@@ -207,6 +254,8 @@ def _catalog_item(file_path: Path, catalog_dir: Path) -> FaberloomCatalogItem | 
         schema_output_json="{}",
         trigger_json=json.dumps(triggers, ensure_ascii=False),
         source_version=f"faberloom-{category}",
+        golden_samples=golden_samples,
+        manifest=manifest,
     )
 
 
@@ -269,6 +318,18 @@ def import_catalog_items(
 
     routines: list[dict[str, Any]] = []
     for item in items:
+        # Materialize the Skill Factory metadata for v2 items.
+        if item.manifest and item.manifest.get("metadata", {}).get("fbl"):
+            fbl = item.manifest["metadata"]["fbl"]
+            skill_id = str(fbl.get("id", item.name)).strip() or item.name
+            ensure_skill_factory_rows(
+                ctx,
+                conn,
+                skill_id=skill_id,
+                manifest_json=item.manifest,
+                golden_samples=item.golden_samples,
+            )
+
         existing_list = get_routine_by_name(ctx, conn, item.name)
         existing = existing_list[0] if existing_list else None
         if existing is not None:

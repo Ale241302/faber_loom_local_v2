@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1185,6 +1185,126 @@ MIGRATIONS: dict[int, str] = {
         PRIMARY KEY (tenant_id, space_id)
     );
     CREATE INDEX IF NOT EXISTS idx_key_policy_tenant ON key_policy(tenant_id);
+    """,
+    33: """
+    -- E3-4 Wave 0: Skill Factory Foundation tables.
+    CREATE TABLE IF NOT EXISTS skill_manifest (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        manifest_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'shadow' CHECK (status IN ('shadow','active','deprecated','archived')),
+        compiled_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id, skill_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_manifest_ws ON skill_manifest(workspace_id, tenant_id, status);
+
+    CREATE TABLE IF NOT EXISTS skill_version (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        manifest_id TEXT REFERENCES skill_manifest(id) ON DELETE SET NULL,
+        change_summary TEXT,
+        promoted_at TEXT,
+        promoted_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id, skill_id, version)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_version_ws ON skill_version(workspace_id, tenant_id, skill_id);
+
+    CREATE TABLE IF NOT EXISTS golden_case (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        case_id TEXT NOT NULL,
+        input_json TEXT NOT NULL DEFAULT '{}',
+        expected_output_json TEXT NOT NULL DEFAULT '{}',
+        evidence_required INTEGER NOT NULL DEFAULT 1 CHECK (evidence_required IN (0,1)),
+        approved INTEGER NOT NULL DEFAULT 0 CHECK (approved IN (0,1)),
+        approved_by TEXT,
+        approved_at TEXT,
+        verified_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id, skill_id, case_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_golden_case_ws ON golden_case(workspace_id, tenant_id, skill_id, approved);
+
+    CREATE TABLE IF NOT EXISTS skill_track_record (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        runs_total INTEGER NOT NULL DEFAULT 0,
+        runs_success INTEGER NOT NULL DEFAULT 0,
+        runs_hitl INTEGER NOT NULL DEFAULT 0,
+        runs_failed INTEGER NOT NULL DEFAULT 0,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        acceptance_rate REAL,
+        schema_compliance_rate REAL,
+        cost_within_budget_rate REAL,
+        autonomy_level INTEGER NOT NULL DEFAULT 0 CHECK (autonomy_level BETWEEN 0 AND 6),
+        autonomy_ceiling INTEGER NOT NULL DEFAULT 0 CHECK (autonomy_ceiling BETWEEN 0 AND 6),
+        promotion_policy TEXT NOT NULL DEFAULT 'standard' CHECK (promotion_policy IN ('standard','conservative','aggressive')),
+        last_run_at TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id, skill_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_track_record_ws ON skill_track_record(workspace_id, tenant_id, autonomy_level);
+
+    CREATE TABLE IF NOT EXISTS external_evidence (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL CHECK (entity_type IN ('routine_run','draft','kb_fact','golden_case')),
+        entity_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_locator TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        content_text TEXT,
+        content_hash TEXT,
+        approved_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_external_evidence_entity ON external_evidence(workspace_id, tenant_id, entity_type, entity_id);
+
+    CREATE TABLE IF NOT EXISTS pack_status (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL,
+        pack_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'shadow' CHECK (status IN ('shadow','candidate','active','deprecated')),
+        required_golden_cases INTEGER NOT NULL DEFAULT 0,
+        approved_golden_cases INTEGER NOT NULL DEFAULT 0,
+        autonomy_ceiling INTEGER NOT NULL DEFAULT 0,
+        promoted_at TEXT,
+        promoted_by TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 33,
+        source_version TEXT NOT NULL DEFAULT 'v2',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, tenant_id, pack_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_status_ws ON pack_status(workspace_id, tenant_id, status);
     """,
 }
 
