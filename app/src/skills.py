@@ -443,9 +443,31 @@ def _extract_runtime(skill_md: str) -> dict[str, Any]:
         "tools": tools,
         "schema_output": schema_output,
         "triggers": triggers,
+        "requires_human_approval": _output_requires_approval(frontmatter),
         "instructions": body,
         "skill_md": skill_md,
     }
+
+
+def _output_requires_approval(frontmatter: dict[str, Any]) -> bool:
+    """True when any declared contract output requires human approval.
+
+    The runtime contract is intentionally separate from the canonical manifest,
+    but the external-effect HITL gate must still fire at execution time. We
+    surface the flag from wherever the contract lives — top-level ``contract`` or
+    ``metadata.fbl``/``metadata.mwt`` — so a skill whose output writes to an
+    external destination cannot run to ``succeeded`` without stopping for HITL.
+    """
+
+    contract = _coerce_dict(frontmatter.get("contract"))
+    if not contract:
+        meta = _coerce_dict(frontmatter.get("metadata"))
+        fbl = _coerce_dict(meta.get("fbl")) or _coerce_dict(meta.get("mwt"))
+        contract = _coerce_dict(fbl.get("contract"))
+    for output in _coerce_list_field(contract.get("outputs")):
+        if isinstance(output, dict) and _coerce_bool(output.get("requires_human_approval")):
+            return True
+    return False
 
 
 def _tool_is_allowlisted(tool: str, allowlist: list[str]) -> bool:
@@ -463,7 +485,8 @@ def skill_requires_hitl(skill: dict[str, Any], tools_allowlist: list[str]) -> bo
 
     HITL is required when:
         - a requested tool is not in the routine allowlist, or
-        - the output schema explicitly asks for confirmation.
+        - the output schema explicitly asks for confirmation, or
+        - a contract output declares requires_human_approval (external effect).
     """
 
     for tool in skill.get("tools", []):
@@ -472,6 +495,12 @@ def skill_requires_hitl(skill: dict[str, Any], tools_allowlist: list[str]) -> bo
 
     schema_output = skill.get("schema_output", {})
     if isinstance(schema_output, dict) and schema_output.get("requires_confirmation"):
+        return True
+
+    # An output that writes to an external destination must always stop for a
+    # human, even when every tool is allowlisted (the catalog's non-negotiable
+    # "toda acción con efecto externo = HITL").
+    if skill.get("requires_human_approval"):
         return True
 
     return False

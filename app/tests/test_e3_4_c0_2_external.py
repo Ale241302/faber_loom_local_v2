@@ -102,3 +102,98 @@ def test_external_lookup_stores_evidence_and_attaches(client: TestClient) -> Non
         assert row is not None
         assert row["entity_type"] == "routine_run"
         assert row["source_type"] == "web_fetch"
+
+
+class _FakeResp:
+    status = 200
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def __enter__(self) -> "_FakeResp":
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
+    def read(self, n: int | None = None) -> bytes:
+        return self._body
+
+    def getcode(self) -> int:
+        return 200
+
+
+def test_http_evidence_fetcher_builds_evidence_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.request
+
+    from app.src.skill_primitives import http_evidence_fetcher
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda req, timeout=10.0: _FakeResp(b"Estado: aceptado")
+    )
+
+    evidence = http_evidence_fetcher(
+        "estado comprobante 001",
+        ["https://atv.hacienda.go.cr/estado?clave=001"],
+    )
+
+    assert len(evidence) == 1
+    item = evidence[0]
+    assert item["source_type"] == "web"
+    assert item["source_locator"].startswith("https://")
+    assert item["captured_at"]
+    assert item["content_hash"]
+    assert "aceptado" in item["content_text"]
+
+
+def test_http_evidence_fetcher_rejects_non_http_scheme() -> None:
+    from app.src.skill_primitives import http_evidence_fetcher
+
+    with pytest.raises(RuntimeError, match="unsupported_source_scheme"):
+        http_evidence_fetcher("q", ["file:///etc/passwd"])
+
+
+def test_http_evidence_fetcher_fails_closed_when_source_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import urllib.error
+    import urllib.request
+
+    from app.src.skill_primitives import http_evidence_fetcher
+
+    def _boom(req: Any, timeout: float = 10.0) -> None:
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+
+    with pytest.raises(RuntimeError, match="source_unreachable"):
+        http_evidence_fetcher("q", ["https://atv.example/estado"])
+
+
+def test_external_lookup_uses_real_http_fetcher(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """external_lookup wired to the real HTTP fetcher yields a stored evidence bundle."""
+    import urllib.request
+
+    from app.src.context import Context
+    from app.src.db import db_session
+    from app.src.skill_primitives import external_lookup, http_evidence_fetcher
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda req, timeout=10.0: _FakeResp(b"Estado: aceptado")
+    )
+    workspace_id = _demo_workspace_id(client)
+    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local")
+
+    with db_session() as conn:
+        result = external_lookup(
+            ctx,
+            conn,
+            skill_id="SKILL_FE_STATUS_CHECK",
+            query="estado comprobante 001",
+            required_sources=["https://atv.hacienda.go.cr/estado?clave=001"],
+            fetcher=http_evidence_fetcher,
+        )
+
+    assert result["status"] == "succeeded"
+    assert result["evidence"][0]["source_type"] == "web"
+    assert result["content_hash"]

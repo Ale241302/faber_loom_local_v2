@@ -199,6 +199,56 @@ def approve_informal_capture(
 ExternalFetcher = Callable[[str, list[str]], list[dict[str, Any]]]
 
 
+def http_evidence_fetcher(
+    query: str,
+    required_sources: list[str],
+    *,
+    timeout_s: float = 10.0,
+    max_bytes: int = 65536,
+) -> list[dict[str, Any]]:
+    """Real C0-2 fetcher: GET each required source and build an evidence bundle.
+
+    Every source becomes one evidence item (URL + capture timestamp + content
+    hash + snippet). Fail-closed by contract: if ANY required source is
+    unreachable, uses a non-http(s) scheme, or does not return HTTP 200, the
+    whole lookup raises so ``external_lookup`` reports the failure instead of
+    fabricating an answer from model memory (catalog rule: "jamás rellena de
+    memoria"). Inject a fake fetcher in tests; wire this one in production.
+    """
+
+    import urllib.error
+    import urllib.request
+
+    if not required_sources:
+        raise RuntimeError("http_evidence_fetcher requires at least one source URL")
+
+    evidence: list[dict[str, Any]] = []
+    for url in required_sources:
+        if not str(url).lower().startswith(("http://", "https://")):
+            raise RuntimeError(f"unsupported_source_scheme: {url}")
+        req = urllib.request.Request(url, headers={"User-Agent": "FaberLoom-C0-2/1.0"})
+        try:
+            # Scheme is guarded to http(s) above.
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310
+                http_status = getattr(resp, "status", None) or resp.getcode()
+                if http_status != 200:
+                    raise RuntimeError(f"source_unavailable: {url} returned {http_status}")
+                body = resp.read(max_bytes)
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"source_unreachable: {url} ({exc})") from exc
+        evidence.append(
+            {
+                "source_type": "web",
+                "source_locator": url,
+                "captured_at": utc_now(),
+                "content_text": body.decode("utf-8", errors="replace"),
+                "content_hash": hashlib.sha256(body).hexdigest()[:16],
+                "query": query,
+            }
+        )
+    return evidence
+
+
 def external_lookup(
     ctx: Context,
     conn: Any,
@@ -813,6 +863,7 @@ __all__ = [
     "capture_informal_interaction",
     "approve_informal_capture",
     "external_lookup",
+    "http_evidence_fetcher",
     "update_track_record",
     "attach_evidence",
     "ensure_skill_factory_rows",

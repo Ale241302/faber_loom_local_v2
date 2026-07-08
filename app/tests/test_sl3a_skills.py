@@ -213,6 +213,43 @@ def test_compile_skill_md_extracts_runtime_fields() -> None:
     assert "Genera una cotización" in runtime["instructions"]
 
 
+SKILL_MD_EXTERNAL_OUTPUT = """---
+name: fe_emitir
+persona: Emite comprobantes electrónicos.
+tools: ["calculator"]
+schema_output: {"type": "object", "properties": {"clave": {"type": "string"}}, "required": ["clave"]}
+triggers: ["@fe_emitir"]
+contract:
+  outputs:
+    - id: comprobante
+      kind: asset
+      destination: dian/enviar
+      requires_human_approval: true
+---
+Emite el comprobante y devuélvelo en JSON.
+"""
+
+
+def test_skill_requires_hitl_for_external_output_even_with_allowlisted_tools() -> None:
+    """An output that writes to an external destination forces HITL at runtime,
+    even when every tool is allowlisted (P0-8)."""
+    from app.src.skills import _extract_runtime, skill_requires_hitl
+
+    runtime = _extract_runtime(SKILL_MD_EXTERNAL_OUTPUT)
+    assert runtime["requires_human_approval"] is True
+    # calculator is allowlisted and schema_output has no requires_confirmation,
+    # so without the contract check this would wrongly run to succeeded.
+    assert skill_requires_hitl(runtime, tools_allowlist=["calculator"]) is True
+
+
+def test_skill_does_not_require_hitl_without_external_effect() -> None:
+    from app.src.skills import _extract_runtime, skill_requires_hitl
+
+    runtime = _extract_runtime(SKILL_MD)
+    assert runtime["requires_human_approval"] is False
+    assert skill_requires_hitl(runtime, tools_allowlist=["calculator"]) is False
+
+
 def test_compile_skill_md_rejects_script() -> None:
     from app.src.skills import compile_skill_md
 
