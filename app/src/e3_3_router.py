@@ -15,9 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from .api import context_from_request
+from .audit import audit_writer
 from .auth import get_current_user
 from .config_cascade import ConfigCascadeError, resolve
-from .context import Context
+from .context import SYSTEM_WORKSPACE_ID, Context
 from .db import get_db, transaction
 from .entity_identity import IdentityError, create_identity, get_identity, update_identity
 from .foundation.core import connect as connect_foundation
@@ -38,6 +39,62 @@ def _require_confirmation(resource_id: str, confirmation_token: str | None) -> N
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Action requires explicit confirmation; provide confirmation_token={expected}",
         )
+
+
+def _ensure_system_workspace(conn: Any) -> None:
+    """Guarantee the synthetic system workspace row exists.
+
+    Tenant-level lifecycle events (identity mutations, key-access grants) are
+    audited at system scope. The ``audit_log.workspace_id`` foreign key requires
+    a matching ``workspace`` row, so we seed one idempotently before the first
+    system-scoped audit write. Works on both SQLite and Postgres.
+    """
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
+        VALUES (?, 'System', ?, ?, ?, ?)
+        ON CONFLICT (id) DO NOTHING
+        """,
+        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
+    )
+
+
+def _emit_system_audit(
+    conn: Any,
+    tenant_id: str,
+    user: dict[str, Any],
+    *,
+    action: str,
+    payload: dict[str, Any],
+) -> None:
+    """Append a tenant-level lifecycle event to the audit chain (system scope).
+
+    Emitted at the router layer so the domain helpers stay pure and unit-testable
+    against minimal schemas. The audit row and the system-workspace seed share a
+    single transaction; the JSONL mirror is best-effort after commit.
+    """
+
+    actor_id = user.get("user_id") or user.get("sub") or "local"
+    role = (user.get("role") or "").lower() or None
+    ctx = Context(
+        workspace_id=SYSTEM_WORKSPACE_ID,
+        tenant_id=tenant_id,
+        user_id=actor_id,
+        actor_id=actor_id,
+        actor_role_at_decision=role,
+    )
+    with transaction(conn, ctx=ctx):
+        _ensure_system_workspace(conn)
+        event = audit_writer.write(
+            ctx,
+            conn,
+            action=action,
+            payload=payload,
+            system_event=True,
+        )
+    audit_writer.mirror(event)
 
 
 def _require_owner(request: Request) -> dict[str, Any]:
@@ -163,6 +220,14 @@ def create_tenant_identity(
     except IdentityError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
+    _emit_system_audit(
+        conn,
+        tenant_id,
+        user,
+        action="tenant.identity.created",
+        payload={"version": identity.version, "name": identity.name, "slug": identity.slug},
+    )
+
     return {
         "tenant_id": identity.tenant_id,
         "version": identity.version,
@@ -202,6 +267,14 @@ def update_tenant_identity(
         )
     except IdentityError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+    _emit_system_audit(
+        conn,
+        tenant_id,
+        user,
+        action="tenant.identity.updated",
+        payload={"version": identity.version, "name": identity.name, "slug": identity.slug},
+    )
 
     return {
         "tenant_id": identity.tenant_id,
@@ -331,6 +404,18 @@ def request_key_access(
         )
     except KeyBrokerError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+
+    _emit_system_audit(
+        conn,
+        tenant_id,
+        user,
+        action="key.access.granted",
+        payload={
+            "space_id": space_id,
+            "requested_level": level.value,
+            "granted_level": granted.value,
+        },
+    )
 
     return {"granted_level": granted.value}
 

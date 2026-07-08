@@ -85,6 +85,18 @@ def _confirmation_token(resource_id: str) -> str:
     return hashlib.sha256(resource_id.encode("utf-8")).hexdigest()[:16]
 
 
+def _app_audit_actions(tenant_id: str) -> set[str]:
+    conn = sqlite3.connect(os.environ["FABERLOOM_DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT action FROM audit_log WHERE tenant_id = ?", (tenant_id,)
+        ).fetchall()
+        return {row["action"] for row in rows}
+    finally:
+        conn.close()
+
+
 def _add_owner(tenant_id: str, email: str) -> str:
     conn = sqlite3.connect(os.environ["FABERLOOM_FOUNDATION_DB"])
     conn.row_factory = sqlite3.Row
@@ -177,6 +189,49 @@ def test_key_policy_crud(client: TestClient) -> None:
     )
     assert r.status_code == 200, r.text
     assert r.json()["granted_level"] == "content"
+
+
+def test_identity_and_key_access_are_audited(client: TestClient) -> None:
+    """Identity mutations and key-access grants must append to the audit chain."""
+
+    tenant_id, owner_a = _create_tenant_with_owner(client, "audit-trail")
+    owner_b = _add_owner(tenant_id, "owner-b@tenant.test")
+    headers = {"Authorization": f"Bearer {_token('owner@tenant.test', tenant_id, owner_a, 'owner')}"}
+    headers_b = {"Authorization": f"Bearer {_token('owner-b@tenant.test', tenant_id, owner_b, 'owner')}"}
+
+    r = client.post(
+        f"/api/tenants/{tenant_id}/identity",
+        json={"name": "Audited Inc", "slug": "audited-inc"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+
+    # A second owner must approve the mutation (no self-approval).
+    r = client.post(
+        f"/api/tenants/{tenant_id}/identity/update",
+        json={"name": "Audited Corp", "confirmation_token": _confirmation_token(tenant_id)},
+        headers=headers_b,
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.put(
+        f"/api/tenants/{tenant_id}/key-policy/space-1",
+        json={"level": "content", "confirmation_token": _confirmation_token(f"{tenant_id}:space-1")},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.post(
+        f"/api/tenants/{tenant_id}/key-policy/space-1/access",
+        json={"requested_level": "content", "confirmation_token": "granted-by-owner"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    actions = _app_audit_actions(tenant_id)
+    assert "tenant.identity.created" in actions
+    assert "tenant.identity.updated" in actions
+    assert "key.access.granted" in actions
 
 
 def test_identity_endpoints_are_isolated(client: TestClient) -> None:

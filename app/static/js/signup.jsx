@@ -103,7 +103,7 @@ function SignupPage() {
     setError(null);
     try {
       await apiPost("/api/public/signup", {
-        name: form.name.trim(),
+        company_name: form.name.trim(),
         slug: form.slug.trim().toLowerCase(),
         owner_email: form.email.trim(),
         owner_password: form.password,

@@ -28,6 +28,7 @@ FROM python:3.13-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlcipher1 \
     tesseract-ocr \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv

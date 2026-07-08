@@ -39,6 +39,9 @@ def test_signup_jsx_contains_public_form_and_validation(static_dir: Path) -> Non
     text = path.read_text(encoding="utf-8")
     assert "SignupPage" in text
     assert "POST" in text and "/api/public/signup" in text
+    # The backend PublicSignupRequest requires ``company_name`` (not ``name``);
+    # a mismatch here silently 422s every signup.
+    assert "company_name" in text
     assert "owner_email" in text
     assert "owner_password" in text
     assert "Mínimo 12 caracteres" in text
