@@ -26,6 +26,7 @@ from .skills_router import skills_router
 from .billing import billing_router
 from .foundation import foundation_router, init_foundation_db
 from .platform_admin import platform_admin_router
+from .health_dashboard import health_router
 from .context import system_context
 from .db import db_session, initialize_database, transaction
 from .features import is_email_connector_enabled, is_shared_instance
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     # por eso no lleva la dependencia JWT global.
     app.include_router(foundation_router, prefix="/api")
     app.include_router(platform_admin_router, prefix="/api")
+    app.include_router(health_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(e3_3_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(presets_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(skills_router, prefix="/api", dependencies=[Depends(get_current_user)])

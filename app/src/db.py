@@ -4261,6 +4261,9 @@ MANUAL_INVOICE_COLUMNS = """
     paid_amount,
     payment_reference,
     notes,
+    document_series,
+    document_number,
+    pdf_generated_at,
     created_by,
     actor_id,
     actor_role_at_decision,
@@ -4362,6 +4365,58 @@ def get_manual_invoice(
     return _manual_invoice_row_to_dict(row) if row else None
 
 
+def _resolve_invoice_series(ctx: Context, conn: sqlite3.Connection, requested: str | None) -> str:
+    """Return the document series for a new invoice, defaulting to tenant setting."""
+
+    if requested:
+        return requested.strip().upper() or "BETA"
+    row = conn.execute(
+        "SELECT value_json FROM tenant_settings WHERE tenant_id = ? AND key = ?",
+        (ctx.require_tenant(), "billing.invoice_series"),
+    ).fetchone()
+    if row is not None:
+        try:
+            value = json.loads(row["value_json"] or '"BETA"')
+            if isinstance(value, str) and value.strip():
+                return value.strip().upper()
+        except Exception:
+            pass
+    return "BETA"
+
+
+def _next_invoice_document_number(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    series: str,
+) -> int:
+    """Allocate the next sequential document number for a tenant series."""
+
+    now = utc_now()
+    row = conn.execute(
+        "SELECT last_number FROM tenant_invoice_sequence WHERE tenant_id = ? AND series = ?",
+        (tenant_id, series),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            """
+            INSERT INTO tenant_invoice_sequence (tenant_id, series, last_number, updated_at)
+            VALUES (?, ?, 1, ?)
+            """,
+            (tenant_id, series, now),
+        )
+        return 1
+    next_number = int(row["last_number"]) + 1
+    conn.execute(
+        """
+        UPDATE tenant_invoice_sequence
+        SET last_number = ?, updated_at = ?
+        WHERE tenant_id = ? AND series = ?
+        """,
+        (next_number, now, tenant_id, series),
+    )
+    return next_number
+
+
 def create_manual_invoice(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -4375,8 +4430,14 @@ def create_manual_invoice(
     line_items: list[dict[str, Any]] | None = None,
     currency: str = "USD",
     notes: str | None = None,
+    document_series: str | None = None,
 ) -> dict[str, Any]:
-    """Create a manual invoice for the current tenant."""
+    """Create a manual invoice for the current tenant.
+
+    A sequential ``document_number`` is allocated inside the tenant's series
+    (default ``BETA``). The client-supplied ``invoice_id`` remains the stable
+    API slug; the generated document number is what appears on the PDF.
+    """
 
     ctx.require_tenant()
     line_items = line_items or []
@@ -4389,16 +4450,19 @@ def create_manual_invoice(
         ).fetchone()
         if existing is not None:
             raise ValueError(f"Invoice '{invoice_id}' already exists in this tenant")
+        series = _resolve_invoice_series(ctx, conn, document_series)
+        document_number = _next_invoice_document_number(conn, ctx.require_tenant(), series)
         conn.execute(
             f"""
             INSERT INTO manual_invoice (
                 tenant_id, invoice_id, customer_name, customer_tax_id, customer_email,
                 issue_date, due_date, line_items_json, subtotal, tax_total, total,
                 currency, status, paid_at, paid_amount, payment_reference, notes,
+                document_series, document_number, pdf_generated_at,
                 created_by, actor_id, actor_role_at_decision, routine_version, skill_version,
                 schema_version, source_version, approved_by, created_at, updated_at
             )
-            VALUES ({','.join('?' for _ in range(27))})
+            VALUES ({','.join('?' for _ in range(30))})
             """,
             (
                 ctx.require_tenant(),
@@ -4418,6 +4482,9 @@ def create_manual_invoice(
                 None,
                 None,
                 notes,
+                series,
+                document_number,
+                None,
                 ctx.resolved_actor_id(),
                 ctx.resolved_actor_id(),
                 ctx.actor_role_at_decision,
@@ -4473,6 +4540,29 @@ def update_manual_invoice(
         conn.execute(
             f"UPDATE manual_invoice SET {cols} WHERE tenant_id = ? AND invoice_id = ?",
             (*updates.values(), ctx.require_tenant(), invoice_id),
+        )
+        return get_manual_invoice(ctx, conn, invoice_id)
+
+
+def mark_invoice_pdf_generated(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    invoice_id: str,
+) -> dict[str, Any] | None:
+    """Record the first PDF generation timestamp for an invoice."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        existing = get_manual_invoice(ctx, conn, invoice_id)
+        if existing is None:
+            return None
+        conn.execute(
+            """
+            UPDATE manual_invoice
+            SET pdf_generated_at = ?
+            WHERE tenant_id = ? AND invoice_id = ?
+            """,
+            (utc_now(), ctx.require_tenant(), invoice_id),
         )
         return get_manual_invoice(ctx, conn, invoice_id)
 

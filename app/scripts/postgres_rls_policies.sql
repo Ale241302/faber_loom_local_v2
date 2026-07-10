@@ -100,6 +100,8 @@ ALTER TABLE manual_invoice ENABLE ROW LEVEL SECURITY;
 ALTER TABLE manual_invoice FORCE ROW LEVEL SECURITY;
 ALTER TABLE payment_reconciliation ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_reconciliation FORCE ROW LEVEL SECURITY;
+ALTER TABLE tenant_invoice_sequence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_invoice_sequence FORCE ROW LEVEL SECURITY;
 ALTER TABLE ambient_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ambient_config FORCE ROW LEVEL SECURITY;
 ALTER TABLE ambient_workspace_config ENABLE ROW LEVEL SECURITY;
@@ -135,6 +137,7 @@ BEGIN
               'mail_message', 'mail_outbox', 'email_account', 'audit_log',
               'editorial_history', 'correction_log', 'workspace_smtp_config', 'workspace_routing_policy',
               'workspace_model_catalog', 'routing_preset', 'manual_invoice', 'payment_reconciliation',
+              'tenant_invoice_sequence',
               'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
               'ambient_proposal', 'object'
@@ -250,6 +253,11 @@ CREATE POLICY tenant_policy ON manual_invoice
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
 
 CREATE POLICY tenant_policy ON payment_reconciliation
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE POLICY tenant_policy ON tenant_invoice_sequence
     FOR ALL
     USING (tenant_id = current_setting('app.current_tenant', true))
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true));

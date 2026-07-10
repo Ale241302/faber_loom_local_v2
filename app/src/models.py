@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1498,6 +1498,30 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_golden_case_run_id ON golden_case(workspace_id, tenant_id, run_id);
     CREATE INDEX IF NOT EXISTS idx_golden_case_origin ON golden_case(workspace_id, tenant_id, origin);
     """,
+    41: """
+    -- E3-6: manual invoice sequential numbering per tenant and PDF generation.
+    ALTER TABLE manual_invoice ADD COLUMN document_series TEXT;
+    ALTER TABLE manual_invoice ADD COLUMN document_number INTEGER;
+    ALTER TABLE manual_invoice ADD COLUMN pdf_generated_at TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_manual_invoice_tenant_series_number
+        ON manual_invoice(tenant_id, document_series, document_number);
+    CREATE INDEX IF NOT EXISTS idx_manual_invoice_tenant_number
+        ON manual_invoice(tenant_id, document_number);
+
+    CREATE TABLE IF NOT EXISTS tenant_invoice_sequence (
+        tenant_id TEXT NOT NULL,
+        series TEXT NOT NULL,
+        last_number INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, series)
+    );
+    CREATE TRIGGER IF NOT EXISTS trg_tenant_invoice_sequence_tenant_nn
+    BEFORE INSERT ON tenant_invoice_sequence
+    BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_tenant_invoice_sequence_tenant_nn_upd
+    BEFORE UPDATE ON tenant_invoice_sequence
+    BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    """,
 }
 
 
@@ -1506,6 +1530,41 @@ class HealthRead(BaseModel):
     app: str = "FaberLoom"
     schema_version: int
     database_path: str
+
+
+class TenantHealthLimitRead(BaseModel):
+    max_users: int | None = None
+    max_workspaces: int | None = None
+    max_monthly_budget_usd: float | None = None
+
+
+class TenantHealthFlagsRead(BaseModel):
+    drafts_pending_approval: int
+    invoices_overdue: int
+
+
+class TenantHealthRead(BaseModel):
+    tenant_id: str
+    plan: str
+    limits: TenantHealthLimitRead
+    period_days: int
+    runs_30d: int
+    successful_runs_30d: int
+    failed_runs_30d: int
+    error_rate_pct: float
+    runs_7d: int
+    successful_runs_7d: int
+    failed_runs_7d: int
+    cost_usd_30d: float
+    surcharge_usd_30d: float
+    budget_remaining_usd: float | None = None
+    invoices_open: int
+    invoices_paid: int
+    invoices_overdue: int
+    workspaces: int
+    users: int
+    last_owner_login: str | None = None
+    flags: TenantHealthFlagsRead
 
 
 class WorkspaceCreate(BaseModel):
@@ -2737,6 +2796,7 @@ class InvoiceCreate(BaseModel):
     line_items: list[InvoiceLineItem] = Field(default_factory=list)
     currency: str = Field(default="USD", max_length=10)
     notes: str | None = Field(default=None, max_length=2000)
+    document_series: str | None = Field(default=None, max_length=30)
 
     @field_validator("invoice_id")
     @classmethod
@@ -2775,6 +2835,9 @@ class InvoiceRead(BaseModel):
     paid_amount: float | None = None
     payment_reference: str | None = None
     notes: str | None = None
+    document_series: str | None = None
+    document_number: int | None = None
+    pdf_generated_at: str | None = None
     created_by: str | None = None
     actor_id: str | None = None
     actor_role_at_decision: str | None = None
