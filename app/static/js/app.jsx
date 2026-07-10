@@ -3405,7 +3405,7 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
      : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
-     : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace}/>
+     : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .context import SYSTEM_WORKSPACE_ID, Context
+from .context import DEFAULT_TENANT_ID, SYSTEM_WORKSPACE_ID, Context
 from .db_adapter import transaction
 
 
@@ -28,6 +28,7 @@ class PlanLimits:
     max_workspaces: int | None
     max_storage_bytes: int | None
     max_monthly_budget_usd: float | None
+    surcharge_pct: float = 0.20
 
 
 # Built-in plan catalog. Plans are referenced by name in tenant_plan.plan_name.
@@ -38,6 +39,7 @@ PLANS: dict[str, PlanLimits] = {
         max_workspaces=2,
         max_storage_bytes=1_000_000_000,  # 1 GB
         max_monthly_budget_usd=50.0,
+        surcharge_pct=0.20,
     ),
     "growth": PlanLimits(
         name="growth",
@@ -45,6 +47,7 @@ PLANS: dict[str, PlanLimits] = {
         max_workspaces=10,
         max_storage_bytes=10_000_000_000,  # 10 GB
         max_monthly_budget_usd=500.0,
+        surcharge_pct=0.20,
     ),
     "enterprise": PlanLimits(
         name="enterprise",
@@ -52,6 +55,7 @@ PLANS: dict[str, PlanLimits] = {
         max_workspaces=None,
         max_storage_bytes=None,
         max_monthly_budget_usd=None,
+        surcharge_pct=0.15,
     ),
     # Legacy Foundation tenants created before E3-2 are treated as unrestricted.
     "beta": PlanLimits(
@@ -60,6 +64,7 @@ PLANS: dict[str, PlanLimits] = {
         max_workspaces=None,
         max_storage_bytes=None,
         max_monthly_budget_usd=None,
+        surcharge_pct=0.0,
     ),
 }
 
@@ -237,6 +242,18 @@ def sum_tenant_usage_cost(conn: Any, tenant_id: str, since: str | None = None) -
             params.append(since)
         row = conn.execute(sql, params).fetchone()
     return float(row["total"]) if row and row["total"] is not None else 0.0
+
+
+def get_plan_surcharge_pct(tenant_id: str) -> float:
+    """Return the platform-key surcharge percentage for a tenant.
+
+    The default/local tenant never pays a surcharge because it either runs
+    unauthenticated or belongs to the platform operator.
+    """
+
+    if tenant_id == DEFAULT_TENANT_ID:
+        return 0.0
+    return get_plan(get_tenant_plan_name(tenant_id)).surcharge_pct
 
 
 def enforce_budget(ctx: Context, conn: Any, cost_usd: float) -> None:

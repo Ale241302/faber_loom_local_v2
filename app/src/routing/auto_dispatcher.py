@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from ..context import Context
+from ..config_cascade import resolve as cascade_resolve
 from ..db import sum_workspace_usage_cost
 from ..ledger import (
     check_chain_budget,
@@ -292,7 +293,13 @@ def _build_plan(
             local_only=policy.get("require_local_only", False),
         )
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    router = build_router(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        budget_cap_usd=policy.get("budget_cap_usd"),
+        byo_mode=byo_mode,
+    )
     planner_provider = router.providers.get(planner_entry["provider_slug"])
     if planner_provider is None:
         raise NoCapacityError(f"Planner provider {planner_entry['provider_slug']} is not available")
@@ -443,7 +450,13 @@ def _execute_openai_image_step(
     import time as _time
 
     start = _time.perf_counter()
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    router = build_router(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        budget_cap_usd=policy.get("budget_cap_usd"),
+        byo_mode=byo_mode,
+    )
     provider = router.providers.get("openai")
     if provider is None or not provider.is_available():
         raise NoCapacityError("OpenAI image provider is not configured")
@@ -558,7 +571,13 @@ def _execute_step(
             "duration_ms": comp.duration_ms,
         }
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, budget_cap_usd=policy.get("budget_cap_usd"))
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    router = build_router(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        budget_cap_usd=policy.get("budget_cap_usd"),
+        byo_mode=byo_mode,
+    )
     provider = router.providers.get(provider_slug)
 
     from ..router.engine import _estimate_input_tokens, DEFAULT_ESTIMATED_OUTPUT_TOKENS

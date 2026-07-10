@@ -154,12 +154,46 @@ def _resolve_value(env_value: str | None, stored_value: Any) -> str | None:
     return None
 
 
+def _resolve_api_key(
+    env_value: str | None,
+    stored_value: Any,
+    *,
+    tenant_id: str | None,
+    byo_mode: str | None,
+) -> tuple[str | None, str]:
+    """Resolve API key and return (key, origin) according to BYO mode.
+
+    - Default tenant / non-strict mode: env wins, then stored real key.
+      Origin is ``platform`` when env was used, ``tenant`` when a real stored
+      tenant key was used.
+    - Non-default tenant + ``estricto``: only stored tenant key is allowed.
+      If none exists the provider is unavailable and origin is ``unavailable``.
+    """
+
+    from ..context import DEFAULT_TENANT_ID
+
+    effective_mode = (byo_mode or "hibrido").lower().strip()
+    is_strict = tenant_id != DEFAULT_TENANT_ID and effective_mode == "estricto"
+
+    if is_strict:
+        if isinstance(stored_value, str) and not _is_env_placeholder(stored_value):
+            return stored_value, "tenant"
+        return None, "unavailable"
+
+    if env_value is not None:
+        return env_value, "platform"
+    if isinstance(stored_value, str) and not _is_env_placeholder(stored_value):
+        return stored_value, "tenant"
+    return None, "unavailable"
+
+
 def build_router(
     user_id: str | None = None,
     *,
     tenant_id: str | None = None,
     budget_cap_usd: float | None = None,
     provider_allowlist: list[str] | None = None,
+    byo_mode: str | None = None,
 ) -> Router:
     """Build the default SL1a "Balanceado" router from env vars and local store.
 
@@ -188,14 +222,18 @@ def build_router(
     providers: list[Provider] = []
 
     openai_stored = stored.get("openai", {})
+    openai_api_key, openai_key_origin = _resolve_api_key(
+        _first_env("FABERLOOM_OPENAI_API_KEY", "OPENAI_API_KEY"),
+        openai_stored.get("api_key"),
+        tenant_id=tenant_id,
+        byo_mode=byo_mode,
+    )
     providers.append(
         OpenAIProvider(
             ProviderConfig(
                 provider_slug="openai",
-                api_key=_resolve_value(
-                    _first_env("FABERLOOM_OPENAI_API_KEY", "OPENAI_API_KEY"),
-                    openai_stored.get("api_key"),
-                ),
+                api_key=openai_api_key,
+                key_origin=openai_key_origin,
                 base_url=_resolve_value(
                     _first_env("FABERLOOM_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
                     openai_stored.get("base_url"),
@@ -215,14 +253,18 @@ def build_router(
     )
 
     anthropic_stored = stored.get("anthropic", {})
+    anthropic_api_key, anthropic_key_origin = _resolve_api_key(
+        _first_env("FABERLOOM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+        anthropic_stored.get("api_key"),
+        tenant_id=tenant_id,
+        byo_mode=byo_mode,
+    )
     providers.append(
         AnthropicProvider(
             ProviderConfig(
                 provider_slug="anthropic",
-                api_key=_resolve_value(
-                    _first_env("FABERLOOM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
-                    anthropic_stored.get("api_key"),
-                ),
+                api_key=anthropic_api_key,
+                key_origin=anthropic_key_origin,
                 base_url=_resolve_value(
                     _first_env("FABERLOOM_ANTHROPIC_BASE_URL", "ANTHROPIC_BASE_URL"),
                     anthropic_stored.get("base_url"),
@@ -242,14 +284,18 @@ def build_router(
     )
 
     google_stored = stored.get("google", {})
+    google_api_key, google_key_origin = _resolve_api_key(
+        _first_env("FABERLOOM_GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        google_stored.get("api_key"),
+        tenant_id=tenant_id,
+        byo_mode=byo_mode,
+    )
     providers.append(
         GoogleProvider(
             ProviderConfig(
                 provider_slug="google",
-                api_key=_resolve_value(
-                    _first_env("FABERLOOM_GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
-                    google_stored.get("api_key"),
-                ),
+                api_key=google_api_key,
+                key_origin=google_key_origin,
                 base_url=_resolve_value(
                     _first_env("FABERLOOM_GOOGLE_BASE_URL", "GEMINI_BASE_URL", "GOOGLE_BASE_URL"),
                     google_stored.get("base_url"),
@@ -270,9 +316,11 @@ def build_router(
     )
 
     kimi_stored = stored.get("kimi", {})
-    kimi_api_key = _resolve_value(
+    kimi_api_key, kimi_key_origin = _resolve_api_key(
         _first_env("FABERLOOM_KIMI_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"),
         kimi_stored.get("api_key"),
+        tenant_id=tenant_id,
+        byo_mode=byo_mode,
     )
     kimi_base_url = _resolve_value(
         _first_env("FABERLOOM_KIMI_BASE_URL", "KIMI_BASE_URL"),
@@ -301,6 +349,7 @@ def build_router(
             ProviderConfig(
                 provider_slug="kimi",
                 api_key=kimi_api_key,
+                key_origin=kimi_key_origin,
                 base_url=kimi_base_url,
                 model_default=kimi_model_default,
                 priority=_int_or(kimi_stored.get("priority"), _env_int("FABERLOOM_KIMI_PRIORITY", 25)),
@@ -322,6 +371,7 @@ def build_router(
             ProviderConfig(
                 provider_slug="ollama",
                 api_key=None,
+                key_origin=None,
                 base_url=_resolve_value(
                     _first_env("FABERLOOM_OLLAMA_BASE_URL", "OLLAMA_BASE_URL"),
                     ollama_stored.get("base_url"),

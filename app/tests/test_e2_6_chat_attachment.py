@@ -63,6 +63,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch):
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setenv("FABERLOOM_DB_PATH", str(db_path))
     monkeypatch.setenv("FL_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("FABERLOOM_CONFIG_DIR", str(tmp_path / "config"))
 
     from app.src.audit import audit_writer
     from app.src.main import create_app

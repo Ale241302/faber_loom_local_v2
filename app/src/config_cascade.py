@@ -26,6 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "routing.auto_dispatch": False,
     "routing.max_budget_usd": 2.0,
     "routing.max_steps": 4,
+    "routing.byo_mode": "hibrido",
     "model.default": "openai/gpt-4o-mini",
 }
 
@@ -56,9 +57,9 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
         if row is None:
             return None
         mapping = {
-            "routing.auto_dispatch": row["auto_dispatch"],
-            "routing.max_budget_usd": row["max_budget_usd"],
-            "routing.max_steps": row["max_steps"],
+            "routing.auto_dispatch": row["auto_mode_enabled"],
+            "routing.max_budget_usd": row["budget_cap_usd"],
+            "routing.max_steps": row["max_auto_steps"],
         }
         return mapping.get(key)
 

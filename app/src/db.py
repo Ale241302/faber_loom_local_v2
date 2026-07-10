@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .context import Context, enforce_tenant_scoped
+from .context import SYSTEM_WORKSPACE_ID, Context, enforce_tenant_scoped
 from .db_adapter import (
     connect as adapter_connect,
     db_session as adapter_db_session,
@@ -1247,6 +1247,9 @@ USAGE_RECORD_COLUMNS = """
     step_index,
     chain_id,
     capability,
+    platform_key_used,
+    platform_key_surcharge_usd,
+    byo_mode_at_run,
     created_at
 """
 
@@ -1617,10 +1620,22 @@ def insert_usage_record(
     step_index: int | None = None,
     chain_id: str | None = None,
     capability: str | None = None,
+    key_origin: str | None = None,
 ) -> dict[str, Any]:
     with transaction(conn, ctx=ctx):
         workspace_id = ctx.require_scoped_workspace()
         enforce_budget(ctx, conn, cost_usd)
+
+        from .config_cascade import resolve as cascade_resolve
+        from .context import DEFAULT_TENANT_ID
+        from .plans import get_plan_surcharge_pct
+
+        byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+        platform_key_used = 1 if key_origin == "platform" else 0
+        platform_key_surcharge_usd = 0.0
+        if platform_key_used and ctx.tenant_id != DEFAULT_TENANT_ID and byo_mode == "hibrido":
+            platform_key_surcharge_usd = cost_usd * get_plan_surcharge_pct(ctx.tenant_id)
+
         record_id = new_id("use")
         now = utc_now()
 
@@ -1654,9 +1669,12 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                platform_key_used,
+                platform_key_surcharge_usd,
+                byo_mode_at_run,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -1686,6 +1704,9 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                platform_key_used,
+                platform_key_surcharge_usd,
+                byo_mode,
                 now,
             ),
         )
@@ -1746,6 +1767,57 @@ def sum_user_usage_cost(
             params.append(since)
         row = conn.execute(sql, params).fetchone()
         return float(row["total"] or 0.0)
+
+
+def summarize_tenant_usage_cost(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    since: str | None = None,
+) -> dict[str, Any]:
+    """Return aggregate and per-provider/model/month breakdown for a tenant.
+
+    Breakdown rows are scoped to the tenant across all workspaces. Aggregates
+    include only succeeded records; failed/budget_exceeded rows are excluded
+    from cost totals but counted in ``total_rows``.
+    """
+
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        params: list[Any] = [tenant_id]
+        total_sql = """
+            SELECT COALESCE(SUM(cost_usd), 0.0) AS total_cost,
+                   COALESCE(SUM(platform_key_surcharge_usd), 0.0) AS total_surcharge,
+                   COUNT(*) AS total_rows
+            FROM usage_record
+            WHERE tenant_id = ? AND status = 'succeeded'
+        """
+        breakdown_sql = """
+            SELECT provider_slug,
+                   model,
+                   substr(created_at, 1, 7) AS month,
+                   COALESCE(SUM(cost_usd), 0.0) AS total_cost_usd,
+                   COALESCE(SUM(platform_key_surcharge_usd), 0.0) AS total_surcharge_usd,
+                   COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+                   COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+                   COUNT(*) AS row_count
+            FROM usage_record
+            WHERE tenant_id = ? AND status = 'succeeded'
+        """
+        if since:
+            total_sql += " AND created_at >= ?"
+            breakdown_sql += " AND created_at >= ?"
+            params.append(since)
+        breakdown_sql += " GROUP BY provider_slug, model, month ORDER BY month DESC, provider_slug ASC, model ASC"
+
+        total_row = conn.execute(total_sql, params).fetchone()
+        breakdown_rows = conn.execute(breakdown_sql, params).fetchall()
+
+    return {
+        "total_cost_usd": float(total_row["total_cost"] or 0.0),
+        "total_surcharge_usd": float(total_row["total_surcharge"] or 0.0),
+        "total_rows": int(total_row["total_rows"] or 0),
+        "breakdown": [row_to_dict(row) for row in breakdown_rows],
+    }
 
 
 def sum_workspace_usage_cost(

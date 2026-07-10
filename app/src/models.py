@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1451,6 +1451,17 @@ MIGRATIONS: dict[int, str] = {
     CREATE TRIGGER IF NOT EXISTS trg_payment_reconciliation_tenant_nn_upd BEFORE UPDATE ON payment_reconciliation
         BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
+    38: """
+    -- E3-5: BYO key mode and platform-key surcharge accounting.
+    ALTER TABLE usage_record ADD COLUMN platform_key_used INTEGER NOT NULL DEFAULT 0
+        CHECK (platform_key_used IN (0, 1));
+    ALTER TABLE usage_record ADD COLUMN platform_key_surcharge_usd REAL NOT NULL DEFAULT 0.0
+        CHECK (platform_key_surcharge_usd >= 0);
+    ALTER TABLE usage_record ADD COLUMN byo_mode_at_run TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_usage_record_surcharge
+        ON usage_record(tenant_id, platform_key_used, platform_key_surcharge_usd);
+    """,
 }
 
 
@@ -1989,7 +2000,31 @@ class UsageRecordRead(BaseModel):
     step_index: int | None = None
     chain_id: str | None = None
     capability: str | None = None
+    platform_key_used: int = 0
+    platform_key_surcharge_usd: float = 0.0
+    byo_mode_at_run: str | None = None
     created_at: str
+
+
+class UsageSummaryRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    provider_slug: str
+    model: str
+    month: str
+    total_cost_usd: float
+    total_surcharge_usd: float
+    total_input_tokens: int
+    total_output_tokens: int
+    row_count: int
+
+
+class UsageSummaryRead(BaseModel):
+    tenant_id: str
+    total_cost_usd: float
+    total_surcharge_usd: float
+    total_rows: int
+    breakdown: list[UsageSummaryRow]
 
 
 class RouterProviderRead(BaseModel):

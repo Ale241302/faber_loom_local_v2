@@ -727,7 +727,10 @@ def generate_draft(
         {"role": "user", "content": f"Evidence pack:\n{evidence_text}\n\nUser request:\n{user_request}\n\nDraft the reply as JSON."},
     ]
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    from .config_cascade import resolve as cascade_resolve
+
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     request = CompletionRequest(
         messages=messages,
         model=model,
@@ -793,4 +796,5 @@ def generate_draft(
         "output_tokens": result.output_tokens,
         "cost_usd": result.cost_usd,
         "duration_ms": result.duration_ms,
+        "key_origin": result.key_origin,
     }
