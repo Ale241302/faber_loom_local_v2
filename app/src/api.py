@@ -236,6 +236,8 @@ from .storage import (
 )
 from .skill_catalog import seed_global_skill_catalog
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
+from .skill_primitives import attach_evidence, external_lookup
+from .connectors.tax_authority import build_tax_fetcher
 from .ambient import (
     ambient_metrics,
     get_ambient_config,
@@ -2251,6 +2253,48 @@ def _execute_skill_run(
             skill_version=routine.get("skill_version"),
             source_version=routine.get("source_version"),
         )
+
+    # E3-2: fiscal skills fetch evidence from tax authority connectors before
+    # asking the model, and fail closed when the connector cannot produce
+    # evidence (e.g. live mode without credentials or certificate).
+    skill_id = routine.get("name", "")
+    tax_fetcher = build_tax_fetcher(ctx, conn, skill_id)
+    if tax_fetcher is not None:
+        lookup = external_lookup(
+            ctx,
+            conn,
+            skill_id=skill_id,
+            query=json.dumps(input_json, ensure_ascii=False),
+            required_sources=["tax"],
+            fetcher=tax_fetcher,
+        )
+        if lookup["status"] == "succeeded" and lookup["evidence"]:
+            with transaction(conn, ctx=ctx):
+                attach_evidence(
+                    ctx,
+                    conn,
+                    entity_type="routine_run",
+                    entity_id=run["id"],
+                    evidence_items=lookup["evidence"],
+                )
+        else:
+            with transaction(conn, ctx=ctx):
+                updated = set_routine_run_output(
+                    ctx,
+                    conn,
+                    run_id=run["id"],
+                    output_json={"error": lookup.get("error", "tax_lookup_failed")},
+                    evidence_json=[],
+                    status="failed",
+                    edit_pct=None,
+                )
+            if updated is None:
+                raise RuntimeError("Run disappeared during execution")
+            return updated, {
+                "status": "failed",
+                "error": lookup.get("error", "tax_lookup_failed"),
+                "output": {"error": lookup.get("error", "tax_lookup_failed")},
+            }
 
     result = execute_skill(
         skill,
