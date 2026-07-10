@@ -22,6 +22,7 @@ from .api import public_router, router as api_router
 from .auth import auth_router, get_current_user
 from .e3_3_router import e3_3_router, me_router
 from .presets import presets_router
+from .skills_router import skills_router
 from .billing import billing_router
 from .foundation import foundation_router, init_foundation_db
 from .platform_admin import platform_admin_router
@@ -154,6 +155,7 @@ def create_app() -> FastAPI:
     app.include_router(platform_admin_router, prefix="/api")
     app.include_router(e3_3_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(presets_router, prefix="/api", dependencies=[Depends(get_current_user)])
+    app.include_router(skills_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(billing_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(me_router, prefix="/api", dependencies=[Depends(get_current_user)])
     app.include_router(api_router, dependencies=[Depends(get_current_user)])

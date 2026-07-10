@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1490,6 +1490,14 @@ MIGRATIONS: dict[int, str] = {
     CREATE TRIGGER IF NOT EXISTS trg_correction_log_tenant_nn_upd BEFORE UPDATE ON correction_log
         BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
+    40: """
+    -- E3-6: golden_case harvester captures real runs.
+    ALTER TABLE golden_case ADD COLUMN origin TEXT;
+    ALTER TABLE golden_case ADD COLUMN run_id TEXT;
+    ALTER TABLE golden_case ADD COLUMN frozen_at TEXT;
+    CREATE INDEX IF NOT EXISTS idx_golden_case_run_id ON golden_case(workspace_id, tenant_id, run_id);
+    CREATE INDEX IF NOT EXISTS idx_golden_case_origin ON golden_case(workspace_id, tenant_id, origin);
+    """,
 }
 
 
@@ -1649,6 +1657,30 @@ class RoutineRunRead(BaseModel):
     reason: str | None = None
     assigned_to: str | None = None
     created_at: str
+
+
+class GoldenCaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    skill_id: str
+    case_id: str
+    input_json: str
+    expected_output_json: str
+    evidence_required: int
+    approved: int
+    approved_by: str | None = None
+    approved_at: str | None = None
+    verified_by: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    origin: str | None = None
+    run_id: str | None = None
+    frozen_at: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class RoutineCreate(BaseModel):
