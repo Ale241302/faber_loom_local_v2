@@ -31,6 +31,7 @@ TAXONOMY_V2: dict[str, Any] = {
         "P17": "corregir_en_cascada_temporal",
         "P18": "capturar_interaccion_informal",
     },
+    "implemented": {"P15", "P16", "P17", "P18"},
     "archetypes_e1": {"classifier", "validator", "generator", "formatter", "triage", "skill_package"},
     "unit_of_work_dimensions": [
         "tenant_id",
@@ -542,6 +543,244 @@ def attach_evidence(
 
 
 # ---------------------------------------------------------------------------
+# P15 — Normative validity check (fail-closed)
+# ---------------------------------------------------------------------------
+
+
+def verificar_vigencia_normativa(
+    ctx: Context,
+    conn: Any,
+    *,
+    fact: dict[str, Any],
+    fetcher: ExternalFetcher | None = None,
+) -> dict[str, Any]:
+    """Check whether a KB fact is still valid against its registered source.
+
+    The fact must expose ``valid_from`` and ``valid_until`` boundaries. When a
+    ``fetcher`` is supplied, the source is re-consulted and the evidence bundle
+    dates are compared to ``utc_now()``; otherwise the result is
+    ``no_verificable`` (fail-closed).
+    """
+
+    enforce_tenant_scoped(ctx)
+
+    fact_id = str(fact.get("id", "")).strip()
+    source_locator = str(fact.get("source_locator", "")).strip()
+    valid_from = str(fact.get("valid_from", "")).strip() or None
+    valid_until = str(fact.get("valid_until", "")).strip() or None
+
+    if fetcher is None or not fact_id or not source_locator:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id or None,
+            "checked_at": utc_now(),
+            "reason": "missing_fetcher_or_locator",
+        }
+
+    if not valid_from or not valid_until:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": utc_now(),
+            "reason": "missing_validity_boundaries",
+        }
+
+    lookup = external_lookup(
+        ctx,
+        conn,
+        skill_id="P15",
+        query=fact_id,
+        required_sources=[source_locator],
+        fetcher=fetcher,
+    )
+
+    if lookup["status"] != "succeeded" or not lookup.get("evidence"):
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": utc_now(),
+            "reason": "lookup_failed",
+            "error": lookup.get("error"),
+        }
+
+    # Prefer explicit validity boundaries returned by the fetcher; fall back to
+    # the stored fact boundaries if the evidence does not carry its own.
+    effective_from: str | None = None
+    effective_until: str | None = None
+    for item in lookup["evidence"]:
+        if item.get("valid_from"):
+            effective_from = str(item["valid_from"])
+        if item.get("valid_until"):
+            effective_until = str(item["valid_until"])
+    if not effective_from or not effective_until:
+        effective_from = valid_from
+        effective_until = valid_until
+
+    now = utc_now()
+    if now < effective_from:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": now,
+            "valid_from": effective_from,
+            "valid_until": effective_until,
+            "reason": "not_yet_in_effect",
+        }
+    if now > effective_until:
+        return {
+            "status": "vencido",
+            "fact_id": fact_id,
+            "checked_at": now,
+            "valid_from": effective_from,
+            "valid_until": effective_until,
+        }
+
+    return {
+        "status": "vigente",
+        "fact_id": fact_id,
+        "checked_at": now,
+        "valid_from": effective_from,
+        "valid_until": effective_until,
+        "evidence_hash": lookup.get("content_hash"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# P17 — Temporal correction cascade (HITL drafts, append-only log)
+# ---------------------------------------------------------------------------
+
+
+def _find_derived_artifacts(
+    conn: Any,
+    ctx: Context,
+    fact_id: str,
+) -> list[dict[str, Any]]:
+    """Return artifacts in the current workspace that cite the given fact.
+
+    Today the citation signal is a hard fact that references ``fact_id`` in the
+    draft's ``hard_facts_json``. The helper is intentionally narrow so we do not
+    invent references that do not exist in the data model.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    like_pattern = f'%"{fact_id}"%'
+    rows = conn.execute(
+        """
+        SELECT id, task, subject, body_md, hard_facts_json
+        FROM draft
+        WHERE workspace_id = ? AND tenant_id = ?
+          AND (hard_facts_json LIKE ? OR body_md LIKE ?)
+        """,
+        (workspace_id, ctx.require_tenant(), like_pattern, like_pattern),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def corregir_en_cascada_temporal(
+    ctx: Context,
+    conn: Any,
+    *,
+    fact_id: str,
+    new_state: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Mark a fact as expired/corrected and open HITL drafts for derived artifacts.
+
+    The function never auto-applies corrections. Every affected artifact gets a
+    new ``draft`` with ``requires_confirmation=True``, and an append-only row in
+    ``correction_log`` links the original fact to the proposed correction.
+    """
+
+    enforce_tenant_scoped(ctx)
+    workspace_id = ctx.require_scoped_workspace()
+
+    if new_state not in {"vencido", "corregido"}:
+        raise ValueError(f"Invalid correction state: {new_state}")
+
+    created_drafts: list[str] = []
+    log_entries: list[str] = []
+    now = utc_now()
+
+    with transaction(conn, ctx=ctx):
+        fact = conn.execute(
+            """
+            SELECT id, field_name, field_value, valid_from, valid_until, source_locator
+            FROM kb_fact
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (fact_id, workspace_id, ctx.require_tenant()),
+        ).fetchone()
+        if fact is None:
+            raise ValueError(f"Fact not found: {fact_id}")
+
+        derived = _find_derived_artifacts(conn, ctx, fact_id)
+
+        for artifact in derived:
+            artifact_id = artifact["id"]
+            correction_draft = insert_draft(
+                ctx,
+                conn,
+                chat_id=None,
+                task="correction_cascade",
+                subject=f"Corrección en cascada: fact {fact_id} → {new_state}",
+                body_md=(
+                    f"El fact **{fact_id}** fue marcado como **{new_state}** "
+                    f"y afecta al artefacto derivado `{artifact_id}`. "
+                    "Revisa antes de aplicar la corrección."
+                ),
+                hard_facts=[
+                    {"field": "origin_fact_id", "value": fact_id, "source_locator": f"fact:{fact_id}"},
+                    {"field": "proposed_state", "value": new_state, "source_locator": f"fact:{fact_id}"},
+                    {"field": "affected_artifact_id", "value": artifact_id, "source_locator": f"draft:{artifact_id}"},
+                    {"field": "reason", "value": reason or "", "source_locator": f"fact:{fact_id}"},
+                ],
+                sources=[],
+                blockers=[],
+                warnings=[],
+                requires_confirmation=True,
+                status="draft",
+                source_version="v2",
+            )
+            created_drafts.append(correction_draft["id"])
+
+            log_id = new_id("corr")
+            conn.execute(
+                """
+                INSERT INTO correction_log (
+                    id, workspace_id, tenant_id, origin_fact_id,
+                    affected_entity_type, affected_entity_id, proposed_state,
+                    reason, draft_id, actor_id, schema_version, source_version, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    log_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                    fact_id,
+                    "draft",
+                    artifact_id,
+                    new_state,
+                    reason,
+                    correction_draft["id"],
+                    ctx.resolved_actor_id(),
+                    SCHEMA_VERSION,
+                    "v2",
+                    now,
+                ),
+            )
+            log_entries.append(log_id)
+
+    return {
+        "fact_id": fact_id,
+        "new_state": new_state,
+        "affected_artifacts": len(derived),
+        "created_draft_ids": created_drafts,
+        "correction_log_ids": log_entries,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Pack materialization and promotion
 # ---------------------------------------------------------------------------
 
@@ -903,6 +1142,8 @@ __all__ = [
     "approve_informal_capture",
     "external_lookup",
     "http_evidence_fetcher",
+    "verificar_vigencia_normativa",
+    "corregir_en_cascada_temporal",
     "update_track_record",
     "attach_evidence",
     "ensure_skill_factory_rows",

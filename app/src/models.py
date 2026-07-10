@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 39
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1461,6 +1461,34 @@ MIGRATIONS: dict[int, str] = {
 
     CREATE INDEX IF NOT EXISTS idx_usage_record_surcharge
         ON usage_record(tenant_id, platform_key_used, platform_key_surcharge_usd);
+    """,
+    39: """
+    -- E3-4: P17 temporal correction cascade append-only log.
+    CREATE TABLE IF NOT EXISTS correction_log (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        origin_fact_id TEXT NOT NULL,
+        affected_entity_type TEXT,
+        affected_entity_id TEXT,
+        proposed_state TEXT NOT NULL CHECK (proposed_state IN ('vencido', 'corregido')),
+        reason TEXT,
+        draft_id TEXT,
+        actor_id TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 5,
+        source_version TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (origin_fact_id) REFERENCES kb_fact(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_correction_log_origin
+        ON correction_log(workspace_id, tenant_id, origin_fact_id);
+
+    CREATE TRIGGER IF NOT EXISTS trg_correction_log_tenant_nn BEFORE INSERT ON correction_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_correction_log_tenant_nn_upd BEFORE UPDATE ON correction_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
 }
 

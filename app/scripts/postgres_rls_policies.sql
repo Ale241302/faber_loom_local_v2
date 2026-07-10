@@ -86,6 +86,8 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 ALTER TABLE editorial_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE editorial_history FORCE ROW LEVEL SECURITY;
+ALTER TABLE correction_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE correction_log FORCE ROW LEVEL SECURITY;
 ALTER TABLE workspace_smtp_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_smtp_config FORCE ROW LEVEL SECURITY;
 ALTER TABLE workspace_routing_policy ENABLE ROW LEVEL SECURITY;
@@ -131,7 +133,7 @@ BEGIN
               'workspace', 'kb_source', 'kb_chunk', 'kb_fact', 'chat', 'message',
               'draft', 'routine', 'routine_run', 'gold_candidate', 'usage_record',
               'mail_message', 'mail_outbox', 'email_account', 'audit_log',
-              'editorial_history', 'workspace_smtp_config', 'workspace_routing_policy',
+              'editorial_history', 'correction_log', 'workspace_smtp_config', 'workspace_routing_policy',
               'workspace_model_catalog', 'routing_preset', 'manual_invoice', 'payment_reconciliation',
               'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
@@ -186,6 +188,7 @@ SELECT _create_tenant_workspace_policy('mail_outbox');
 SELECT _create_tenant_workspace_policy('email_account');
 SELECT _create_tenant_workspace_policy('audit_log');
 SELECT _create_tenant_workspace_policy('editorial_history');
+SELECT _create_tenant_workspace_policy('correction_log');
 SELECT _create_tenant_workspace_policy('workspace_smtp_config');
 SELECT _create_tenant_workspace_policy('workspace_routing_policy');
 SELECT _create_tenant_workspace_policy('workspace_model_catalog');
