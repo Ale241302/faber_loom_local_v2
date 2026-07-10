@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -238,6 +238,13 @@ from .skill_catalog import seed_global_skill_catalog
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
 from .skill_primitives import attach_evidence, external_lookup
 from .connectors.tax_authority import build_tax_fetcher
+from .connectors.whatsapp_inbound import (
+    WhatsAppInboundError,
+    _WhatsAppSecretStore,
+    process_whatsapp_payload,
+    register_whatsapp_number,
+    set_whatsapp_secret,
+)
 from .ambient import (
     ambient_metrics,
     get_ambient_config,
@@ -654,6 +661,70 @@ def health() -> HealthRead:
         schema_version=get_schema_version(),
         database_path=str(get_database_path()),
     )
+
+
+@public_router.get("/webhooks/whatsapp")
+def whatsapp_verify(
+    hub_mode: str = Query(..., alias="hub.mode"),
+    hub_challenge: str = Query(..., alias="hub.challenge"),
+    hub_verify_token: str = Query(..., alias="hub.verify_token"),
+) -> Response:
+    """Respond to Meta's webhook subscription verification challenge."""
+
+    if hub_mode != "subscribe":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid hub.mode",
+        )
+
+    match = _WhatsAppSecretStore().find_verify_token(hub_verify_token)
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verify token not registered",
+        )
+
+    return Response(content=hub_challenge, media_type="text/plain")
+
+
+@public_router.post("/webhooks/whatsapp")
+async def whatsapp_webhook(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    """Receive signed WhatsApp Business Cloud API inbound messages."""
+
+    body = await request.body()
+    signature = request.headers.get("x-hub-signature-256")
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        ) from exc
+
+    try:
+        result = process_whatsapp_payload(conn, payload, body, signature)
+    except WhatsAppInboundError as exc:
+        error = str(exc)
+        if error == "whatsapp_inbound_disabled":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WhatsApp inbound not enabled",
+            ) from exc
+        if error in {"Missing signature", "Invalid signature"}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error,
+        ) from exc
+
+    return result
 
 
 @router.get("/tenant/settings", response_model=SettingsRead)

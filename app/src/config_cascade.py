@@ -28,6 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "routing.max_steps": 4,
     "routing.byo_mode": "hibrido",
     "model.default": "openai/gpt-4o-mini",
+    "whatsapp_inbound.enabled": False,
 }
 
 
