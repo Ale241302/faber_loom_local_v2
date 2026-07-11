@@ -5,7 +5,7 @@
 **Plan auditado:** `Plan/PLAN_DESARROLLO_FABERLOOM_ETAPA3_v1.md`  
 **Fecha de auditoría original:** 2026-07-08  
 **Fecha de actualización:** 2026-07-10 (post Bloque 9)  
-**Commit HEAD:** `57a21bf` (cierre codeable E3-4)  
+**Commit HEAD:** `8466b07` (cierre codeable E3-4)  
 **Auditor:** Fugu / Kimi Code CLI  
 **Restricción:** read-only original; actualizado tras cierre de bloques 7-9.
 

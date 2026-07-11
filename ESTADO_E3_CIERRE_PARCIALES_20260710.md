@@ -4,7 +4,7 @@
 **Estado:** ✅ CERRADO TÉCNICAMENTE (E3-4 cerrado en su lado codeable)  
 **Suite:** `619 passed, 12 skipped, 32 warnings in 516.51s (0:08:36)`  
 **Schema DB:** 41  
-**HEAD:** `57a21bf` (cierre codeable E3-4)  
+**HEAD:** `8466b07` (cierre codeable E3-4)  
 **Knowledge graph:** actualizado al cierre
 
 ---
