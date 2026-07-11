@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -119,6 +119,12 @@ from .faberloom_catalog import (
     import_catalog_items,
     list_catalog,
 )
+from .living_agent.planner import (
+    get_shadow_report,
+    run_shadow_plan,
+    run_shadow_plan_background,
+    update_model_track_record,
+)
 from .kb import (
     approve_draft,
     delete_kb_source,
@@ -149,7 +155,14 @@ from .key_broker import KeyLevel, resolve_read_level
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
+from .routing.policy import resolve_routing_mode
 from .plans import PlanError, get_plan_surcharge_pct
+from .living_agent.autonomy import (
+    degrade_workspace_if_needed,
+    evaluate_promotion_readiness,
+    generate_promotion_token,
+    promote_or_rollback_workspace,
+)
 from .living_agent.briefs import get_workspace_brief
 from .models import (
     AuditEvent,
@@ -217,6 +230,10 @@ from .models import (
     SettingsUpdate,
     WorkspaceRead,
     WorkspaceBriefRead,
+    ShadowReportRead,
+    PromotionReadinessRead,
+    PromotionRequest,
+    PromotionResponse,
     WorkspaceRoutingPolicyRead,
     WorkspaceRoutingPolicyUpdate,
 )
@@ -496,6 +513,7 @@ def _workspace_settings_list(conn: sqlite3.Connection, ctx: Context, workspace_i
         "routing.auto_dispatch": (bool(policy.get("auto_mode_enabled")), "workspace"),
         "routing.max_budget_usd": (policy.get("budget_cap_usd"), "workspace"),
         "routing.max_steps": (policy.get("max_auto_steps"), "workspace"),
+        "routing.mode": (policy.get("mode"), "workspace"),
         "model.default": (default_model, "workspace"),
     }
 
@@ -541,6 +559,7 @@ def _update_workspace_settings(
             auto_mode_enabled=routing_overrides.get("auto_dispatch"),
             budget_cap_usd=routing_overrides.get("max_budget_usd"),
             max_auto_steps=routing_overrides.get("max_steps"),
+            mode=routing_overrides.get("mode"),
         )
 
     if smtp_overrides:
@@ -741,6 +760,75 @@ async def whatsapp_webhook(
         ) from exc
 
     return result
+
+
+@router.get("/tenants/{tenant_id}/routing/shadow-report", response_model=ShadowReportRead)
+def api_get_shadow_report(
+    tenant_id: str,
+    request: Request,
+    days: int = Query(14, ge=1, le=90),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ShadowReportRead:
+    """Return aggregated shadow vs natural routing metrics for a tenant."""
+
+    ctx = context_from_request(request)
+    # Enforce that the caller belongs to the requested tenant.
+    if ctx.require_tenant() != tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+    report = get_shadow_report(conn, ctx, days=days)
+    return ShadowReportRead(**report)
+
+
+@router.get("/workspaces/{workspace_id}/routing/promotion-readiness", response_model=PromotionReadinessRead)
+def api_get_promotion_readiness(
+    workspace_id: str,
+    request: Request,
+    days: int = Query(14, ge=1, le=90),
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotionReadinessRead:
+    """Return promotion readiness for a workspace from shadow to natural."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if ctx.actor_role_at_decision not in {"owner", "curator", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    readiness = evaluate_promotion_readiness(ctx, conn, workspace_id, days=days)
+    return PromotionReadinessRead(**readiness)
+
+
+@router.post("/workspaces/{workspace_id}/routing/promote", response_model=PromotionResponse)
+def api_promote_workspace(
+    workspace_id: str,
+    payload: PromotionRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotionResponse:
+    """Promote (shadow -> natural) or rollback (natural -> shadow) a workspace.
+
+    Requires the deterministic confirmation token returned by the promotion-readiness
+    endpoint; rollback uses a different token action but the same generation scheme.
+    """
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if ctx.actor_role_at_decision not in {"owner", "curator", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    try:
+        result = promote_or_rollback_workspace(
+            ctx,
+            conn,
+            workspace_id,
+            requested_mode=payload.mode,
+            confirmation_token=payload.confirmation_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return PromotionResponse(**result)
 
 
 @router.get("/tenant/settings", response_model=SettingsRead)
@@ -1409,6 +1497,7 @@ def api_create_completion(
     chat_id: str,
     payload: ChatCompletionRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> ChatCompletionResponse:
     ctx = context_from_request(request, workspace_id=workspace_id)
@@ -1933,6 +2022,26 @@ def api_create_completion(
         )
         raise HTTPException(status_code=status_code, detail=detail)
 
+    # E4-2: in shadow mode, plan without executing and compare against the manual
+    # path that just served the user.
+    if resolve_routing_mode(ctx, conn) == "shadow":
+        background_tasks.add_task(
+            run_shadow_plan_background,
+            tenant_id=ctx.require_tenant(),
+            workspace_id=workspace_id,
+            chat_id=chat_id,
+            user_request=payload.message,
+            actor_role=ctx.actor_role_at_decision,
+            actual_outcome={
+                "mode": "manual",
+                "provider_slug": result.provider_slug,
+                "model": result.model,
+                "cost_usd": result.cost_usd,
+                "duration_ms": result.duration_ms,
+            },
+            policy=get_routing_policy(ctx, conn),
+        )
+
     return ChatCompletionResponse(
         message=assistant_message,
         provider_slug=result.provider_slug,
@@ -2007,6 +2116,14 @@ def api_run_auto_chain(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
+
+    # E4-2: automatic degradation to shadow if the real cost overruns the planner
+    # estimate in the analysis window. Runs outside the request transaction so a
+    # degradation failure never affects the user-facing response.
+    try:
+        degrade_workspace_if_needed(ctx, conn, workspace_id)
+    except Exception:
+        logger.exception("Automatic degradation check failed for workspace %s", workspace_id)
 
     return auto_result
 

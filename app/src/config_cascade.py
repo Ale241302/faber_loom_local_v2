@@ -61,10 +61,12 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
         ).fetchone()
         if row is None:
             return None
+        mode = row["mode"]
         mapping = {
             "routing.auto_dispatch": row["auto_mode_enabled"],
             "routing.max_budget_usd": row["budget_cap_usd"],
             "routing.max_steps": row["max_auto_steps"],
+            "routing.mode": mode if mode is not None else None,
         }
         return mapping.get(key)
 

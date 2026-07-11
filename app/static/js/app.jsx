@@ -18,6 +18,7 @@ const NAV = {
   ],
   admin: [
     { id: "settings", label: "Router / Proveedores", sub: "Modelos, keys y presupuesto", badge: "SL1", icon: "settings" },
+    { id: "routing-shadow", label: "Routing en sombra", sub: "Shadow vs natural", badge: "E4-2", icon: "activity" },
     { id: "audit", label: "Auditoría", sub: "JSONL hoy", badge: "SL0", icon: "audit" },
     { id: "tenant-settings", label: "Config. en cascada", sub: "Tenant / workspace / user", badge: "E3-2", icon: "settings" },
     { id: "tenant-admin", label: "Admin de plataforma", sub: "Aprobar / suspender tenants", badge: "E3-2", icon: "shield" },
@@ -369,6 +370,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <Accordion items={[
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
+            <RailItem label="Routing en sombra" icon="activity" active={nav === "routing-shadow"} onClick={() => setNav("routing-shadow")} />
             <RailItem label="Facturación" icon="credit-card" active={nav === "billing"} onClick={() => setNav("billing")} />
             <RailItem label="Salud" icon="activity" active={nav === "health"} onClick={() => setNav("health")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
@@ -3488,6 +3490,7 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
      : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
      : nav === "promotion" && window.PromotionReadinessPanel ? <window.PromotionReadinessPanel activeWorkspace={activeWorkspace} user={user}/>
+     : nav === "routing-shadow" && window.ShadowReportPanel ? <window.ShadowReportPanel tenantId={user?.tenant_id || "default"} />
      : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>
      : <PlaceholderView nav={nav}/>}
   </main>;

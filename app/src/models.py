@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 42
+SCHEMA_VERSION = 44
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1221,6 +1221,70 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_workspace_brief_tenant ON workspace_brief(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_workspace_brief_computed_at ON workspace_brief(computed_at);
     """,
+    43: """
+    -- E4-2: planner decision log (R11) and per-model track record.
+    CREATE TABLE IF NOT EXISTS planner_decision_log (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        chain_id TEXT,
+        task_ref TEXT,
+        mode TEXT NOT NULL CHECK (mode IN ('shadow', 'natural')),
+        plan_json TEXT NOT NULL DEFAULT '{}',
+        actual_outcome_json TEXT NOT NULL DEFAULT '{}',
+        correlation_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 43,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_tenant_mode_created
+        ON planner_decision_log(tenant_id, mode, created_at);
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_workspace
+        ON planner_decision_log(workspace_id, tenant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_correlation
+        ON planner_decision_log(correlation_id);
+
+    CREATE TABLE IF NOT EXISTS model_track_record (
+        tenant_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        provider_slug TEXT NOT NULL,
+        model TEXT NOT NULL,
+        total_decisions INTEGER NOT NULL DEFAULT 0,
+        accepted_count INTEGER NOT NULL DEFAULT 0,
+        regenerated_count INTEGER NOT NULL DEFAULT 0,
+        rejected_count INTEGER NOT NULL DEFAULT 0,
+        avg_cost_usd REAL NOT NULL DEFAULT 0.0,
+        avg_latency_ms REAL NOT NULL DEFAULT 0.0,
+        last_used_at TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 43,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, capability, provider_slug, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_model_track_record_tenant_capability
+        ON model_track_record(tenant_id, capability);
+    """,
+    44: """
+    -- E4-2 follow-up: workspace-level routing mode + ACE promotion/degradation bookkeeping.
+    ALTER TABLE workspace_routing_policy ADD COLUMN mode TEXT;
+    ALTER TABLE workspace_routing_policy ADD COLUMN promoted_at TEXT;
+    ALTER TABLE workspace_routing_policy ADD COLUMN degraded_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE workspace_routing_policy ADD COLUMN last_degraded_at TEXT;
+    -- Mode is intentionally NULL by default so the workspace does not override
+    -- tenant/user settings until an owner explicitly promotes/degrades it.
+    """,
     33: """
     -- E3-4 Wave 0: Skill Factory Foundation tables.
     CREATE TABLE IF NOT EXISTS skill_manifest (
@@ -1689,6 +1753,42 @@ class WorkspaceBriefRead(BaseModel):
     approved_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class ShadowReportRead(BaseModel):
+    tenant_id: str
+    days: int
+    since: str
+    decisions_count: dict[str, int] = Field(default_factory=dict)
+    cost_by_mode: dict[str, dict[str, float]] = Field(default_factory=dict)
+    model_records: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PromotionReadinessRead(BaseModel):
+    workspace_id: str
+    ready: bool
+    shadow_decisions: int
+    min_decisions: int
+    estimated_cost_usd: float
+    actual_cost_usd: float
+    projected_savings_usd: float
+    absurd_decisions: int
+    degraded_count: int
+    in_cooldown: bool
+    window_days: int
+
+
+class PromotionRequest(BaseModel):
+    mode: Literal["natural", "shadow"]
+    confirmation_token: str
+
+
+class PromotionResponse(BaseModel):
+    workspace_id: str
+    mode: str
+    action: str
+    promoted_at: str | None = None
+    audit_event_id: str | None = None
 
 
 class AuditEvent(BaseModel):

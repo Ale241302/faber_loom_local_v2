@@ -721,11 +721,12 @@ def get_routing_policy(
                 f"""
                 INSERT INTO workspace_routing_policy (
                     workspace_id, tenant_id, provider_allowlist_json, model_allowlist_json,
-                    budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only, updated_at
+                    budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only,
+                    mode, promoted_at, degraded_count, last_degraded_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (ws_id, ctx.require_tenant(), "[]", "{}", 5.0, 0, 3, 0, now),
+                (ws_id, ctx.require_tenant(), "[]", "{}", 5.0, 0, 3, 0, None, None, 0, None, now),
             )
             row = conn.execute(
                 f"""
@@ -745,6 +746,7 @@ def update_routing_policy(
     ctx: Context,
     conn: sqlite3.Connection,
     *,
+    workspace_id: str | None = None,
     provider_allowlist: list[str] | None = None,
     model_allowlist: dict[str, list[str]] | None = None,
     budget_cap_usd: float | None = None,
@@ -752,11 +754,15 @@ def update_routing_policy(
     auto_mode_enabled: bool | None = None,
     max_auto_steps: int | None = None,
     require_local_only: bool | None = None,
+    mode: str | None = None,
+    promoted_at: str | None = None,
+    degraded_count: int | None = None,
+    last_degraded_at: str | None = None,
 ) -> dict[str, Any]:
-    """Update the routing policy for the current scoped workspace."""
+    """Update the routing policy for the given or current scoped workspace."""
 
     with transaction(conn, ctx=ctx):
-        workspace_id = ctx.require_scoped_workspace()
+        workspace_id = workspace_id or ctx.require_scoped_workspace()
         policy = get_routing_policy(ctx, conn, workspace_id)
         updates: dict[str, Any] = {"updated_at": utc_now()}
         if provider_allowlist is not None:
@@ -773,6 +779,14 @@ def update_routing_policy(
             updates["max_auto_steps"] = max_auto_steps
         if require_local_only is not None:
             updates["require_local_only"] = 1 if require_local_only else 0
+        if mode is not None:
+            updates["mode"] = mode
+        if promoted_at is not None:
+            updates["promoted_at"] = promoted_at
+        if degraded_count is not None:
+            updates["degraded_count"] = degraded_count
+        if last_degraded_at is not None:
+            updates["last_degraded_at"] = last_degraded_at
 
         if not updates:
             return policy
@@ -1263,6 +1277,10 @@ WORKSPACE_ROUTING_POLICY_COLUMNS = """
     auto_mode_enabled,
     max_auto_steps,
     require_local_only,
+    mode,
+    promoted_at,
+    degraded_count,
+    last_degraded_at,
     updated_at
 """
 

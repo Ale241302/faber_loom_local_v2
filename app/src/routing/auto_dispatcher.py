@@ -272,6 +272,23 @@ def execute_plan(
             response_json={"content_preview": str(result.get("content", result.get("output", "")))[:500]},
         )
 
+        # E4-2: update per-model track record (baseline accepted outcome).
+        try:
+            from ..living_agent.planner import update_model_track_record
+
+            update_model_track_record(
+                ctx,
+                conn,
+                capability=capability,
+                provider_slug=result.get("provider_slug", entry["provider_slug"]),
+                model=result.get("model", entry["model"]),
+                outcome="accepted",
+                cost_usd=result.get("cost_usd", 0.0),
+                latency_ms=result.get("duration_ms", 0),
+            )
+        except Exception:
+            logger.exception("Failed to update model track record for step %s", step_index)
+
         accumulated["input_tokens"] += result.get("input_tokens", 0)
         accumulated["output_tokens"] += result.get("output_tokens", 0)
         accumulated["cost_usd"] += result.get("cost_usd", 0.0)
@@ -388,6 +405,23 @@ def run_auto_chain(
             attachments=attachments or [],
             policy=policy,
         )
+
+    # E4-2 R11: log the natural planner decision with full plan and correlation.
+    try:
+        from ..living_agent.planner import log_planner_decision
+
+        log_planner_decision(
+            ctx,
+            conn,
+            mode="natural",
+            plan=plan,
+            correlation_id=chat_id,
+            chain_id=start_chain(ctx, conn, chat_id=chat_id, kind="auto"),
+            task_ref=chat_id,
+            planner_cost_usd=plan.planner_cost_usd,
+        )
+    except Exception:
+        logger.exception("Failed to log natural planner decision for chat %s", chat_id)
 
     return execute_plan(
         ctx,
