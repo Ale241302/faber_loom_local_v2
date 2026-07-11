@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1196,6 +1196,31 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_key_policy_tenant ON key_policy(tenant_id);
     """,
+    42: """
+    -- E4-1: workspace briefs (awareness INDEX-only del Agente Vivo).
+    CREATE TABLE IF NOT EXISTS workspace_brief (
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        brief_json TEXT NOT NULL DEFAULT '{}',
+        computed_at TEXT,
+        source_counts_json TEXT NOT NULL DEFAULT '{}',
+        staleness_policy_json TEXT NOT NULL DEFAULT '{"max_age_h": 24, "max_writes": 50}',
+        generation_cost_usd REAL NOT NULL DEFAULT 0.0,
+        version INTEGER NOT NULL DEFAULT 0,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 42,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, workspace_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_brief_tenant ON workspace_brief(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_brief_computed_at ON workspace_brief(computed_at);
+    """,
     33: """
     -- E3-4 Wave 0: Skill Factory Foundation tables.
     CREATE TABLE IF NOT EXISTS skill_manifest (
@@ -1644,6 +1669,26 @@ class WorkspaceFieldAliasesUpdate(BaseModel):
 
 class WorkspaceListRead(BaseModel):
     workspaces: list[WorkspaceRead]
+
+
+class WorkspaceBriefRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str | None = None
+    workspace_id: str
+    brief: dict[str, Any] = Field(default_factory=dict)
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    staleness_policy: dict[str, Any] = Field(default_factory=dict)
+    generation_cost_usd: float = 0.0
+    version: int = 0
+    computed_at: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class AuditEvent(BaseModel):

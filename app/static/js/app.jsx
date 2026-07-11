@@ -1272,6 +1272,82 @@ function ToolsetItem({ item, onInvoke }) {
   </div>;
 }
 
+function WorkspaceBriefPanel({ activeWorkspace }) {
+  const [brief, setBrief] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    apiGet(`/api/workspaces/${activeWorkspace.id}/brief`)
+      .then((data) => setBrief(data))
+      .catch((err) => {
+        if (String(err.message || "").includes("404")) {
+          setError("not_ready");
+        } else {
+          setError(err.message || "Error");
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [activeWorkspace]);
+
+  if (!activeWorkspace) return null;
+  if (loading) return <div style={S.loading}>Cargando brief…</div>;
+  if (error === "not_ready") {
+    return (
+      <div style={{ ...S.card, marginTop: 12, opacity: 0.85 }}>
+        <div style={S.cardTitle}>Brief del workspace</div>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+          Aún no hay brief. Se genera en frío durante el ciclo ambiental.
+        </p>
+      </div>
+    );
+  }
+  if (error) return <div style={{ ...S.error, marginTop: 12 }}>{error}</div>;
+  if (!brief) return null;
+
+  const b = brief.brief || {};
+  const sourceTotal = Object.values(b.source_counts || {}).reduce((a, n) => a + (n || 0), 0);
+  return (
+    <div style={{ ...S.card, marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <div style={S.cardTitle}>Brief del workspace</div>
+        <span style={{ ...S.badge, background: b.level === "closed" ? "var(--vino-soft)" : "var(--sage-soft)" }}>{b.level || "—"}</span>
+      </div>
+      <div style={{ ...S.cardMeta, marginBottom: 10 }}>v{brief.version || 0} · {brief.computed_at ? new Date(brief.computed_at).toLocaleString() : "—"}</div>
+      {b.sealed && <div style={{ ...S.error, marginBottom: 10, fontSize: 12 }}>Espacio sellado</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, marginBottom: 12 }}>
+        <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Fuentes</div>
+          <div style={{ fontWeight: 600, marginTop: 2 }}>{sourceTotal}</div>
+        </div>
+        <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Rutinas activas</div>
+          <div style={{ fontWeight: 600, marginTop: 2 }}>{(b.active_routines || []).length}</div>
+        </div>
+        {b.open_invoices && (
+          <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Facturas abiertas</div>
+            <div style={{ fontWeight: 600, marginTop: 2 }}>${Number(b.open_invoices.total_usd || 0).toFixed(2)}</div>
+          </div>
+        )}
+      </div>
+      {(b.recent_titles || []).length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>Títulos recientes</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {b.recent_titles.slice(0, 5).map((t) => (
+              <div key={t.id} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.35 }}>· {t.title}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RightRail({ open, activeWorkspace }) {
   return <aside className={cx("rail3", !open && "hidden")} aria-label="Toolset">
     <div className="rail3-header">
@@ -1279,6 +1355,7 @@ function RightRail({ open, activeWorkspace }) {
       <span>Toolset</span>
     </div>
     <ToolsetPanel activeWorkspace={activeWorkspace}/>
+    <WorkspaceBriefPanel activeWorkspace={activeWorkspace}/>
   </aside>;
 }
 

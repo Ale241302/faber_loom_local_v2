@@ -149,6 +149,7 @@ from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
 from .plans import PlanError, get_plan_surcharge_pct
+from .living_agent.briefs import get_workspace_brief
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -214,6 +215,7 @@ from .models import (
     SettingsRead,
     SettingsUpdate,
     WorkspaceRead,
+    WorkspaceBriefRead,
     WorkspaceRoutingPolicyRead,
     WorkspaceRoutingPolicyUpdate,
 )
@@ -983,6 +985,26 @@ def api_update_workspace_field_aliases(
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return WorkspaceRead(**updated)
+
+
+@router.get("/workspaces/{workspace_id}/brief", response_model=WorkspaceBriefRead)
+def api_get_workspace_brief(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceBriefRead:
+    """Return the persisted workspace brief (cold cache).
+
+    This endpoint never generates a brief inline; regeneration happens in the
+    ambient cycle. If no brief exists yet, the caller receives 404.
+    """
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    row = get_workspace_brief(conn, ctx, workspace_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brief not found")
+    return WorkspaceBriefRead(**row)
 
 
 # -----------------------------------------------------------------------------

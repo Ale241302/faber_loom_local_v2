@@ -34,6 +34,10 @@ from .ambient_detectors import (
     DETECTOR_REGISTRY,
     AmbientFinding,
 )
+from .living_agent.briefs import (
+    is_brief_stale,
+    refresh_workspace_brief,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -790,8 +794,20 @@ class AmbientOrchestrator:
                 detector_slugs = [s for s in detector_slugs if s in allowlist]
             detector_slugs = [s for s in detector_slugs if s not in excluded]
 
-            ws_evidence: dict[str, Any] = {"detectors": []}
+            ws_evidence: dict[str, Any] = {"detectors": [], "brief": {}}
             ctx = ambient_context(tenant_id=tenant_id, workspace_id=workspace_id)
+
+            # E4-1: refresh workspace brief if stale (cold, INDEX-only cache)
+            try:
+                stale, diagnostics = is_brief_stale(conn, ctx, workspace_id)
+                if stale:
+                    refresh_workspace_brief(ctx, conn, workspace_id, cost_usd=0.0)
+                    ws_evidence["brief"] = {"refreshed": True, "reason": diagnostics.get("reason")}
+                else:
+                    ws_evidence["brief"] = {"refreshed": False, "reason": diagnostics.get("reason")}
+            except Exception:
+                logger.exception("Failed to refresh workspace brief for %s", workspace_id)
+                ws_evidence["brief"] = {"refreshed": False, "error": "refresh_failed"}
 
             max_proposals = int(config.get("max_proposals_per_cycle", 10))
             proposals_so_far = 0

@@ -116,6 +116,8 @@ ALTER TABLE ambient_proposal ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ambient_proposal FORCE ROW LEVEL SECURITY;
 ALTER TABLE object ENABLE ROW LEVEL SECURITY;
 ALTER TABLE object FORCE ROW LEVEL SECURITY;
+ALTER TABLE workspace_brief ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_brief FORCE ROW LEVEL SECURITY;
 
 -- refresh_tokens is intentionally left out of RLS in E3-1: it is globally
 -- scoped by user_id today and will receive a tenant_id column in E3-2.
@@ -140,7 +142,7 @@ BEGIN
               'tenant_invoice_sequence',
               'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
-              'ambient_proposal', 'object'
+              'ambient_proposal', 'object', 'workspace_brief'
           )
     LOOP
         EXECUTE format(
@@ -198,6 +200,7 @@ SELECT _create_tenant_workspace_policy('workspace_model_catalog');
 SELECT _create_tenant_workspace_policy('ambient_workspace_config');
 SELECT _create_tenant_workspace_policy('ambient_proposal');
 SELECT _create_tenant_workspace_policy('object');
+SELECT _create_tenant_workspace_policy('workspace_brief');
 
 -- ---------------------------------------------------------------------------
 -- 7. Special workspace-owned tables with optional workspace_id
