@@ -4490,12 +4490,17 @@ def api_list_workspace_members(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if not ctx.tenant_id:
         return {"members": []}
-    with transaction(conn, ctx=ctx):
-        rows = conn.execute(
+    fnd_conn = _open_foundation_db()
+    if fnd_conn is None:
+        return {"members": []}
+    try:
+        rows = fnd_conn.execute(
             "SELECT id, email, display_name FROM fnd_users "
             "WHERE tenant_id = ? AND status = 'active' ORDER BY email",
             (ctx.tenant_id,),
         ).fetchall()
+    finally:
+        fnd_conn.close()
     return {
         "members": [
             {"id": r["id"], "email": r["email"], "display_name": r["display_name"]}
