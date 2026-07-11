@@ -190,6 +190,25 @@ def test_external_lookup_with_tax_fetcher_for_fe_skill(client: TestClient) -> No
         assert item["source_locator"].startswith("mock://")
 
 
+def test_sandbox_mode_fails_closed_until_live_http_implemented(client: TestClient) -> None:
+    from app.src.connectors.tax_authority import TaxConnectorError, get_tax_connector
+    from app.src.context import Context
+    from app.src.db import db_session
+
+    workspace_id = _demo_workspace_id(client)
+    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
+
+    with db_session() as conn:
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.mode", "sandbox")
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.base_url", "https://sat.example.test")
+        conn.commit()
+        _set_connector_secret(ctx, "sat", "api_key", "sandbox-key")
+        connector = get_tax_connector(ctx, conn, "sat")
+
+    with pytest.raises(TaxConnectorError, match="PENDIENTE"):
+        connector.check_document_status("001-0001-0001")
+
+
 def test_external_lookup_fails_closed_without_fetcher(client: TestClient) -> None:
     from app.src.context import Context
     from app.src.db import db_session
