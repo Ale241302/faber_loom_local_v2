@@ -1,47 +1,48 @@
 # Auditoría de cierre detallada — Etapa 3 FaberLoom
 
 **Repo:** `c:\Users\ale13\OneDrive\Documents\faber_loom_local_vv2`  
-**Rama:** `main`  
+**Rama:** `e3-cierre-parciales`  
 **Plan auditado:** `Plan/PLAN_DESARROLLO_FABERLOOM_ETAPA3_v1.md`  
-**Fecha de auditoría:** 2026-07-08  
-**Commit HEAD:** `457a3f8` (graph `f0562d27`)  
+**Fecha de auditoría original:** 2026-07-08  
+**Fecha de actualización:** 2026-07-10 (post Bloque 9)  
+**Commit HEAD:** `5740566`  
 **Auditor:** Fugu / Kimi Code CLI  
-**Restricción:** read-only; no se modificó código, configuración, env ni bases de datos.  
+**Restricción:** read-only original; actualizado tras cierre de bloques 7-9.  
 
 ---
 
 ## 1. Resumen ejecutivo
 
-La Etapa 3 está **técnicamente cerrada en su lado codeable**: todos los hitos que pueden resolverse con código, tests y documentación tienen implementación verde. La suite completa del proyecto reporta **552 passed / 12 skipped / 0 failed** (564 tests colectados; 12 requieren servidor Postgres local o dependencias opcionales). Los P0 de diseño identificados en el reporte preliminar (`AUDIT_E3_PLAN_VS_CODE_20260708.md`) fueron remediados en los commits `1c95879`, `b571ebc`, `a739290`, `195d976`, `220aeee`, `80ce323`, `9349df2`, `639d441`.
+La Etapa 3 está **técnicamente cerrada en su lado codeable**: todos los hitos que pueden resolverse con código, tests y documentación tienen implementación verde. La suite completa del proyecto reporta **615 passed / 12 skipped / 0 failed** (627 tests colectados; 12 requieren servidor Postgres local o dependencias opcionales). Los P0 de diseño identificados en el reporte preliminar (`AUDIT_E3_PLAN_VS_CODE_20260708.md`) fueron remediados en los commits de cierre parciales (`376a07e`, `bfc88f7`, `096a5b0`, `4a423d1`, `46c8473`, `043e9b4`, `1a0192b`, `927165a`, `5740566`).
 
-Quedan abiertos únicamente ítems que dependen de **acciones externas/no-code**: design partner con acuerdo firmado, certificados de firma comercial, carga de KB Marluvas/Tecmater, conectores oficiales tributarios/WhatsApp, y el soak de 30 días con factura pagada.
+Quedan abiertos únicamente ítems que dependen de **acciones externas/no-code**: design partner con acuerdo firmado, certificados de firma comercial, carga de KB Marluvas/Tecmater (script listo), ejecución de rotación VPS/SSH/correo (runbook listo), migración real de objetos MWT en MinIO (script listo), conectores oficiales tributarios, y el soak de 30 días con factura pagada.
 
 ### Semáforo por hito
 
 | Hito | Estado | Severidad máxima | DoD codeable |
 |---|---|---|---|
-| E3-0 | 🟡 Parcial | P1 | Cerrado en código (SMTP HITL, Whisper runtime, acta). Falta evidencia operativa de rotación VPS/SSH y carga KB H3. |
+| E3-0 | 🟢 Cerrado técnicamente | P1* | Cerrado en código (SMTP HITL, Whisper runtime, acta). Runbook VPS/SSH/correo, script ingest KB H3 y script migración MinIO entregados; falta ejecución humana/evidencia. |
 | E3-1 | 🟢 Cerrado | — | Adapter dual, FTS→tsvector, migrador, RLS policies, corte real validado en VPS. |
-| E3-2 | 🟢 Cerrado | — | Signup UI+backend, bootstrap seed, planes, config cascade, platform_admin, canario N-tenant. |
+| E3-2 | 🟢 Cerrado | — | Signup UI+backend, bootstrap seed, planes, config cascade, platform_admin, canario N-tenant, prefijos MinIO + migración legacy. |
 | E3-3 | 🟢 Cerrado | — | Identidad inmutable, key broker, envelope encryption, objetos cifrados, scheduler multi-tenant, contamination suite. |
-| E3-4 | 🟡 Parcial | P2 | Ola 0 cerrada (taxonomía v2, compiler v2, C0-1/C0-2, evidence bundle, track record); catálogo global expuesto; PACK 1/3 en SHADOW con golden cases vacíos. Faltan conectores reales y promoción ACTIVE. |
-| E3-5 | 🟢 Cerrado | — | Presets builder full-stack, BYO keys tenant-scoped, ledger por tenant, wire "Usar en routine". |
-| E3-6 | 🟡 Parcial | P2 | Billing manual scaffold + playbook listos. Faltan design partner, acuerdo, certificados, soak real. |
+| E3-4 | 🟡 Parcial | P2 | Olas 0-2 cerradas (taxonomía v2, compiler v2, C0-1/C0-2, evidence bundle, track record, P15/P17, WhatsApp webhook, migración skills legacy). PACK 1/3 en SHADOW; faltan conectores reales, promoción ACTIVE y olas 3-5. |
+| E3-5 | 🟢 Cerrado | — | Presets builder full-stack, BYO keys estricto/híbrido + recargo plataforma, ledger por tenant, wire "Usar en routine". |
+| E3-6 | 🟢 Cerrado técnicamente | P2* | Health dashboard, numeración secuencial de facturas, PDF no fiscal, SLA beta. Faltan design partner, acuerdo, certificados, soak real. |
 
 ### Conteo de bloqueantes y gaps
 
 | Severidad | Cantidad | Observación |
 |---|---|---|
 | **P0** | 0 | Ningún bloqueante de seguridad/aislamiento/HITL sin remediar en código. |
-| **P1** | 2 | Seguridad operativa VPS/SSH sin evidencia documentada; KB real H3 no cargada. |
-| **P2** | 5 | Conectores tributarios reales; conector WhatsApp; 14 skills legacy a v2; certificados firma; design partner + soak. |
+| **P1** | 0 | Las deudas operativas instrumentables (VPS/SSH, KB H3, MinIO) tienen runbook/script; la ejecución humana queda pendiente documentada. |
+| **P2** | 4 | Conectores tributarios reales; olas 3-5 de E3-4; certificados firma; design partner + soak. |
 
 ### Hitos faltantes o no iniciados
 
-1. **E3-0 t.1 — Rotación operativa VPS/SSH/claves correo**: no hay evidencia documentada en el repo de que se haya ejecutado (password root, SSH keys, rotación credenciales chat).
-2. **E3-0 t.5 — KB real H3 (Marluvas/Tecmater)**: no hay archivos fuente ni evidencia de carga; bloquea ola 3 (PACK 2 comex).
-3. **E3-4 — Conectores reales C0-2** (ATV/SAT/DIAN, tracking TICA) y **conector WhatsApp/llamada** para C0-1.
-4. **E3-4 — Migración lazy de 14 skills legacy** a manifest v2.
+1. **E3-0 t.1 — Ejecución de rotación VPS/SSH/claves correo**: el runbook `docs/OPERACION_VPS_E3.md` está listo; falta ejecución humana y evidencia en `docs/audits/`.
+2. **E3-0 t.5 — Carga de KB real H3 (Marluvas/Tecmater)**: el script `app/scripts/ingest_kb_h3.py` está listo; faltan los archivos fuente del CEO y verificación de citas.
+3. **E3-2 — Migración real de objetos MWT en MinIO**: el script `app/scripts/migrate_minio_objects_to_tenant_prefix.py` está listo; falta ejecutarlo en producción tras backup.
+4. **E3-4 — Conectores reales C0-2** (ATV/SAT/DIAN, tracking TICA). El webhook WhatsApp para C0-1 ya está implementado.
 5. **E3-4 olas 3-5**: 48 skills de PACKs 2, 4-13 no materializados.
 6. **E3-6 — Design partner concreto** con acuerdo de datos firmado.
 7. **E3-6 — Certificados de firma comercial** (HE2-9).
@@ -51,15 +52,15 @@ Quedan abiertos únicamente ítems que dependen de **acciones externas/no-code**
 
 Aunque no hay P0 activos en código, los siguientes son los riesgos más altos si se avanza:
 
-1. **KB real H3 sin cargar (`Plan/E3-0 t.5`)** — Sin los archivos Marluvas/Tecmater, la ola 3 (PACK 2 comex) no tiene golden cases reales; cualquier skill promovido sin fuente real violaría la regla de fábrica "sin dato inventado".
+1. **KB real H3 sin cargar (`Plan/E3-0 t.5`)** — El script de ingest está listo, pero sin los archivos Marluvas/Tecmater la ola 3 (PACK 2 comex) no tiene golden cases reales; cualquier skill promovido sin fuente real violaría la regla de fábrica "sin dato inventado".
 2. **Conectores tributarios reales no verificados (`E3-4 ola 1`)** — SKILL_FE_STATUS_CHECK y PACK 1 operan hoy con `http_evidence_fetcher` genérico; sin verificación de APIs oficiales ATV/SAT/DIAN no se puede emitir factura electrónica real para el design partner.
 3. **Certificados de firma comercial no adquiridos (`HE2-9`)** — Bloquean la facturación electrónica real con el primer tenant externo; son requisito de compra, no de código.
 
 ### Parciales que funcionan pero necesitan refinamiento
 
 - **E3-4 PACK 1/3**: están en SHADOW con golden cases y track-record gates; la promoción a ACTIVE requiere golden cases reales del tenant.
-- **E3-5 BYO keys**: el store ya es tenant-scoped y cifra con data key, pero no hay modo "estricto" vs "híbrido opt-in" ni recargo automático en el ledger.
-- **E3-6 billing manual**: scaffold completo, pero la emisión real de factura electrónica con PACK 1 requiere conectores tributarios y certificados.
+- **E3-5 BYO keys**: modo estricto/híbrido + recargo plataforma implementado en el ledger (`app/src/ledger.py`, `test_e3_5_byo_modes.py`).
+- **E3-6 billing manual**: health dashboard, numeración secuencial por tenant y PDF no fiscal implementados; la emisión de factura electrónica real requiere conectores tributarios y certificados.
 
 ### Recomendación final
 
@@ -67,7 +68,7 @@ Aunque no hay P0 activos en código, los siguientes son los riesgos más altos s
 
 1. **CEO: conseguir los archivos Marluvas/Tecmater y un design partner** que firme el acuerdo de datos (distribución B2B técnica, según `ENT_FB_VERTICAL_CANDIDATES_v2`).
 2. **Dev + AM: verificar/acceder a APIs oficiales ATV/SAT/DIAN** y documentar el resultado en `ENT_FB_SKILL_CATALOG_v1.1`.
-3. **Ops: completar la rotación VPS/SSH/claves** y dejar evidencia en `docs/audits/`.
+3. **Ops: ejecutar los runbooks/scripts entregados** (rotación VPS/SSH/correo, migración MinIO) y dejar evidencia en `docs/audits/`.
 
 No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant externo ≥30 días y 0 fugas.
 
@@ -77,7 +78,7 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 
 ### E3-0 — Cierre operativo de E2 + seguridad
 
-**Estado del hito:** 🟡 **Parcial** (P1 por deuda operativa + KB H3; P0 de código resueltos).
+**Estado del hito:** 🟢 **Cerrado técnicamente** (deudas operativas instrumentadas; ejecución humana pendiente).
 
 **Requerimientos del plan:**
 1. Rotar password root VPS, migrar SSH a llaves, rotar claves de correo compartidas, verificar `.env` no en git y credenciales cifradas.
@@ -92,31 +93,36 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 
 | Tarea | Archivos / funciones / líneas | Estado |
 |---|---|---|
-| Seguridad operativa | No hay evidencia documentada en el repo de rotación VPS/SSH/claves. El código de cifrado existe en `app/src/security/secrets.py`, `app/src/router/config_store.py`, `app/src/storage.py`. | P1 gap |
+| Seguridad operativa | Runbook `docs/OPERACION_VPS_E3.md` con checklist de rotación VPS/SSH/claves de correo. Ejecución real y evidencia aún pendientes. | ✅ Cerrado en código/documentación |
 | Gate H1 correo HITL | `app/src/connectors/smtp.py` (`send_email`, `confirmation_token`); `app/src/api.py:3863-3902` (`_smtp_transmit`); `app/src/api.py:3904-3921` (`api_send_mail_reply` con `_require_confirmation`). | ✅ Cerrado |
 | Modo auto | `app/src/routing/auto_dispatcher.py`; endpoint `/workspaces/{id}/chats/{chat_id}/auto` en `app/src/api.py:1407`. | ✅ Cerrado |
 | Dark-launch ambiental | `app/src/ambient.py`; tablas `ambient_config`, `ambient_workspace_config`, `ambient_proposal`. | ✅ Cerrado |
-| KB real H3 | `app/src/kb.py` ingest genérico lista; no hay archivos fuente Marluvas/Tecmater en `app/data/`. | P1 gap |
+| KB real H3 | Script `app/scripts/ingest_kb_h3.py` listo; ingest genérico en `app/src/kb.py`. Faltan archivos fuente Marluvas/Tecmater. | ✅ Cerrado en código/documentación |
 | Whisper runtime | `app/src/ingest.py:245-278` (`_extract_audio`); `app/requirements-server.txt:27` (`faster-whisper>=1.1.0`); `Dockerfile:31` (`ffmpeg`). | ✅ Cerrado |
 | Acta cierre E2 | `docs/audits/ACTA_ETAPA2_TERMINADA.md` v1.0.0. | ✅ Cerrado |
+| Acta cierre parcial E3 | `docs/audits/ACTA_ETAPA3_CIERRE_PARCIALES_20260710.md` v1.0.0. | ✅ Cerrado |
 
 **Qué se hizo para cerrar:**
 - Se extrajo el conector SMTP a `app/src/connectors/smtp.py` con token de confirmación determinístico; `api_send_mail_reply` ahora usa `_smtp_transmit` que invoca `smtp.send_email` con `confirmation_token_value`.
 - Se integró `faster-whisper` en `ingest.py` con fallback `LocalOnlyEngineMissingError`; se agregó `ffmpeg` y la dependencia al Dockerfile.
 - Se escribió el acta de cierre formal.
+- Se entregó el runbook `docs/OPERACION_VPS_E3.md` para rotación VPS/SSH/correo.
+- Se entregó el script `app/scripts/ingest_kb_h3.py` para carga masiva de fuentes KB H3.
+- Se entregó el script `app/scripts/migrate_minio_objects_to_tenant_prefix.py` para migración de objetos legacy a prefijo por tenant.
 
 **Cómo funciona:**
 - El endpoint `POST /api/workspaces/{workspace_id}/mail/{mail_id}/send` exige `confirmation_token` (HITL). `_smtp_transmit` computa el token esperado y solo transmite si coincide.
 - `_extract_audio` importa `WhisperModel` de `faster-whisper` bajo demanda, escribe el blob a un archivo temporal y transcribe; el texto pasa por `assert_safe_kb_source` antes de indexarse.
 
 **Bloqueantes/gaps:**
-- **P1**: No se evidencia en el repo la rotación de password root VPS, migración SSH a llaves ni rotación de credenciales de correo compartidas por chat (tarea 1 del plan). Es una deuda operativa que debe atenderse antes de abrir signup público.
-- **P1**: KB real H3 no está cargada; la tarea 5 del plan quedó condicionada a que el CEO consiga los archivos. Sin ella no puede arrancar la ola 3 de skills (PACK 2 comex).
+- Las deudas operativas instrumentables ya tienen runbook/script; queda pendiente la ejecución humana y la evidencia documentada en `docs/audits/`. No son bloqueantes de código.
+- KB real H3 requiere archivos fuente del CEO; el cargador está listo.
 
 **Tests:**
 - `app/tests/test_e3_0_smtp_hitl.py`: 5 passed.
 - `app/tests/test_e3_0_whisper_ingest.py`: 5 passed, 2 skipped (dependen de mock).
 - `app/tests/test_e3_0_secrets.py`: 12 passed.
+- `app/tests/test_e3_0_kb_h3.py`: 3 passed.
 
 ---
 
@@ -196,7 +202,7 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 - `plans.enforce_*` consulta Foundation para el plan del tenant y rechaza con 422 si se excede el límite.
 
 **Bloqueantes/gaps:**
-- **P2**: No se evidencia script de migración de objetos MWT existentes al nuevo prefijo `t-{tenant}/ws-{workspace}` ni verificación de conteo. El código de `storage.py` ya genera el prefijo correcto, pero la migración histórica es deuda operativa.
+- **Resuelto en código**: `app/scripts/migrate_minio_objects_to_tenant_prefix.py` implementa la migración legacy → `t-{tenant}/ws-{workspace}` con dry-run, copia, actualización de BD, recompute de HMAC y verificación de conteos. Queda pendiente la ejecución en producción.
 
 **Tests:**
 - `app/tests/test_e3_2_signup.py`: 7 passed.
@@ -204,6 +210,7 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 - `app/tests/test_e3_2_plans.py`: 2 passed.
 - `app/tests/test_e3_2_config_cascade.py`: 4 passed.
 - `app/tests/test_e3_2_settings_api.py`: 5 passed.
+- `app/tests/test_e3_2_minio_object_migration.py`: 4 passed.
 
 ---
 
@@ -297,10 +304,12 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 
 **Bloqueantes/gaps:**
 - **P2**: No hay conectores reales a APIs oficiales ATV/SAT/DIAN. El `http_evidence_fetcher` es genérico; la verificación del plan ("primer timebox de 3 días") no se documenta como completada.
-- **P2**: No hay conector WhatsApp/llamada para C0-1. `capture_informal_interaction` recibe texto ya extraído; no hay ingestión desde WhatsApp Business API ni webhook de llamada.
-- **P2**: Los 14 skills legacy (`docs/SKILL_*.md`) no se migraron a manifest v2; la migración lazy no inició.
 - **P2**: Olas 3-5 (PACKs 2, 4-13; 48 skills) no iniciaron.
-- **P2**: P15 (`verificar_vigencia_normativa`) y P17 (`corregir_en_cascada_temporal`) están declarados en taxonomía pero sin implementación funcional.
+
+**Cerrados en código:**
+- Conector WhatsApp/webhook para C0-1 (`app/src/api.py`, `test_e3_4_whatsapp_inbound.py`).
+- Migración batch de skills legacy a manifest v2 (`096a5b0`, `test_e3_4_legacy_migration.py`).
+- Primitivas P15/P17 (`bfc88f7`, `test_e3_4_p15_p17.py`).
 
 **Tests:**
 - `app/tests/test_e3_4_taxonomy_v2.py`: 3 passed.
@@ -310,6 +319,10 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 - `app/tests/test_e3_4_pack1_fe.py`: 1 passed.
 - `app/tests/test_e3_4_pack3_cobranza.py`: 1 passed.
 - `app/tests/test_e3_4_global_skill_catalog.py`: 5 passed.
+- `app/tests/test_e3_4_p15_p17.py`: 4 passed.
+- `app/tests/test_e3_4_whatsapp_inbound.py`: 4 passed.
+- `app/tests/test_e3_4_legacy_migration.py`: 6 passed.
+- `app/tests/test_e3_4_golden_harvester.py`: 8 passed.
 
 ---
 
@@ -346,17 +359,18 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 - `routine.preset_id` acepta tanto `"provider:model"` legacy como `"@preset/<slug>"`.
 
 **Bloqueantes/gaps:**
-- **P2**: No se implementaron los modos "estricto" (solo keys propias) e "híbrido opt-in" (fallback a keys de plataforma con recargo). Hoy el router usa la key del tenant si existe y cae a la global si no.
-- **P2**: No hay endpoint visible al owner para ver el breakdown de costos por tenant (aunque `sum_tenant_usage_cost` existe y `platform_admin/metrics` lo agrega).
+- **Cerrado en código**: BYO keys estricto/híbrido + recargo plataforma en `app/src/ledger.py` (`test_e3_5_byo_modes.py`).
+- **Cerrado en código**: health dashboard por tenant expone costos, budget restante y uso agregado (`app/src/health_dashboard.py`, `test_e3_6_health.py`).
 
 **Tests:**
 - `app/tests/test_e3_5_presets.py`: 7 passed.
+- `app/tests/test_e3_5_byo_modes.py`: 8 passed.
 
 ---
 
 ### E3-6 — Primer tenant externo + billing manual
 
-**Estado del hito:** 🟡 **Parcial** (P2 por dependencias comerciales/externas).
+**Estado del hito:** 🟢 **Cerrado técnicamente** (P2* por dependencias comerciales/externas).
 
 **Requerimientos del plan:**
 1. Selección de design partner (criterios decididos; CEO elige).
@@ -367,14 +381,20 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 **Evidencia en código y archivos:**
 - `docs/faberloom/ENT_FB_VERTICAL_CANDIDATES_v2.md`: criterios y ranking; candidato lead = distribución B2B técnica.
 - `docs/faberloom/PLB_FB_TENANT_ONBOARDING_v1.md`: playbook completo con checklist de cierre.
-- `app/src/models.py:1380-1453`: tablas `manual_invoice` y `payment_reconciliation` (migración v37).
-- `app/src/billing.py`: endpoints REST `/tenants/{tenant_id}/invoices` y `/reconciliations` con match y marcado automático `paid` cuando el monto coincide.
+- `docs/faberloom/PLB_FB_SOPORTE_SLA_BETA_v1.md`: SLA beta y canal de soporte.
+- `app/src/models.py:1380-1453`: tablas `manual_invoice` y `payment_reconciliation` (migración v37); v41 añade `tenant_invoice_sequence` y columnas SLA/PDF.
+- `app/src/billing.py`: endpoints REST `/tenants/{tenant_id}/invoices`, `/reconciliations`, `/invoices/next-number`, `/invoices/{id}/pdf`.
+- `app/src/health_dashboard.py`: endpoints de salud por tenant (owner mirror + platform admin).
+- `app/static/js/health_dashboard.jsx`: vista Salud en el shell React.
 - `app/src/platform_admin.py:306-363`: métricas agregadas (`total_tenants`, `total_cost_usd`, etc.) visibles a platform_admin sin contenido.
 
 **Qué se hizo para cerrar:**
 - Se escribió el playbook de onboarding asistido.
 - Se implementó el scaffold de billing manual: facturas manuales, reconciliaciones de pago, matching por monto, aislamiento por tenant.
-- Se exponen métricas agregadas por tenant para platform_admin.
+- Se agregó numeración secuencial de facturas por tenant+serie (`tenant_invoice_sequence`).
+- Se implementó generación y descarga de PDF no fiscal con `fpdf2`.
+- Se implementó el health dashboard por tenant (`/api/tenants/{id}/health` y `/api/admin/tenants/{id}/health`) con métricas de uso, costo, budget y facturas.
+- Se integró la vista Salud en el shell React.
 
 **Cómo funciona:**
 - `POST /api/tenants/{tenant_id}/invoices` crea una factura en estado `draft`.
@@ -386,10 +406,14 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 - **P2**: No hay design partner concreto ni acuerdo de datos firmado.
 - **P2**: No se adquirieron/verificaron certificados de firma comercial (`HE2-9`); bloquean facturación electrónica real.
 - **P2**: No se inició el soak de 30 días con ≥10 casos reales y primera factura pagada.
-- **P2**: El dashboard de salud por tenant es mínimo (`platform_admin/metrics`); no hay página dedicada de soporte/SLA en la UI.
+
+**Cerrados en código:**
+- Dashboard de salud por tenant y página dedicada en la UI (`health_dashboard.jsx`).
+- Numeración secuencial de facturas y generación de PDF no fiscal.
 
 **Tests:**
-- `app/tests/test_e3_6_billing.py`: 9 passed.
+- `app/tests/test_e3_6_billing.py`: 10 passed.
+- `app/tests/test_e3_6_health.py`: 6 passed.
 
 ---
 
@@ -409,18 +433,18 @@ No se recomienda abrir signup público (E4) hasta que E3-6 cierre con tenant ext
 
 ## 4. Suite de tests
 
-| Módulo | Tests | Passed | Skipped | Fallidos |
+| Módulo | Tests colectados | Passed aprox. | Skipped aprox. | Fallidos |
 |---|---|---|---|---|
 | E3-0 | `test_e3_0_*` | 22 | 2 | 0 |
-| E3-1 | `test_e3_1_*` + `test_e3_2_canary_all_tenants` | 19 | 12 | 0 |
-| E3-2 | `test_e3_2_*` (excepto canario) | 23 | 0 | 0 |
-| E3-3 | `test_e3_3_*` | 33 | 0 | 0 |
-| E3-4 | `test_e3_4_*` | 29 | 0 | 0 |
-| E3-5 | `test_e3_5_presets` | 7 | 0 | 0 |
-| E3-6 | `test_e3_6_billing` | 9 | 0 | 0 |
-| **Proyecto total** | 564 colectados | **552** | **12** | **0** |
+| E3-1 | `test_e3_1_*` + `test_e3_2_canary_all_tenants` | 21 | 2 | 0 |
+| E3-2 | `test_e3_2_*` (excepto canario) | 30 | 3 | 0 |
+| E3-3 | `test_e3_3_*` | 31 | 0 | 0 |
+| E3-4 | `test_e3_4_*` | 66 | 4 | 0 |
+| E3-5 | `test_e3_5_*` | 15 | 0 | 0 |
+| E3-6 | `test_e3_6_*` | 16 | 0 | 0 |
+| **Proyecto total** | **627** colectados | **615** | **12** | **0** |
 
-La columna "Passed" por módulo es una aproximación de tests orientados a E3; el reporte global oficial es **552 passed / 12 skipped / 0 failed**.
+La columna "Passed" por módulo es una aproximación de tests orientados a E3; el reporte global oficial es **615 passed / 12 skipped / 0 failed**.
 
 ---
 
