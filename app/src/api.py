@@ -1018,18 +1018,20 @@ def api_get_workspace_brief(
     )
 
     brief = (row.get("brief") or {}).copy()
+    response_row = dict(row)
     if level == KeyLevel.CLOSED:
         brief = {
             "sealed": True,
             "level": "closed",
             "object_count": sum((row.get("source_counts") or {}).values()),
         }
+        response_row["source_counts"] = {}
     elif level == KeyLevel.INDEX:
         brief.pop("open_invoices", None)
         brief["level"] = "index"
         brief["sealed"] = brief.get("sealed", True)
 
-    return WorkspaceBriefRead(**{**row, "brief": brief})
+    return WorkspaceBriefRead(**{**response_row, "brief": brief})
 
 
 # -----------------------------------------------------------------------------

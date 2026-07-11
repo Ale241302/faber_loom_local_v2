@@ -236,6 +236,7 @@ def test_get_brief_endpoint_closed_space_is_sealed(client: TestClient) -> None:
     assert data["brief"]["sealed"] is True
     assert "open_invoices" not in data["brief"]
     assert "recent_titles" not in data["brief"]
+    assert data["source_counts"] == {}
 
 
 def test_get_brief_endpoint_ceo_only_excludes_non_ceo(client: TestClient) -> None:

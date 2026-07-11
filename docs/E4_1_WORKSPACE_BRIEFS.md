@@ -53,7 +53,8 @@ nada:
 - `GET /api/workspaces/{workspace_id}/brief`
   - Devuelve el brief persistido, re-mediado por los roles del solicitante.
   - **Nunca** lo genera inline; si no existe responde `404`.
-  - `CLOSED` o `CEO-only` sin `ceo` devuelven solo `sealed`, `level` y `object_count`.
+  - `CLOSED` o `CEO-only` sin `ceo` devuelven el modelo `WorkspaceBriefRead` con
+    `source_counts: {}` y el campo `brief` reducido a `sealed`, `level` y `object_count`.
   - `INDEX` devuelve el brief sin agregados de facturas.
   - Respuesta: `WorkspaceBriefRead`.
 
