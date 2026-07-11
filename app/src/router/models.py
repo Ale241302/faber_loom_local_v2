@@ -42,10 +42,11 @@ class CompletionResult(BaseModel):
     output_tokens: int = Field(ge=0)
     cost_usd: float = Field(ge=0.0)
     duration_ms: int = Field(ge=0)
+    key_origin: str | None = None
 
 
 class ProviderConfig(BaseModel):
-    """Runtime config for a provider. API keys must come from env vars only."""
+    """Runtime config for a provider. API keys may come from env or tenant store."""
 
     provider_slug: str
     api_key: str | None = None
@@ -53,6 +54,7 @@ class ProviderConfig(BaseModel):
     model_default: str
     priority: int
     is_enabled: bool
+    key_origin: str | None = "platform"
 
 
 class RouterSettings(BaseModel):

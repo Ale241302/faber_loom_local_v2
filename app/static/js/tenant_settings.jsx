@@ -50,13 +50,22 @@ async function apiPut(path, body) {
 function SettingField({ setting, edit, editedValue, onChange }) {
   const source = setting.source || "default";
   const sourceLabel = { default: "default", tenant: "tenant", workspace: "workspace", user: "user" }[source] || source;
+  const currentValue = editedValue != null ? editedValue : setting.value;
+  const isSelect = setting.key === "routing.byo_mode";
   return (
     <div style={SET_S.field}>
       <label style={SET_S.label}>{setting.label || setting.key}
         {source !== "default" && <span style={SET_S.inheritChip}>heredado de {sourceLabel}</span>}
       </label>
       {edit ? (
-        <input style={SET_S.input} value={editedValue != null ? editedValue : setting.value} onChange={(e) => onChange(setting.key, e.target.value)} placeholder={setting.value} />
+        isSelect ? (
+          <select style={SET_S.input} value={currentValue} onChange={(e) => onChange(setting.key, e.target.value)}>
+            <option value="hibrido">híbrido (fallback a plataforma)</option>
+            <option value="estricto">estricto (solo claves propias)</option>
+          </select>
+        ) : (
+          <input style={SET_S.input} value={currentValue} onChange={(e) => onChange(setting.key, e.target.value)} placeholder={setting.value} />
+        )
       ) : (
         <div style={SET_S.value}>{String(setting.value)}</div>
       )}
@@ -119,11 +128,13 @@ function SettingsCard({ title, meta, scope, settings, editable, onSave }) {
   );
 }
 
-function TenantSettings({ activeWorkspace }) {
+function TenantSettings({ activeWorkspace, user }) {
   const [tab, setTab] = useState("resolved");
   const [data, setData] = useState({ tenant: null, workspace: null, user: null, resolved: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [usage, setUsage] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,7 +155,21 @@ function TenantSettings({ activeWorkspace }) {
     }
   }, [activeWorkspace]);
 
+  const loadUsage = useCallback(async () => {
+    if (!user || !user.tenant_id) return;
+    setUsageLoading(true);
+    try {
+      const summary = await apiGet(`/api/tenants/${user.tenant_id}/usage/summary`);
+      setUsage(summary);
+    } catch (e) {
+      setUsage(null);
+    } finally {
+      setUsageLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadUsage(); }, [loadUsage]);
 
   const saveTenant = async (draft) => apiPut("/api/tenant/settings", { overrides: draft });
   const saveWorkspace = async (draft) => apiPut(`/api/workspaces/${activeWorkspace.id}/settings`, { overrides: draft });
@@ -169,6 +194,7 @@ function TenantSettings({ activeWorkspace }) {
           { id: "tenant", label: "Tenant" },
           { id: "workspace", label: "Workspace" },
           { id: "user", label: "Usuario" },
+          { id: "usage", label: "Resumen de uso" },
         ].map((t) => (
           <button key={t.id} type="button" style={{ ...SET_S.tab, ...(tab === t.id ? SET_S.tabActive : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -198,6 +224,38 @@ function TenantSettings({ activeWorkspace }) {
               : <div style={SET_S.empty}>Seleccioná un workspace para ver sus overrides.</div>
           )}
           {tab === "user" && <SettingsCard title="Usuario" meta="Overrides personales" scope="user" settings={data.user && data.user.settings ? data.user.settings : []} editable={true} onSave={saveUser} />}
+          {tab === "usage" && (
+            <div style={SET_S.card}>
+              <div style={SET_S.cardTitle}><Icon name="bar-chart" size={16} /> Resumen de uso</div>
+              <div style={SET_S.cardMeta}>Tenant: {user && user.tenant_id ? user.tenant_id : "—"}</div>
+              {usageLoading ? <div style={SET_S.empty}>Cargando…</div> : !usage ? <div style={SET_S.empty}>No disponible.</div> : (
+                <>
+                  <div style={SET_S.field}>
+                    <label style={SET_S.label}>Costo total (USD)</label>
+                    <div style={SET_S.value}>{usage.total_cost_usd != null ? usage.total_cost_usd.toFixed(6) : "—"}</div>
+                  </div>
+                  <div style={SET_S.field}>
+                    <label style={SET_S.label}>Recargos por clave de plataforma (USD)</label>
+                    <div style={SET_S.value}>{usage.total_surcharge_usd != null ? usage.total_surcharge_usd.toFixed(6) : "—"}</div>
+                  </div>
+                  <div style={SET_S.field}>
+                    <label style={SET_S.label}>Registros</label>
+                    <div style={SET_S.value}>{usage.total_rows != null ? usage.total_rows : "—"}</div>
+                  </div>
+                  {usage.breakdown && usage.breakdown.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>DESGLOSE</div>
+                      {usage.breakdown.map((row, idx) => (
+                        <div key={idx} style={{ fontSize: 12, color: "var(--text-secondary)", padding: "6px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                          {row.month} · {row.provider_slug}/{row.model}: ${row.total_cost_usd != null ? row.total_cost_usd.toFixed(4) : "—"} ({row.row_count} rows)
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

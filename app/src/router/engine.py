@@ -70,6 +70,7 @@ class Router:
     ):
         self.settings = settings or RouterSettings()
         self.providers: dict[str, Provider] = {}
+        self._key_origins: dict[str, str] = {}
 
         if providers is None:
             return
@@ -77,6 +78,7 @@ class Router:
         provider_iter = providers.values() if isinstance(providers, Mapping) else providers
         for provider in provider_iter:
             self.providers[provider.provider_slug] = provider
+            self._key_origins[provider.provider_slug] = provider.config.key_origin
 
     def check_budget(self, cost: float) -> bool:
         return cost <= self.settings.budget_cap_usd
@@ -95,6 +97,10 @@ class Router:
     def provider_allowed(self, provider: Provider) -> bool:
         """Public check: is this provider permitted by the provider allowlist?"""
         return self._provider_allowed(provider)
+
+    def key_origin(self, provider_slug: str) -> str | None:
+        """Return how the provider's API key was resolved ('platform', 'tenant', etc.)."""
+        return self._key_origins.get(provider_slug)
 
     def estimate(self, request: CompletionRequest) -> tuple[float, str, str]:
         """Return (estimated_cost_usd, provider_slug, model) for the first viable candidate.
@@ -154,6 +160,7 @@ class Router:
 
             try:
                 result = provider.complete(adjusted_request)
+                result.key_origin = self._key_origins.get(provider.provider_slug)
             except ProviderError as exc:
                 failures.append(f"{exc.provider_slug}: {exc.code}")
                 continue

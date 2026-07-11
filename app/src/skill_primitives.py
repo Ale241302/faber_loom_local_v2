@@ -31,6 +31,7 @@ TAXONOMY_V2: dict[str, Any] = {
         "P17": "corregir_en_cascada_temporal",
         "P18": "capturar_interaccion_informal",
     },
+    "implemented": {"P15", "P16", "P17", "P18"},
     "archetypes_e1": {"classifier", "validator", "generator", "formatter", "triage", "skill_package"},
     "unit_of_work_dimensions": [
         "tenant_id",
@@ -542,6 +543,244 @@ def attach_evidence(
 
 
 # ---------------------------------------------------------------------------
+# P15 — Normative validity check (fail-closed)
+# ---------------------------------------------------------------------------
+
+
+def verificar_vigencia_normativa(
+    ctx: Context,
+    conn: Any,
+    *,
+    fact: dict[str, Any],
+    fetcher: ExternalFetcher | None = None,
+) -> dict[str, Any]:
+    """Check whether a KB fact is still valid against its registered source.
+
+    The fact must expose ``valid_from`` and ``valid_until`` boundaries. When a
+    ``fetcher`` is supplied, the source is re-consulted and the evidence bundle
+    dates are compared to ``utc_now()``; otherwise the result is
+    ``no_verificable`` (fail-closed).
+    """
+
+    enforce_tenant_scoped(ctx)
+
+    fact_id = str(fact.get("id", "")).strip()
+    source_locator = str(fact.get("source_locator", "")).strip()
+    valid_from = str(fact.get("valid_from", "")).strip() or None
+    valid_until = str(fact.get("valid_until", "")).strip() or None
+
+    if fetcher is None or not fact_id or not source_locator:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id or None,
+            "checked_at": utc_now(),
+            "reason": "missing_fetcher_or_locator",
+        }
+
+    if not valid_from or not valid_until:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": utc_now(),
+            "reason": "missing_validity_boundaries",
+        }
+
+    lookup = external_lookup(
+        ctx,
+        conn,
+        skill_id="P15",
+        query=fact_id,
+        required_sources=[source_locator],
+        fetcher=fetcher,
+    )
+
+    if lookup["status"] != "succeeded" or not lookup.get("evidence"):
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": utc_now(),
+            "reason": "lookup_failed",
+            "error": lookup.get("error"),
+        }
+
+    # Prefer explicit validity boundaries returned by the fetcher; fall back to
+    # the stored fact boundaries if the evidence does not carry its own.
+    effective_from: str | None = None
+    effective_until: str | None = None
+    for item in lookup["evidence"]:
+        if item.get("valid_from"):
+            effective_from = str(item["valid_from"])
+        if item.get("valid_until"):
+            effective_until = str(item["valid_until"])
+    if not effective_from or not effective_until:
+        effective_from = valid_from
+        effective_until = valid_until
+
+    now = utc_now()
+    if now < effective_from:
+        return {
+            "status": "no_verificable",
+            "fact_id": fact_id,
+            "checked_at": now,
+            "valid_from": effective_from,
+            "valid_until": effective_until,
+            "reason": "not_yet_in_effect",
+        }
+    if now > effective_until:
+        return {
+            "status": "vencido",
+            "fact_id": fact_id,
+            "checked_at": now,
+            "valid_from": effective_from,
+            "valid_until": effective_until,
+        }
+
+    return {
+        "status": "vigente",
+        "fact_id": fact_id,
+        "checked_at": now,
+        "valid_from": effective_from,
+        "valid_until": effective_until,
+        "evidence_hash": lookup.get("content_hash"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# P17 — Temporal correction cascade (HITL drafts, append-only log)
+# ---------------------------------------------------------------------------
+
+
+def _find_derived_artifacts(
+    conn: Any,
+    ctx: Context,
+    fact_id: str,
+) -> list[dict[str, Any]]:
+    """Return artifacts in the current workspace that cite the given fact.
+
+    Today the citation signal is a hard fact that references ``fact_id`` in the
+    draft's ``hard_facts_json``. The helper is intentionally narrow so we do not
+    invent references that do not exist in the data model.
+    """
+
+    workspace_id = ctx.require_scoped_workspace()
+    like_pattern = f'%"{fact_id}"%'
+    rows = conn.execute(
+        """
+        SELECT id, task, subject, body_md, hard_facts_json
+        FROM draft
+        WHERE workspace_id = ? AND tenant_id = ?
+          AND (hard_facts_json LIKE ? OR body_md LIKE ?)
+        """,
+        (workspace_id, ctx.require_tenant(), like_pattern, like_pattern),
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def corregir_en_cascada_temporal(
+    ctx: Context,
+    conn: Any,
+    *,
+    fact_id: str,
+    new_state: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Mark a fact as expired/corrected and open HITL drafts for derived artifacts.
+
+    The function never auto-applies corrections. Every affected artifact gets a
+    new ``draft`` with ``requires_confirmation=True``, and an append-only row in
+    ``correction_log`` links the original fact to the proposed correction.
+    """
+
+    enforce_tenant_scoped(ctx)
+    workspace_id = ctx.require_scoped_workspace()
+
+    if new_state not in {"vencido", "corregido"}:
+        raise ValueError(f"Invalid correction state: {new_state}")
+
+    created_drafts: list[str] = []
+    log_entries: list[str] = []
+    now = utc_now()
+
+    with transaction(conn, ctx=ctx):
+        fact = conn.execute(
+            """
+            SELECT id, field_name, field_value, valid_from, valid_until, source_locator
+            FROM kb_fact
+            WHERE id = ? AND workspace_id = ? AND tenant_id = ?
+            """,
+            (fact_id, workspace_id, ctx.require_tenant()),
+        ).fetchone()
+        if fact is None:
+            raise ValueError(f"Fact not found: {fact_id}")
+
+        derived = _find_derived_artifacts(conn, ctx, fact_id)
+
+        for artifact in derived:
+            artifact_id = artifact["id"]
+            correction_draft = insert_draft(
+                ctx,
+                conn,
+                chat_id=None,
+                task="correction_cascade",
+                subject=f"Corrección en cascada: fact {fact_id} → {new_state}",
+                body_md=(
+                    f"El fact **{fact_id}** fue marcado como **{new_state}** "
+                    f"y afecta al artefacto derivado `{artifact_id}`. "
+                    "Revisa antes de aplicar la corrección."
+                ),
+                hard_facts=[
+                    {"field": "origin_fact_id", "value": fact_id, "source_locator": f"fact:{fact_id}"},
+                    {"field": "proposed_state", "value": new_state, "source_locator": f"fact:{fact_id}"},
+                    {"field": "affected_artifact_id", "value": artifact_id, "source_locator": f"draft:{artifact_id}"},
+                    {"field": "reason", "value": reason or "", "source_locator": f"fact:{fact_id}"},
+                ],
+                sources=[],
+                blockers=[],
+                warnings=[],
+                requires_confirmation=True,
+                status="draft",
+                source_version="v2",
+            )
+            created_drafts.append(correction_draft["id"])
+
+            log_id = new_id("corr")
+            conn.execute(
+                """
+                INSERT INTO correction_log (
+                    id, workspace_id, tenant_id, origin_fact_id,
+                    affected_entity_type, affected_entity_id, proposed_state,
+                    reason, draft_id, actor_id, schema_version, source_version, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    log_id,
+                    workspace_id,
+                    ctx.tenant_id,
+                    fact_id,
+                    "draft",
+                    artifact_id,
+                    new_state,
+                    reason,
+                    correction_draft["id"],
+                    ctx.resolved_actor_id(),
+                    SCHEMA_VERSION,
+                    "v2",
+                    now,
+                ),
+            )
+            log_entries.append(log_id)
+
+    return {
+        "fact_id": fact_id,
+        "new_state": new_state,
+        "affected_artifacts": len(derived),
+        "created_draft_ids": created_drafts,
+        "correction_log_ids": log_entries,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Pack materialization and promotion
 # ---------------------------------------------------------------------------
 
@@ -722,6 +961,12 @@ def ensure_skill_factory_rows(
     }
 
 
+PROMOTION_THRESHOLDS = {
+    "runs_total": 100,
+    "acceptance_rate": 0.90,
+}
+
+
 def promote_pack(
     ctx: Context,
     conn: Any,
@@ -791,7 +1036,9 @@ def promote_pack(
         if len(tracks) != len(pack_skill_ids):
             raise ValueError(f"Pack {pack_id} is missing track records")
         for track in tracks:
-            if track["runs_total"] < 100 or (track["acceptance_rate"] or 0.0) < 0.90:
+            if track["runs_total"] < PROMOTION_THRESHOLDS["runs_total"] or (
+                track["acceptance_rate"] or 0.0
+            ) < PROMOTION_THRESHOLDS["acceptance_rate"]:
                 raise ValueError(f"Pack {pack_id} does not meet track-record thresholds")
 
         now = utc_now()
@@ -813,6 +1060,167 @@ def promote_pack(
         )
 
         return {"pack_id": pack_id, "status": "active", "promoted_at": now, "promoted_by": approved_by}
+
+
+def compute_pack_readiness(
+    ctx: Context,
+    conn: Any,
+    *,
+    pack_id: str,
+) -> dict[str, Any]:
+    """Return a readiness snapshot for ``pack_id`` in the scoped workspace.
+
+    The result is read-only and safe to expose in the promotion readiness UI.
+    It never invents data: missing golden cases or track records are reported
+    as blockers.
+
+    Promotion gates are evaluated over the skills already imported into the
+    workspace, matching the behaviour of ``promote_pack`` (which derives the
+    active skill set from existing golden cases / manifests).
+    """
+
+    enforce_tenant_scoped(ctx)
+    workspace_id = ctx.require_scoped_workspace()
+
+    from .db import get_global_skills
+
+    global_skills = get_global_skills(
+        conn, tenant_id="global", active_only=True, pack_id=pack_id
+    )
+    global_skill_ids = [row["skill_id"] for row in global_skills]
+    skill_count = len(global_skill_ids)
+
+    # Imported manifests in the current workspace.
+    imported: dict[str, dict[str, Any]] = {}
+    if global_skill_ids:
+        placeholders = ",".join("?" for _ in global_skill_ids)
+        imported_rows = conn.execute(
+            f"""
+            SELECT * FROM skill_manifest
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *global_skill_ids),
+        ).fetchall()
+        imported = {row["skill_id"]: row_to_dict(row) for row in imported_rows}
+
+    imported_count = len(imported)
+
+    # Effective status per skill: imported manifest wins; otherwise catalog status.
+    statuses: dict[str, str] = {}
+    for row in global_skills:
+        sid = row["skill_id"]
+        if sid in imported:
+            statuses[sid] = imported[sid].get("status") or "shadow"
+        else:
+            manifest = json.loads(row["manifest_json"] or "{}")
+            statuses[sid] = (
+                manifest.get("metadata", {}).get("fbl", {}).get("status") or "shadow"
+            )
+
+    # Skills that participate in the promotion gate are the imported ones.
+    # If nothing is imported yet, we still report global counts but block promotion.
+    gate_skill_ids = list(imported.keys()) if imported else global_skill_ids
+    gate_count = len(gate_skill_ids)
+
+    # Golden cases for the gating skills.
+    total_cases = approved_cases = verified_cases = 0
+    if gate_skill_ids:
+        placeholders = ",".join("?" for _ in gate_skill_ids)
+        total_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+        approved_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders}) AND approved = 1
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+        verified_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+              AND approved = 1 AND verified_by IS NOT NULL AND verified_by != ''
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+
+    # Track records for the gating skills.
+    tracks: list[dict[str, Any]] = []
+    if gate_skill_ids:
+        placeholders = ",".join("?" for _ in gate_skill_ids)
+        track_rows = conn.execute(
+            f"""
+            SELECT * FROM skill_track_record
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchall()
+        tracks = [row_to_dict(row) for row in track_rows]
+    meeting_threshold_count = sum(
+        1
+        for t in tracks
+        if t.get("runs_total", 0) >= PROMOTION_THRESHOLDS["runs_total"]
+        and (t.get("acceptance_rate") or 0.0) >= PROMOTION_THRESHOLDS["acceptance_rate"]
+    )
+
+    pack = conn.execute(
+        """
+        SELECT * FROM pack_status
+        WHERE workspace_id = ? AND tenant_id = ? AND pack_id = ?
+        """,
+        (workspace_id, ctx.tenant_id, pack_id),
+    ).fetchone()
+    pack_row = row_to_dict(pack) if pack else None
+
+    blockers: list[str] = []
+    if pack_row is None:
+        blockers.append("Pack no importado en este workspace")
+    if imported_count == 0:
+        blockers.append("Ningún skill del pack ha sido importado")
+    pending_cases = total_cases - approved_cases
+    if pending_cases > 0:
+        blockers.append(f"Hay {pending_cases} golden cases sin aprobar")
+    unverified_cases = approved_cases - verified_cases
+    if unverified_cases > 0:
+        blockers.append(f"Hay {unverified_cases} golden cases aprobados sin verificar")
+    if len(tracks) < gate_count:
+        blockers.append(f"Faltan {gate_count - len(tracks)} track records")
+    if meeting_threshold_count < gate_count:
+        blockers.append(
+            f"Solo {meeting_threshold_count}/{gate_count} skills importados cumplen el umbral "
+            f"de track record (>= {PROMOTION_THRESHOLDS['runs_total']} runs, "
+            f">= {PROMOTION_THRESHOLDS['acceptance_rate']*100:.0f}% acceptance)"
+        )
+
+    can_promote = pack_row is not None and imported_count > 0 and not blockers
+
+    return {
+        "pack_id": pack_id,
+        "status": (pack_row.get("status") if pack_row else "not_imported"),
+        "skill_count": skill_count,
+        "imported_count": imported_count,
+        "skill_statuses": statuses,
+        "required_golden_cases": (
+            pack_row.get("required_golden_cases", 0) if pack_row else 0
+        ),
+        "golden_cases": {
+            "total": total_cases,
+            "approved": approved_cases,
+            "verified": verified_cases,
+        },
+        "track_records": {
+            "total": len(tracks),
+            "meeting_threshold": meeting_threshold_count,
+        },
+        "thresholds": PROMOTION_THRESHOLDS,
+        "can_promote": can_promote,
+        "blockers": blockers,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -903,9 +1311,13 @@ __all__ = [
     "approve_informal_capture",
     "external_lookup",
     "http_evidence_fetcher",
+    "verificar_vigencia_normativa",
+    "corregir_en_cascada_temporal",
     "update_track_record",
     "attach_evidence",
     "ensure_skill_factory_rows",
     "promote_pack",
     "infer_pack_id",
+    "compute_pack_readiness",
+    "PROMOTION_THRESHOLDS",
 ]

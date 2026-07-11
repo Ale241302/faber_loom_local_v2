@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 41
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1451,6 +1451,77 @@ MIGRATIONS: dict[int, str] = {
     CREATE TRIGGER IF NOT EXISTS trg_payment_reconciliation_tenant_nn_upd BEFORE UPDATE ON payment_reconciliation
         BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
+    38: """
+    -- E3-5: BYO key mode and platform-key surcharge accounting.
+    ALTER TABLE usage_record ADD COLUMN platform_key_used INTEGER NOT NULL DEFAULT 0
+        CHECK (platform_key_used IN (0, 1));
+    ALTER TABLE usage_record ADD COLUMN platform_key_surcharge_usd REAL NOT NULL DEFAULT 0.0
+        CHECK (platform_key_surcharge_usd >= 0);
+    ALTER TABLE usage_record ADD COLUMN byo_mode_at_run TEXT;
+
+    CREATE INDEX IF NOT EXISTS idx_usage_record_surcharge
+        ON usage_record(tenant_id, platform_key_used, platform_key_surcharge_usd);
+    """,
+    39: """
+    -- E3-4: P17 temporal correction cascade append-only log.
+    CREATE TABLE IF NOT EXISTS correction_log (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        origin_fact_id TEXT NOT NULL,
+        affected_entity_type TEXT,
+        affected_entity_id TEXT,
+        proposed_state TEXT NOT NULL CHECK (proposed_state IN ('vencido', 'corregido')),
+        reason TEXT,
+        draft_id TEXT,
+        actor_id TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 5,
+        source_version TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+        FOREIGN KEY (origin_fact_id) REFERENCES kb_fact(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_correction_log_origin
+        ON correction_log(workspace_id, tenant_id, origin_fact_id);
+
+    CREATE TRIGGER IF NOT EXISTS trg_correction_log_tenant_nn BEFORE INSERT ON correction_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_correction_log_tenant_nn_upd BEFORE UPDATE ON correction_log
+        BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    """,
+    40: """
+    -- E3-6: golden_case harvester captures real runs.
+    ALTER TABLE golden_case ADD COLUMN origin TEXT;
+    ALTER TABLE golden_case ADD COLUMN run_id TEXT;
+    ALTER TABLE golden_case ADD COLUMN frozen_at TEXT;
+    CREATE INDEX IF NOT EXISTS idx_golden_case_run_id ON golden_case(workspace_id, tenant_id, run_id);
+    CREATE INDEX IF NOT EXISTS idx_golden_case_origin ON golden_case(workspace_id, tenant_id, origin);
+    """,
+    41: """
+    -- E3-6: manual invoice sequential numbering per tenant and PDF generation.
+    ALTER TABLE manual_invoice ADD COLUMN document_series TEXT;
+    ALTER TABLE manual_invoice ADD COLUMN document_number INTEGER;
+    ALTER TABLE manual_invoice ADD COLUMN pdf_generated_at TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_manual_invoice_tenant_series_number
+        ON manual_invoice(tenant_id, document_series, document_number);
+    CREATE INDEX IF NOT EXISTS idx_manual_invoice_tenant_number
+        ON manual_invoice(tenant_id, document_number);
+
+    CREATE TABLE IF NOT EXISTS tenant_invoice_sequence (
+        tenant_id TEXT NOT NULL,
+        series TEXT NOT NULL,
+        last_number INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, series)
+    );
+    CREATE TRIGGER IF NOT EXISTS trg_tenant_invoice_sequence_tenant_nn
+    BEFORE INSERT ON tenant_invoice_sequence
+    BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    CREATE TRIGGER IF NOT EXISTS trg_tenant_invoice_sequence_tenant_nn_upd
+    BEFORE UPDATE ON tenant_invoice_sequence
+    BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
+    """,
 }
 
 
@@ -1459,6 +1530,41 @@ class HealthRead(BaseModel):
     app: str = "FaberLoom"
     schema_version: int
     database_path: str
+
+
+class TenantHealthLimitRead(BaseModel):
+    max_users: int | None = None
+    max_workspaces: int | None = None
+    max_monthly_budget_usd: float | None = None
+
+
+class TenantHealthFlagsRead(BaseModel):
+    drafts_pending_approval: int
+    invoices_overdue: int
+
+
+class TenantHealthRead(BaseModel):
+    tenant_id: str
+    plan: str
+    limits: TenantHealthLimitRead
+    period_days: int
+    runs_30d: int
+    successful_runs_30d: int
+    failed_runs_30d: int
+    error_rate_pct: float
+    runs_7d: int
+    successful_runs_7d: int
+    failed_runs_7d: int
+    cost_usd_30d: float
+    surcharge_usd_30d: float
+    budget_remaining_usd: float | None = None
+    invoices_open: int
+    invoices_paid: int
+    invoices_overdue: int
+    workspaces: int
+    users: int
+    last_owner_login: str | None = None
+    flags: TenantHealthFlagsRead
 
 
 class WorkspaceCreate(BaseModel):
@@ -1610,6 +1716,30 @@ class RoutineRunRead(BaseModel):
     reason: str | None = None
     assigned_to: str | None = None
     created_at: str
+
+
+class GoldenCaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    tenant_id: str | None = None
+    skill_id: str
+    case_id: str
+    input_json: str
+    expected_output_json: str
+    evidence_required: int
+    approved: int
+    approved_by: str | None = None
+    approved_at: str | None = None
+    verified_by: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    origin: str | None = None
+    run_id: str | None = None
+    frozen_at: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class RoutineCreate(BaseModel):
@@ -1989,7 +2119,31 @@ class UsageRecordRead(BaseModel):
     step_index: int | None = None
     chain_id: str | None = None
     capability: str | None = None
+    platform_key_used: int = 0
+    platform_key_surcharge_usd: float = 0.0
+    byo_mode_at_run: str | None = None
     created_at: str
+
+
+class UsageSummaryRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    provider_slug: str
+    model: str
+    month: str
+    total_cost_usd: float
+    total_surcharge_usd: float
+    total_input_tokens: int
+    total_output_tokens: int
+    row_count: int
+
+
+class UsageSummaryRead(BaseModel):
+    tenant_id: str
+    total_cost_usd: float
+    total_surcharge_usd: float
+    total_rows: int
+    breakdown: list[UsageSummaryRow]
 
 
 class RouterProviderRead(BaseModel):
@@ -2642,6 +2796,7 @@ class InvoiceCreate(BaseModel):
     line_items: list[InvoiceLineItem] = Field(default_factory=list)
     currency: str = Field(default="USD", max_length=10)
     notes: str | None = Field(default=None, max_length=2000)
+    document_series: str | None = Field(default=None, max_length=30)
 
     @field_validator("invoice_id")
     @classmethod
@@ -2680,6 +2835,9 @@ class InvoiceRead(BaseModel):
     paid_amount: float | None = None
     payment_reference: str | None = None
     notes: str | None = None
+    document_series: str | None = None
+    document_number: int | None = None
+    pdf_generated_at: str | None = None
     created_by: str | None = None
     actor_id: str | None = None
     actor_role_at_decision: str | None = None

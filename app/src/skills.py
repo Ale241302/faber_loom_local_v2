@@ -573,6 +573,7 @@ def execute_skill(
             "output_tokens": 0,
             "cost_usd": 0.0,
             "duration_ms": 0,
+            "key_origin": None,
             "evidence": [{"reason": "no_providers_configured"}],
         }
 
@@ -599,6 +600,7 @@ def execute_skill(
             "output_tokens": 0,
             "cost_usd": 0.0,
             "duration_ms": 0,
+            "key_origin": None,
             "evidence": [{"error": str(exc)}],
         }
     except Exception as exc:
@@ -612,6 +614,7 @@ def execute_skill(
             "output_tokens": 0,
             "cost_usd": 0.0,
             "duration_ms": 0,
+            "key_origin": None,
             "evidence": [{"error": str(exc)}],
         }
 
@@ -631,6 +634,7 @@ def execute_skill(
             "output_tokens": result.output_tokens,
             "cost_usd": result.cost_usd,
             "duration_ms": result.duration_ms,
+            "key_origin": result.key_origin,
             "evidence": [{"raw_content": raw_content}],
         }
 
@@ -650,6 +654,7 @@ def execute_skill(
                 "output_tokens": result.output_tokens,
                 "cost_usd": result.cost_usd,
                 "duration_ms": result.duration_ms,
+                "key_origin": result.key_origin,
                 "evidence": [{"raw_content": raw_content, "schema_error": exc.message}],
             }
 
@@ -667,6 +672,7 @@ def execute_skill(
         "output_tokens": result.output_tokens,
         "cost_usd": result.cost_usd,
         "duration_ms": result.duration_ms,
+        "key_origin": result.key_origin,
         "evidence": [
             {
                 "provider_slug": result.provider_slug,

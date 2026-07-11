@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -95,6 +95,7 @@ from .db import (
     set_routine_run_output,
     set_workspace_email_signature,
     set_workspace_smtp_config,
+    summarize_tenant_usage_cost,
     sum_workspace_usage_cost,
     transaction,
     utc_now,
@@ -147,7 +148,7 @@ from .ingest import IngestError, extract_text_from_object, load_image_attachment
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
-from .plans import PlanError
+from .plans import PlanError, get_plan_surcharge_pct
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -203,6 +204,7 @@ from .models import (
     SMTPConfigWrite,
     SMTPTestResponse,
     UsageRecordRead,
+    UsageSummaryRead,
     WorkLoomRead,
     WorkspaceCreate,
     WorkspaceEmailSignatureUpdate,
@@ -234,6 +236,22 @@ from .storage import (
 )
 from .skill_catalog import seed_global_skill_catalog
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
+from .skill_primitives import (
+    PROMOTION_THRESHOLDS,
+    attach_evidence,
+    compute_pack_readiness,
+    external_lookup,
+    infer_pack_id,
+    promote_pack,
+)
+from .connectors.tax_authority import build_tax_fetcher
+from .connectors.whatsapp_inbound import (
+    WhatsAppInboundError,
+    _WhatsAppSecretStore,
+    process_whatsapp_payload,
+    register_whatsapp_number,
+    set_whatsapp_secret,
+)
 from .ambient import (
     ambient_metrics,
     get_ambient_config,
@@ -392,6 +410,7 @@ _SETTING_REGISTRY: dict[str, dict[str, Any]] = {
     "routing.auto_dispatch": {"label": "Despacho automático", "description": "Ejecutar acciones sin confirmación HITL."},
     "routing.max_budget_usd": {"label": "Presupuesto máximo (USD)", "description": "Presupuesto máximo por ejecución automática."},
     "routing.max_steps": {"label": "Pasos máximos", "description": "Número máximo de pasos en modo automático."},
+    "routing.byo_mode": {"label": "Modo BYO keys", "description": "Usar solo claves propias del tenant ('estricto') o permitir fallback a claves de plataforma ('hibrido')."},
     "model.default": {"label": "Modelo por defecto", "description": "Modelo usado cuando no hay otro seleccionado."},
 }
 
@@ -407,6 +426,11 @@ def _coerce_setting_value(key: str, raw: Any) -> Any:
         return int(raw)
     if key == "routing.max_budget_usd":
         return float(raw)
+    if key == "routing.byo_mode":
+        value = str(raw).strip().lower()
+        if value not in {"estricto", "hibrido"}:
+            raise ValueError(f"Invalid BYO mode '{value}': must be 'estricto' or 'hibrido'")
+        return value
     return str(raw)
 
 
@@ -646,6 +670,70 @@ def health() -> HealthRead:
     )
 
 
+@public_router.get("/webhooks/whatsapp")
+def whatsapp_verify(
+    hub_mode: str = Query(..., alias="hub.mode"),
+    hub_challenge: str = Query(..., alias="hub.challenge"),
+    hub_verify_token: str = Query(..., alias="hub.verify_token"),
+) -> Response:
+    """Respond to Meta's webhook subscription verification challenge."""
+
+    if hub_mode != "subscribe":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid hub.mode",
+        )
+
+    match = _WhatsAppSecretStore().find_verify_token(hub_verify_token)
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verify token not registered",
+        )
+
+    return Response(content=hub_challenge, media_type="text/plain")
+
+
+@public_router.post("/webhooks/whatsapp")
+async def whatsapp_webhook(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    """Receive signed WhatsApp Business Cloud API inbound messages."""
+
+    body = await request.body()
+    signature = request.headers.get("x-hub-signature-256")
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        ) from exc
+
+    try:
+        result = process_whatsapp_payload(conn, payload, body, signature)
+    except WhatsAppInboundError as exc:
+        error = str(exc)
+        if error == "whatsapp_inbound_disabled":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WhatsApp inbound not enabled",
+            ) from exc
+        if error in {"Missing signature", "Invalid signature"}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=error,
+        ) from exc
+
+    return result
+
+
 @router.get("/tenant/settings", response_model=SettingsRead)
 def api_get_tenant_settings(
     request: Request,
@@ -670,7 +758,13 @@ def api_put_tenant_settings(
         for key, raw in payload.overrides.items():
             if key not in _SETTING_REGISTRY:
                 continue
-            value = _coerce_setting_value(key, raw)
+            try:
+                value = _coerce_setting_value(key, raw)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=str(exc),
+                ) from exc
             value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
             conn.execute(
                 """
@@ -922,6 +1016,11 @@ def _allowed_models_for_provider(provider_slug: str) -> set[str]:
     return router_cost.MODEL_ALLOWLIST.get(provider_slug, set())
 
 
+def _resolve_byo_mode(conn: sqlite3.Connection, ctx: Context) -> str:
+    """Resolve the active BYO-key mode for the request context."""
+    return resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+
+
 def _validate_manual_choice(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -945,7 +1044,8 @@ def _validate_manual_choice(
         None,
     )
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     provider = router.providers.get(payload.provider_slug)
     provider_available = provider is not None and provider.is_available()
     model_allowed = payload.model in router_cost.MODEL_ALLOWLIST.get(payload.provider_slug, set())
@@ -1262,6 +1362,8 @@ def api_create_completion(
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
+    byo_mode = resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+
     # E2-4: budget por usuario — se verifica antes de gastar (fail-closed).
     # get_routing_policy puede INSERTar la fila default: debe ir en su propia
     # transacción para no dejar la conexión abierta (rompería los commits del
@@ -1329,7 +1431,7 @@ def api_create_completion(
                 detail="Provider/model overrides are not allowed for @mention",
             )
 
-        router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+        router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
         provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
         if router.has_available_provider():
             _validate_completion_choice(
@@ -1521,7 +1623,13 @@ def api_create_completion(
     if payload.provider_slug is not None or payload.model is not None:
         _validate_manual_choice(ctx, conn, payload)
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+
+    if byo_mode == "estricto" and not router.has_available_provider():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Modo BYO estricto: configura una API key propia para al menos un proveedor.",
+        )
 
     if not router.has_available_provider():
         failure_event = _record_completion_failure(
@@ -1541,6 +1649,7 @@ def api_create_completion(
                 "max_tokens": payload.max_tokens,
             },
             response_json={"reason": "no_providers_configured"},
+            key_origin=None,
         )
         _mirror_audit(failure_event)
         raise HTTPException(
@@ -1620,6 +1729,7 @@ def api_create_completion(
                 "max_tokens": payload.max_tokens,
             },
             response_json={"reason": "no_allowed_model"},
+            key_origin=None,
         )
         _mirror_audit(failure_event)
         raise HTTPException(
@@ -1663,6 +1773,7 @@ def api_create_completion(
                         "max_tokens": payload.max_tokens,
                     },
                     response_json={"accumulated_usd": current_spent, "actual_usd": result.cost_usd},
+                    key_origin=result.key_origin,
                 )
                 result = None
             else:
@@ -1733,6 +1844,7 @@ def api_create_completion(
                     "finish_status": "succeeded" if result is not None else "failed",
                 },
                 source_version=router_cost.PRICING_VERSION,
+                key_origin=result.key_origin if result else None,
             )
 
             audit_event = audit_writer.write(
@@ -1884,7 +1996,8 @@ def api_invoke_routine(
             detail="Routine must be approved before invoking",
         )
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
@@ -2007,6 +2120,7 @@ def _record_completion_failure(
     attempts_json: list[dict[str, Any]],
     request_json: dict[str, Any],
     response_json: dict[str, Any],
+    key_origin: str | None = None,
 ) -> AuditEvent:
     """Persist a failed/budget-exceeded usage record and audit event."""
 
@@ -2027,6 +2141,7 @@ def _record_completion_failure(
             request_json=request_json,
             response_json=response_json,
             source_version=router_cost.PRICING_VERSION,
+            key_origin=key_origin,
         )
         event = audit_writer.write(
             ctx,
@@ -2217,6 +2332,48 @@ def _execute_skill_run(
             source_version=routine.get("source_version"),
         )
 
+    # E3-2: fiscal skills fetch evidence from tax authority connectors before
+    # asking the model, and fail closed when the connector cannot produce
+    # evidence (e.g. live mode without credentials or certificate).
+    skill_id = routine.get("name", "")
+    tax_fetcher = build_tax_fetcher(ctx, conn, skill_id)
+    if tax_fetcher is not None:
+        lookup = external_lookup(
+            ctx,
+            conn,
+            skill_id=skill_id,
+            query=json.dumps(input_json, ensure_ascii=False),
+            required_sources=["tax"],
+            fetcher=tax_fetcher,
+        )
+        if lookup["status"] == "succeeded" and lookup["evidence"]:
+            with transaction(conn, ctx=ctx):
+                attach_evidence(
+                    ctx,
+                    conn,
+                    entity_type="routine_run",
+                    entity_id=run["id"],
+                    evidence_items=lookup["evidence"],
+                )
+        else:
+            with transaction(conn, ctx=ctx):
+                updated = set_routine_run_output(
+                    ctx,
+                    conn,
+                    run_id=run["id"],
+                    output_json={"error": lookup.get("error", "tax_lookup_failed")},
+                    evidence_json=[],
+                    status="failed",
+                    edit_pct=None,
+                )
+            if updated is None:
+                raise RuntimeError("Run disappeared during execution")
+            return updated, {
+                "status": "failed",
+                "error": lookup.get("error", "tax_lookup_failed"),
+                "output": {"error": lookup.get("error", "tax_lookup_failed")},
+            }
+
     result = execute_skill(
         skill,
         input_json,
@@ -2276,6 +2433,7 @@ def _persist_skill_usage(
         request_json=request_json,
         response_json={"run_id": run_id, "finish_status": status},
         source_version=source_version or router_cost.PRICING_VERSION,
+        key_origin=result.get("key_origin"),
     )
     return audit_writer.write(
         ctx,
@@ -2324,9 +2482,10 @@ def api_list_provider_configs(
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
+    byo_mode = _resolve_byo_mode(conn, ctx)
     store = ProviderConfigStore()
     stored = store.all(ctx.user_id, tenant_id=ctx.tenant_id)
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     providers: list[ProviderConfigRead] = []
 
     for slug in sorted(_VISIBLE_PROVIDER_SLUGS):
@@ -2429,7 +2588,8 @@ def api_update_provider_config(
             },
         )
 
-    engine_router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    engine_router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     provider = engine_router.providers.get(provider_slug)
     return ProviderConfigRead(
         provider_slug=provider_slug,
@@ -2491,7 +2651,8 @@ def api_test_provider(
             detail=f"Unknown provider '{provider_slug}'",
         )
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     provider = router.providers.get(provider_slug)
     if provider is None:
         return ProviderTestResult(ok=False, provider_slug=provider_slug, error="provider not registered")
@@ -2596,7 +2757,8 @@ def api_router_status(
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     spent = sum_workspace_usage_cost(ctx, conn)
     visible_providers = [provider for provider in router.all_providers() if provider.provider_slug in _VISIBLE_PROVIDER_SLUGS]
     visible_model_allowlist = {k: sorted(v) for k, v in router_cost.MODEL_ALLOWLIST.items() if k in _VISIBLE_PROVIDER_SLUGS}
@@ -3307,7 +3469,8 @@ def api_generate_draft(
     if payload.chat_id is not None and get_chat(ctx, conn, payload.chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     if not router.has_available_provider():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -3378,6 +3541,7 @@ def api_generate_draft(
             },
             response_json={"draft_id": draft["id"], "blockers": draft["blockers_json"]},
             source_version=router_cost.PRICING_VERSION,
+            key_origin=result.get("key_origin"),
         )
         audit_event = audit_writer.write(
             ctx,
@@ -3804,7 +3968,8 @@ def api_draft_mail_reply(
     if mail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mail message not found")
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     if not router.has_available_provider():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -4325,12 +4490,17 @@ def api_list_workspace_members(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if not ctx.tenant_id:
         return {"members": []}
-    with transaction(conn, ctx=ctx):
-        rows = conn.execute(
+    fnd_conn = _open_foundation_db()
+    if fnd_conn is None:
+        return {"members": []}
+    try:
+        rows = fnd_conn.execute(
             "SELECT id, email, display_name FROM fnd_users "
             "WHERE tenant_id = ? AND status = 'active' ORDER BY email",
             (ctx.tenant_id,),
         ).fetchall()
+    finally:
+        fnd_conn.close()
     return {
         "members": [
             {"id": r["id"], "email": r["email"], "display_name": r["display_name"]}
@@ -4942,7 +5112,8 @@ def api_run_routine(
             detail="Provider/model overrides are not allowed for routine runs",
         )
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = _resolve_byo_mode(conn, ctx)
+    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
     provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
@@ -5088,6 +5259,132 @@ def api_import_faberloom_routines(
             )
 
     return [RoutineRead(**row) for row in imported]
+
+
+# -----------------------------------------------------------------------------
+# E3-4: Pack promotion readiness
+# -----------------------------------------------------------------------------
+
+
+class PackReadinessItem(BaseModel):
+    pack_id: str
+    status: str
+    skill_count: int
+    imported_count: int
+    required_golden_cases: int
+    golden_cases_total: int
+    golden_cases_approved: int
+    golden_cases_verified: int
+    track_records_total: int
+    track_records_meeting_threshold: int
+    thresholds: dict[str, Any]
+    can_promote: bool
+    blockers: list[str]
+
+
+class PackReadinessResponse(BaseModel):
+    workspace_id: str
+    thresholds: dict[str, Any]
+    packs: list[PackReadinessItem]
+
+
+class PromotePackRequest(BaseModel):
+    confirmation_token: str
+
+
+class PromotePackResponse(BaseModel):
+    pack_id: str
+    status: str
+    promoted_at: str
+    promoted_by: str
+
+
+def _pack_confirmation_token(pack_id: str) -> str:
+    return hashlib.sha256(pack_id.encode("utf-8")).hexdigest()[:16]
+
+
+@router.get("/workspaces/{workspace_id}/packs/readiness", response_model=PackReadinessResponse)
+def api_get_pack_readiness(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PackReadinessResponse:
+    """Return promotion readiness for every pack in the workspace catalog."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    from .db import get_global_skills
+
+    global_skills = get_global_skills(conn, tenant_id="global", active_only=True)
+    pack_ids = sorted({row["pack_id"] for row in global_skills})
+
+    packs: list[PackReadinessItem] = []
+    for pack_id in pack_ids:
+        snapshot = compute_pack_readiness(ctx, conn, pack_id=pack_id)
+        packs.append(
+            PackReadinessItem(
+                pack_id=snapshot["pack_id"],
+                status=snapshot["status"],
+                skill_count=snapshot["skill_count"],
+                imported_count=snapshot["imported_count"],
+                required_golden_cases=snapshot["required_golden_cases"],
+                golden_cases_total=snapshot["golden_cases"]["total"],
+                golden_cases_approved=snapshot["golden_cases"]["approved"],
+                golden_cases_verified=snapshot["golden_cases"]["verified"],
+                track_records_total=snapshot["track_records"]["total"],
+                track_records_meeting_threshold=snapshot["track_records"]["meeting_threshold"],
+                thresholds=snapshot["thresholds"],
+                can_promote=snapshot["can_promote"],
+                blockers=snapshot["blockers"],
+            )
+        )
+
+    return PackReadinessResponse(
+        workspace_id=workspace_id,
+        thresholds=PROMOTION_THRESHOLDS,
+        packs=packs,
+    )
+
+
+@router.post("/workspaces/{workspace_id}/packs/{pack_id}/promote", response_model=PromotePackResponse)
+def api_promote_pack(
+    workspace_id: str,
+    pack_id: str,
+    request: Request,
+    payload: PromotePackRequest,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotePackResponse:
+    """Promote a pack to ACTIVE after all human gates are met."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    if ctx.actor_role_at_decision not in ("owner", "admin", "curador"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner/admin/curador role required to promote a pack",
+        )
+
+    expected = _pack_confirmation_token(pack_id)
+    if payload.confirmation_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Action requires explicit confirmation; provide confirmation_token={expected}",
+        )
+
+    user = getattr(request.state, "user", {}) or {}
+    user_id = user.get("user_id") or user.get("sub") or "local"
+    try:
+        result = promote_pack(ctx, conn, pack_id=pack_id, approved_by=user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    return PromotePackResponse(**result)
 
 
 # -----------------------------------------------------------------------------

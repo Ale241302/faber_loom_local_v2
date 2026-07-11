@@ -25,3 +25,5 @@ pytesseract>=0.3.13
 Pillow>=10.0
 # Local audio/video transcription (needs the ffmpeg runtime, installed in the Dockerfile).
 faster-whisper>=1.1.0
+# PDF generation for manual invoices (pure-Python, no GUI toolkits).
+fpdf2>=2.8.7

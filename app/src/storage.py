@@ -144,6 +144,13 @@ class _MemoryStoreBackend:
     def presigned_get_url(self, bucket: str, key: str, expires: int = 3600) -> str:
         return f"memory://{bucket}/{key}?expires={expires}"
 
+    def copy_object(self, src_bucket: str, src_key: str, dst_bucket: str, dst_key: str) -> None:
+        data = self.get_object(src_bucket, src_key)
+        self.put_object(dst_bucket, dst_key, data, len(data), "application/octet-stream")
+
+    def list_object_keys(self, bucket: str, prefix: str = "") -> list[str]:
+        return [key for (b, key), _ in self._objects.items() if b == bucket and key.startswith(prefix)]
+
 
 class _MinioStoreBackend:
     """MinIO-backed object store."""
@@ -245,6 +252,14 @@ class _MinioStoreBackend:
             bucket, key, expires=timedelta(seconds=expires)
         )
 
+    def copy_object(self, src_bucket: str, src_key: str, dst_bucket: str, dst_key: str) -> None:
+        self._ensure_bucket(dst_bucket)
+        self._client.copy_object(dst_bucket, dst_key, f"{src_bucket}/{src_key}")
+
+    def list_object_keys(self, bucket: str, prefix: str = "") -> list[str]:
+        objects = self._client.list_objects(bucket, prefix=prefix, recursive=True)
+        return [obj.object_name for obj in objects if obj.object_name]
+
 
 class ObjectStore:
     """High-level object store with workspace-scoped keys."""
@@ -306,6 +321,12 @@ class ObjectStore:
         self, bucket: str, key: str, expires: int = 3600
     ) -> str:
         return self._backend.presigned_get_url(bucket, key, expires=expires)
+
+    def copy_object(self, src_bucket: str, src_key: str, dst_bucket: str, dst_key: str) -> None:
+        self._backend.copy_object(src_bucket, src_key, dst_bucket, dst_key)
+
+    def list_object_keys(self, bucket: str, prefix: str = "") -> list[str]:
+        return self._backend.list_object_keys(bucket, prefix)
 
     def workspace_prefix(self, workspace_id: str) -> str:
         return workspace_object_prefix(workspace_id)

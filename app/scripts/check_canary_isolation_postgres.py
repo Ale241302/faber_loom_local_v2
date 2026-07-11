@@ -281,6 +281,7 @@ WORKSPACE_TABLES: list[str] = [
     "email_account",
     "audit_log",
     "editorial_history",
+    "correction_log",
     "workspace_smtp_config",
     "workspace_routing_policy",
     "workspace_model_catalog",
@@ -351,6 +352,20 @@ def _seed_isolation_data(conn, schema: str = "public") -> None:
                 VALUES ('kf-{tenant}', %s, %s, 'ks-{tenant}', 'entity', 'field', 'value-{tenant}', %s)
                 """,
                 (ws, tenant, now),
+            )
+            cursor.execute(
+                f"""
+                INSERT INTO {schema_quoted}.correction_log (
+                    id, workspace_id, tenant_id, origin_fact_id, affected_entity_type,
+                    affected_entity_id, proposed_state, reason, draft_id, actor_id,
+                    schema_version, source_version, created_at
+                )
+                VALUES (
+                    'cl-{tenant}', %s, %s, 'kf-{tenant}', 'draft', 'draft-{tenant}',
+                    'vencido', 'canary seed', NULL, 'actor', %s, 'v2', %s
+                )
+                """,
+                (ws, tenant, 39, now),
             )
 
         # chat / message

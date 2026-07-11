@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import json
+
 from .db_adapter import transaction
 from .context import Context
+from .foundation.core import connect as connect_foundation
 
 
 class ConfigCascadeError(Exception):
@@ -26,7 +29,9 @@ DEFAULTS: dict[str, Any] = {
     "routing.auto_dispatch": False,
     "routing.max_budget_usd": 2.0,
     "routing.max_steps": 4,
+    "routing.byo_mode": "hibrido",
     "model.default": "openai/gpt-4o-mini",
+    "whatsapp_inbound.enabled": False,
 }
 
 
@@ -56,9 +61,9 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
         if row is None:
             return None
         mapping = {
-            "routing.auto_dispatch": row["auto_dispatch"],
-            "routing.max_budget_usd": row["max_budget_usd"],
-            "routing.max_steps": row["max_steps"],
+            "routing.auto_dispatch": row["auto_mode_enabled"],
+            "routing.max_budget_usd": row["budget_cap_usd"],
+            "routing.max_steps": row["max_auto_steps"],
         }
         return mapping.get(key)
 
@@ -96,20 +101,26 @@ def _tenant_config(conn: Any, ctx: Context, key: str) -> Any:
 
 
 def _user_config(conn: Any, ctx: Context, key: str) -> Any:
-    """Look up a user-scoped setting from the Foundation profile if available."""
+    """Look up a user-scoped setting from the Foundation profile if available.
+
+    User preferences live in the Foundation database (``fnd_users``), never in
+    the workspace/main database. Querying the wrong connection on Postgres
+    aborts the current transaction, so we always open the Foundation connection
+    here.
+    """
 
     if not ctx.user_id:
         return None
     try:
-        row = conn.execute(
-            "SELECT preferences_json FROM fnd_users WHERE id = ?",
-            (ctx.user_id,),
-        ).fetchone()
-        if row is not None and row.get("preferences_json"):
-            import json
-
-            prefs = json.loads(row["preferences_json"])
-            return prefs.get(key)
+        fnd_conn = connect_foundation()
+        with fnd_conn:
+            row = fnd_conn.execute(
+                "SELECT preferences_json FROM fnd_users WHERE id = ?",
+                (ctx.user_id,),
+            ).fetchone()
+            if row is not None and row.get("preferences_json"):
+                prefs = json.loads(row["preferences_json"])
+                return prefs.get(key)
     except Exception:
         return None
     return None

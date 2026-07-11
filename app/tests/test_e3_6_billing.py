@@ -308,3 +308,91 @@ def test_non_admin_cannot_create_invoice(client: TestClient) -> None:
         },
     )
     assert resp.status_code == 403, resp.text
+
+
+# ---------------------------------------------------------------------------
+# E3-6: sequential invoice numbering and PDF generation
+# ---------------------------------------------------------------------------
+
+import io
+
+import pdfplumber
+
+
+def test_invoice_sequential_numbering(client: TestClient) -> None:
+    tenant_id = _bootstrap_tenant(client, "owner@acme.test", "owner", "acme-numbering")
+    _login(client, "owner@acme.test", "owner-pass")
+
+    first = _create_invoice(client, tenant_id, "FAC-NUM-001", 100.0)
+    assert first["document_series"] == "BETA"
+    assert first["document_number"] == 1
+
+    second = _create_invoice(client, tenant_id, "FAC-NUM-002", 200.0)
+    assert second["document_series"] == "BETA"
+    assert second["document_number"] == 2
+
+    # Custom series restarts numbering in that series.
+    resp = client.post(
+        f"/api/tenants/{tenant_id}/invoices",
+        json={
+            "invoice_id": "FAC-NUM-CUSTOM",
+            "customer_name": "Cliente S.A.",
+            "issue_date": "2026-07-01",
+            "line_items": [
+                {"description": "Servicio", "quantity": 1, "unit_price": 50.0, "tax_pct": 0}
+            ],
+            "document_series": "alfa",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    custom = resp.json()
+    assert custom["document_series"] == "ALFA"
+    assert custom["document_number"] == 1
+
+
+def test_invoice_pdf_generation(client: TestClient) -> None:
+    tenant_id = _bootstrap_tenant(client, "owner@acme.test", "owner", "acme-pdf")
+    _login(client, "owner@acme.test", "owner-pass")
+
+    invoice = _create_invoice(client, tenant_id, "FAC-PDF-001", 123.45)
+    assert invoice["pdf_generated_at"] is None
+
+    resp = client.get(f"/api/tenants/{tenant_id}/invoices/FAC-PDF-001/pdf")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/pdf"
+    pdf_bytes = resp.content
+    assert pdf_bytes.startswith(b"%PDF")
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+
+    assert "DOCUMENTO NO FISCAL" in text
+    assert "BETA" in text
+    assert "Serie BETA" in text
+    assert "123.45" in text
+    assert invoice["document_number"] is not None
+
+    # PDF generation timestamp is recorded on first download.
+    resp = client.get(f"/api/tenants/{tenant_id}/invoices/FAC-PDF-001")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["pdf_generated_at"] is not None
+
+
+def test_invoice_pdf_not_found(client: TestClient) -> None:
+    tenant_id = _bootstrap_tenant(client, "owner@acme.test", "owner", "acme-pdf-missing")
+    _login(client, "owner@acme.test", "owner-pass")
+
+    resp = client.get(f"/api/tenants/{tenant_id}/invoices/NONEXISTENT/pdf")
+    assert resp.status_code == 404, resp.text
+
+
+def test_cross_tenant_pdf_isolation(client: TestClient) -> None:
+    tenant_a = _bootstrap_tenant(client, "owner@acme.test", "owner", "acme-pdf-a")
+    tenant_b = _bootstrap_tenant(client, "owner@other.test", "owner", "acme-pdf-b")
+
+    _login(client, "owner@acme.test", "owner-pass")
+    _create_invoice(client, tenant_a, "PRIV-PDF-001", 100.0)
+
+    _login(client, "owner@other.test", "owner-pass")
+    resp = client.get(f"/api/tenants/{tenant_b}/invoices/PRIV-PDF-001/pdf")
+    assert resp.status_code == 404, resp.text

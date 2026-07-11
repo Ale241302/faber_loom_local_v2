@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .context import Context, enforce_tenant_scoped
+from .context import SYSTEM_WORKSPACE_ID, Context, enforce_tenant_scoped
 from .db_adapter import (
     connect as adapter_connect,
     db_session as adapter_db_session,
@@ -1247,6 +1247,9 @@ USAGE_RECORD_COLUMNS = """
     step_index,
     chain_id,
     capability,
+    platform_key_used,
+    platform_key_surcharge_usd,
+    byo_mode_at_run,
     created_at
 """
 
@@ -1617,10 +1620,22 @@ def insert_usage_record(
     step_index: int | None = None,
     chain_id: str | None = None,
     capability: str | None = None,
+    key_origin: str | None = None,
 ) -> dict[str, Any]:
     with transaction(conn, ctx=ctx):
         workspace_id = ctx.require_scoped_workspace()
         enforce_budget(ctx, conn, cost_usd)
+
+        from .config_cascade import resolve as cascade_resolve
+        from .context import DEFAULT_TENANT_ID
+        from .plans import get_plan_surcharge_pct
+
+        byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+        platform_key_used = 1 if key_origin == "platform" else 0
+        platform_key_surcharge_usd = 0.0
+        if platform_key_used and ctx.tenant_id != DEFAULT_TENANT_ID and byo_mode == "hibrido":
+            platform_key_surcharge_usd = cost_usd * get_plan_surcharge_pct(ctx.tenant_id)
+
         record_id = new_id("use")
         now = utc_now()
 
@@ -1654,9 +1669,12 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                platform_key_used,
+                platform_key_surcharge_usd,
+                byo_mode_at_run,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -1686,6 +1704,9 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                platform_key_used,
+                platform_key_surcharge_usd,
+                byo_mode,
                 now,
             ),
         )
@@ -1746,6 +1767,57 @@ def sum_user_usage_cost(
             params.append(since)
         row = conn.execute(sql, params).fetchone()
         return float(row["total"] or 0.0)
+
+
+def summarize_tenant_usage_cost(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    since: str | None = None,
+) -> dict[str, Any]:
+    """Return aggregate and per-provider/model/month breakdown for a tenant.
+
+    Breakdown rows are scoped to the tenant across all workspaces. Aggregates
+    include only succeeded records; failed/budget_exceeded rows are excluded
+    from cost totals but counted in ``total_rows``.
+    """
+
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    with transaction(conn, ctx=ctx):
+        params: list[Any] = [tenant_id]
+        total_sql = """
+            SELECT COALESCE(SUM(cost_usd), 0.0) AS total_cost,
+                   COALESCE(SUM(platform_key_surcharge_usd), 0.0) AS total_surcharge,
+                   COUNT(*) AS total_rows
+            FROM usage_record
+            WHERE tenant_id = ? AND status = 'succeeded'
+        """
+        breakdown_sql = """
+            SELECT provider_slug,
+                   model,
+                   substr(created_at, 1, 7) AS month,
+                   COALESCE(SUM(cost_usd), 0.0) AS total_cost_usd,
+                   COALESCE(SUM(platform_key_surcharge_usd), 0.0) AS total_surcharge_usd,
+                   COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+                   COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+                   COUNT(*) AS row_count
+            FROM usage_record
+            WHERE tenant_id = ? AND status = 'succeeded'
+        """
+        if since:
+            total_sql += " AND created_at >= ?"
+            breakdown_sql += " AND created_at >= ?"
+            params.append(since)
+        breakdown_sql += " GROUP BY provider_slug, model, month ORDER BY month DESC, provider_slug ASC, model ASC"
+
+        total_row = conn.execute(total_sql, params).fetchone()
+        breakdown_rows = conn.execute(breakdown_sql, params).fetchall()
+
+    return {
+        "total_cost_usd": float(total_row["total_cost"] or 0.0),
+        "total_surcharge_usd": float(total_row["total_surcharge"] or 0.0),
+        "total_rows": int(total_row["total_rows"] or 0),
+        "breakdown": [row_to_dict(row) for row in breakdown_rows],
+    }
 
 
 def sum_workspace_usage_cost(
@@ -4189,6 +4261,9 @@ MANUAL_INVOICE_COLUMNS = """
     paid_amount,
     payment_reference,
     notes,
+    document_series,
+    document_number,
+    pdf_generated_at,
     created_by,
     actor_id,
     actor_role_at_decision,
@@ -4290,6 +4365,58 @@ def get_manual_invoice(
     return _manual_invoice_row_to_dict(row) if row else None
 
 
+def _resolve_invoice_series(ctx: Context, conn: sqlite3.Connection, requested: str | None) -> str:
+    """Return the document series for a new invoice, defaulting to tenant setting."""
+
+    if requested:
+        return requested.strip().upper() or "BETA"
+    row = conn.execute(
+        "SELECT value_json FROM tenant_settings WHERE tenant_id = ? AND key = ?",
+        (ctx.require_tenant(), "billing.invoice_series"),
+    ).fetchone()
+    if row is not None:
+        try:
+            value = json.loads(row["value_json"] or '"BETA"')
+            if isinstance(value, str) and value.strip():
+                return value.strip().upper()
+        except Exception:
+            pass
+    return "BETA"
+
+
+def _next_invoice_document_number(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    series: str,
+) -> int:
+    """Allocate the next sequential document number for a tenant series."""
+
+    now = utc_now()
+    row = conn.execute(
+        "SELECT last_number FROM tenant_invoice_sequence WHERE tenant_id = ? AND series = ?",
+        (tenant_id, series),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            """
+            INSERT INTO tenant_invoice_sequence (tenant_id, series, last_number, updated_at)
+            VALUES (?, ?, 1, ?)
+            """,
+            (tenant_id, series, now),
+        )
+        return 1
+    next_number = int(row["last_number"]) + 1
+    conn.execute(
+        """
+        UPDATE tenant_invoice_sequence
+        SET last_number = ?, updated_at = ?
+        WHERE tenant_id = ? AND series = ?
+        """,
+        (next_number, now, tenant_id, series),
+    )
+    return next_number
+
+
 def create_manual_invoice(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -4303,8 +4430,14 @@ def create_manual_invoice(
     line_items: list[dict[str, Any]] | None = None,
     currency: str = "USD",
     notes: str | None = None,
+    document_series: str | None = None,
 ) -> dict[str, Any]:
-    """Create a manual invoice for the current tenant."""
+    """Create a manual invoice for the current tenant.
+
+    A sequential ``document_number`` is allocated inside the tenant's series
+    (default ``BETA``). The client-supplied ``invoice_id`` remains the stable
+    API slug; the generated document number is what appears on the PDF.
+    """
 
     ctx.require_tenant()
     line_items = line_items or []
@@ -4317,16 +4450,19 @@ def create_manual_invoice(
         ).fetchone()
         if existing is not None:
             raise ValueError(f"Invoice '{invoice_id}' already exists in this tenant")
+        series = _resolve_invoice_series(ctx, conn, document_series)
+        document_number = _next_invoice_document_number(conn, ctx.require_tenant(), series)
         conn.execute(
             f"""
             INSERT INTO manual_invoice (
                 tenant_id, invoice_id, customer_name, customer_tax_id, customer_email,
                 issue_date, due_date, line_items_json, subtotal, tax_total, total,
                 currency, status, paid_at, paid_amount, payment_reference, notes,
+                document_series, document_number, pdf_generated_at,
                 created_by, actor_id, actor_role_at_decision, routine_version, skill_version,
                 schema_version, source_version, approved_by, created_at, updated_at
             )
-            VALUES ({','.join('?' for _ in range(27))})
+            VALUES ({','.join('?' for _ in range(30))})
             """,
             (
                 ctx.require_tenant(),
@@ -4346,6 +4482,9 @@ def create_manual_invoice(
                 None,
                 None,
                 notes,
+                series,
+                document_number,
+                None,
                 ctx.resolved_actor_id(),
                 ctx.resolved_actor_id(),
                 ctx.actor_role_at_decision,
@@ -4401,6 +4540,29 @@ def update_manual_invoice(
         conn.execute(
             f"UPDATE manual_invoice SET {cols} WHERE tenant_id = ? AND invoice_id = ?",
             (*updates.values(), ctx.require_tenant(), invoice_id),
+        )
+        return get_manual_invoice(ctx, conn, invoice_id)
+
+
+def mark_invoice_pdf_generated(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    invoice_id: str,
+) -> dict[str, Any] | None:
+    """Record the first PDF generation timestamp for an invoice."""
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        existing = get_manual_invoice(ctx, conn, invoice_id)
+        if existing is None:
+            return None
+        conn.execute(
+            """
+            UPDATE manual_invoice
+            SET pdf_generated_at = ?
+            WHERE tenant_id = ? AND invoice_id = ?
+            """,
+            (utc_now(), ctx.require_tenant(), invoice_id),
         )
         return get_manual_invoice(ctx, conn, invoice_id)
 

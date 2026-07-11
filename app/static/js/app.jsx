@@ -21,6 +21,8 @@ const NAV = {
     { id: "audit", label: "Auditoría", sub: "JSONL hoy", badge: "SL0", icon: "audit" },
     { id: "tenant-settings", label: "Config. en cascada", sub: "Tenant / workspace / user", badge: "E3-2", icon: "settings" },
     { id: "tenant-admin", label: "Admin de plataforma", sub: "Aprobar / suspender tenants", badge: "E3-2", icon: "shield" },
+    { id: "promotion", label: "Promoción de packs", sub: "Readiness E3-4", badge: "E3-4", icon: "spark" },
+    { id: "health", label: "Salud", sub: "Health dashboard", badge: "E3", icon: "activity" },
   ],
 };
 
@@ -305,7 +307,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     gold: "gold-acc",
     skills: "caps-acc", agents: "caps-acc",
     routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc", billing: "tenant-acc",
-    foundation: "tenant-acc",
+    health: "tenant-acc", foundation: "tenant-acc",
   }[nav];
 
   return <aside className={cx("rail", hidden && "hidden")}>
@@ -368,8 +370,10 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
             <RailItem label="Facturación" icon="credit-card" active={nav === "billing"} onClick={() => setNav("billing")} />
+            <RailItem label="Salud" icon="activity" active={nav === "health"} onClick={() => setNav("health")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
             <RailItem label="Config. en cascada" icon="settings" active={nav === "tenant-settings"} onClick={() => setNav("tenant-settings")} />
+            <RailItem label="Promoción de packs" icon="spark" active={nav === "promotion"} onClick={() => setNav("promotion")} />
             {isPlatformAdmin(user) && <RailItem label="Admin de plataforma" icon="shield" active={nav === "tenant-admin"} onClick={() => setNav("tenant-admin")} />}
             <RailItem label="Tenant" icon="database" active={nav === "foundation"} onClick={() => { setNav("foundation"); setFoundationView("m16-tenant"); }} />
           </> }
@@ -3401,11 +3405,13 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
      : nav === "billing" ? <BillingView user={user}/>
+     : nav === "health" && window.HealthDashboard ? <window.HealthDashboard user={user}/>
      : nav === "stackloom" ? <PlaceholderView nav="stackloom"/>
      : nav === "hitl-signals" ? <PlaceholderView nav="hitl-signals"/>
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
      : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
-     : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace}/>
+     : nav === "promotion" && window.PromotionReadinessPanel ? <window.PromotionReadinessPanel activeWorkspace={activeWorkspace} user={user}/>
+     : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
 }

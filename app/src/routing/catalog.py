@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from ..context import Context
+from ..config_cascade import resolve as cascade_resolve
 from ..db import (
     create_model_catalog_entry,
     get_routing_policy,
@@ -105,7 +106,12 @@ def seed_workspace_catalog(
     # Ensure the policy row exists first.
     get_routing_policy(ctx, conn, workspace_id)
 
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id)
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    router = build_router(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        byo_mode=byo_mode,
+    )
     now = utc_now()
 
     with transaction(conn, ctx=ctx):

@@ -22,6 +22,7 @@ from .db import (
     get_routing_preset,
     list_routing_presets,
     resolve_routing_preset,
+    summarize_tenant_usage_cost,
     transaction,
     update_routing_preset,
 )
@@ -30,6 +31,7 @@ from .models import (
     RoutingPresetRead,
     RoutingPresetResolveRead,
     RoutingPresetUpdate,
+    UsageSummaryRead,
 )
 
 presets_router = APIRouter(prefix="/tenants", tags=["routing-presets"])
@@ -216,6 +218,47 @@ def delete_preset(
             payload={"preset_id": preset_id},
             system_event=True,
         )
+
+
+@presets_router.get("/{tenant_id}/usage/summary")
+def tenant_usage_summary(
+    tenant_id: str,
+    request: Request,
+    conn: Any = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> UsageSummaryRead:
+    """Return tenant usage totals and, for tenant admins, a detailed breakdown."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = _tenant_context(request, tenant_id)
+    role = (user.get("role") or "").lower()
+    roles = {r.lower() for r in (user.get("roles") or [])}
+    is_platform_admin = role == "platform_admin" or "platform_admin" in roles
+
+    summary = summarize_tenant_usage_cost(conn, ctx.tenant_id)
+    breakdown = summary["breakdown"]
+    if is_platform_admin:
+        breakdown = []
+
+    return UsageSummaryRead(
+        tenant_id=ctx.tenant_id,
+        total_cost_usd=summary["total_cost_usd"],
+        total_surcharge_usd=summary["total_surcharge_usd"],
+        total_rows=summary["total_rows"],
+        breakdown=[
+            {
+                "provider_slug": row["provider_slug"],
+                "model": row["model"],
+                "month": row["month"],
+                "total_cost_usd": row["total_cost_usd"],
+                "total_surcharge_usd": row["total_surcharge_usd"],
+                "total_input_tokens": row["total_input_tokens"],
+                "total_output_tokens": row["total_output_tokens"],
+                "row_count": row["row_count"],
+            }
+            for row in breakdown
+        ],
+    )
 
 
 @presets_router.get("/{tenant_id}/presets/{preset_id}/resolve")
