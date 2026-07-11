@@ -13,6 +13,8 @@ from .security.injection import HIDDEN_INSTRUCTION_RE
 from .router.engine import BudgetExceeded, NoAllowedModel, Router
 from .router.models import CompletionRequest
 from .router.providers import ProviderError
+from .context import Context
+from .living_agent.memory import build_memory_context
 
 
 def _detect_dangerous(skill_md: str) -> list[str]:
@@ -519,10 +521,13 @@ def _strip_code_fences(text: str) -> str:
 def _build_skill_messages(
     skill: dict[str, Any],
     input_json: dict[str, Any],
+    memory_context: str = "",
 ) -> list[dict[str, str]]:
     """Build provider-compatible messages from the skill contract."""
 
     system_parts: list[str] = []
+    if memory_context:
+        system_parts.append(memory_context)
     if skill.get("persona"):
         system_parts.append(skill["persona"])
     system_parts.append(
@@ -551,6 +556,8 @@ def execute_skill(
     provider_slug: str | None = None,
     model: str | None = None,
     spent_usd: float = 0.0,
+    ctx: Context | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
     """Run a compiled skill through the provider router.
 
@@ -577,7 +584,12 @@ def execute_skill(
             "evidence": [{"reason": "no_providers_configured"}],
         }
 
-    messages = _build_skill_messages(skill, input_json)
+    memory_context = ""
+    if ctx is not None and conn is not None and ctx.user_id:
+        query = input_json.get("user_request") or ""
+        memory_context = build_memory_context(ctx, conn, query=query)
+
+    messages = _build_skill_messages(skill, input_json, memory_context=memory_context)
     request = CompletionRequest(
         messages=messages,
         provider_slug=provider_slug,

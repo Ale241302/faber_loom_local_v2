@@ -32,6 +32,7 @@ from ..router.registry import build_router
 from .catalog import has_catalog_capability, resolve_model_for_capability
 from .dispatcher_base import DispatchPlan, DispatchStep, TaskDispatcher, step_id_for_index
 from .pdf_images import extract_pdf_text_and_images
+from ..living_agent.memory import build_memory_context
 
 
 logger = logging.getLogger(__name__)
@@ -900,8 +901,15 @@ def _execute_step(
 
     spent = sum_workspace_usage_cost(ctx, conn)
     budget_cap = policy.get("budget_cap_usd", 5.0)
+    messages: list[dict[str, Any]] = []
+    if ctx.user_id:
+        memory_context = build_memory_context(ctx, conn, query=step_input)
+        if memory_context:
+            messages.append({"role": "system", "content": memory_context})
+    messages.append({"role": "user", "content": step_content})
+
     request = CompletionRequest(
-        messages=[{"role": "user", "content": step_content}],
+        messages=messages,
         model=model,
         provider_slug=provider_slug,
         temperature=0.7,

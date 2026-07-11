@@ -224,7 +224,7 @@ function BudgetChip({ budget, onClick }) {
   );
 }
 
-function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggleRight, onOpenRouting }) {
+function Topbar({ workspaceId, onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggleRight, onOpenRouting }) {
   return <header className="topbar">
     <button type="button" className="ceja" aria-label="Panel izquierdo" onClick={onToggleLeft}><Icon name="panel-l" size={18}/></button>
     <div className="brand" aria-label="FaberLoom">
@@ -233,6 +233,7 @@ function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggle
     </div>
     <div className="cmdk" role="button" tabIndex="0" onClick={onOpenPalette} aria-label="Buscar o ejecutar"><Icon name="search" size={16}/><span className="cmdk-label">Buscar o ejecutar…</span><kbd>Ctrl K</kbd></div>
     <div className="topbar-actions">
+      <LearningThermometer workspaceId={workspaceId} />
       <BudgetChip budget={budget} onClick={onOpenRouting} />
       <ThemeSwitcher theme={theme} onChange={setTheme} />
       <span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span>
@@ -407,17 +408,31 @@ function ContextStrip({ activeWorkspace }) {
   </div>;
 }
 
-function MessageFeedback({ workspaceId, chatId, messageId, currentOutcome, onChange }) {
+const FEEDBACK_REASONS = [
+  { id: "helpful", label: "Útil" },
+  { id: "too_long", label: "Muy largo" },
+  { id: "too_short", label: "Muy corto" },
+  { id: "wrong", label: "Incorrecto" },
+  { id: "off_topic", label: "Desvía" },
+  { id: "unsafe", label: "Inapropiado" },
+  { id: "other", label: "Otro" },
+];
+
+function MessageFeedback({ workspaceId, chatId, messageId, currentOutcome, currentReason, onChange }) {
   const [outcome, setOutcome] = useState(currentOutcome || null);
+  const [reason, setReason] = useState(currentReason || null);
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = async (value) => {
+  const submit = async (value, selectedReason) => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const res = await apiPost(`/api/workspaces/${workspaceId}/chats/${chatId}/messages/${messageId}/feedback`, { outcome: value });
+      const body = { outcome: value };
+      if (selectedReason) body.reason = selectedReason;
+      const res = await apiPost(`/api/workspaces/${workspaceId}/chats/${chatId}/messages/${messageId}/feedback`, body);
       setOutcome(res.outcome);
-      if (onChange) onChange(res.outcome);
+      if (res.reason) setReason(res.reason);
+      if (onChange) onChange(res.outcome, res.reason);
     } catch (err) {
       console.error("Feedback failed", err);
     } finally {
@@ -431,16 +446,141 @@ function MessageFeedback({ workspaceId, chatId, messageId, currentOutcome, onCha
       type="button"
       className={cx("feedback-btn", active && "feedback-btn-active")}
       disabled={submitting}
-      onClick={() => submit(value)}
+      onClick={() => submit(value, reason)}
       title={label}
       aria-pressed={active}
     >{label}</button>;
   };
 
   return <div className="message-feedback" aria-label="Retroalimentación del mensaje">
-    {btn("accepted", "👍 Útil")}
-    {btn("rejected", "👎 No útil")}
-    {btn("regenerated", "🔄 Regenerar")}
+    <div className="feedback-row">
+      {btn("accepted", "👍 Útil")}
+      {btn("rejected", "👎 No útil")}
+      {btn("regenerated", "🔄 Regenerar")}
+    </div>
+    {outcome !== null && <div className="feedback-reasons">
+      {FEEDBACK_REASONS.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          className={cx("feedback-chip", reason === r.id && "feedback-chip-active")}
+          disabled={submitting}
+          onClick={() => { setReason(r.id); submit(outcome, r.id); }}
+          title={r.label}
+        >{r.label}</button>
+      ))}
+    </div>}
+  </div>;
+}
+
+function LearningThermometer({ workspaceId }) {
+  const [state, setState] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await apiGet(`/api/workspaces/${workspaceId}/memory/learning-state`);
+      setState(data);
+    } catch (err) {
+      console.error("learning-state failed", err);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  if (!state) return null;
+  const dotClass = state.level === "hot" ? "thermometer-hot" : state.level === "warm" ? "thermometer-warm" : "thermometer-cool";
+  const title = `Memoria personal: ${state.unconsolidated_count} eventos sin consolidar`;
+  return <>
+    <button type="button" className={cx("thermometer", dotClass)} onClick={() => setOpen(true)} title={title} aria-label={title}>
+      <span className="thermometer-dot" />
+      <span className="thermometer-count">{state.unconsolidated_count}</span>
+    </button>
+    {open && <LearningIndexModal workspaceId={workspaceId} onClose={() => setOpen(false)} onChanged={refresh} />}
+  </>;
+}
+
+function LearningIndexModal({ workspaceId, onClose, onChanged }) {
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiGet(`/api/workspaces/${workspaceId}/memory/proposals?state=pending`);
+      setProposals(data);
+    } catch (err) {
+      setError(err.message || "Error cargando propuestas");
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  const index = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/index`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error indexando");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async (id) => {
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/proposals/${id}/apply`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error aplicando propuesta");
+    }
+  };
+
+  const ignore = async (id) => {
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/proposals/${id}/ignore`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error ignorando propuesta");
+    }
+  };
+
+  useEffect(() => { load(); }, [load]);
+
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <h3 className="modal-title">Memoria personal</h3>
+      <p className="modal-sub">Revisa patrones detectados a partir de tu feedback. Solo se aplican con tu aprobación.</p>
+      {error && <div className="error">{error}</div>}
+      <div className="inline-group">
+        <button type="button" className="btn-primary" onClick={index} disabled={loading}>{loading ? "Indexando…" : "Indexar ahora"}</button>
+        <button type="button" className="btn" onClick={onClose}>Cerrar</button>
+      </div>
+      <div className="proposal-list" style={{ marginTop: 14 }}>
+        {proposals.length === 0 && <div className="empty">Sin propuestas pendientes.</div>}
+        {proposals.map((p) => (
+          <div key={p.id} className="proposal-card">
+            <div className="proposal-summary">{p.summary}</div>
+            <div className="proposal-meta">Detectado {p.detected_count} vez{p.detected_count > 1 ? "es" : ""}</div>
+            <div className="inline-group">
+              <button type="button" className="btn-primary" onClick={() => apply(p.id)}>Aplicar</button>
+              <button type="button" className="btn" onClick={() => ignore(p.id)}>Ignorar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   </div>;
 }
 
@@ -3760,7 +3900,7 @@ function App({ user, onLogout }) {
   }, [activeWorkspace]);
 
   return <div className="app-shell">
-    <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
+    <Topbar workspaceId={activeWorkspaceId} onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
       <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>

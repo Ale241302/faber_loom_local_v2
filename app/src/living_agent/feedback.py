@@ -14,6 +14,7 @@ from ..context import Context
 from ..db import new_id, utc_now
 from ..db_adapter import transaction
 from .planner import update_model_track_record
+from .memory import VALID_FEEDBACK_REASONS, increment_unconsolidated_count
 
 
 VALID_OUTCOMES = {"accepted", "rejected", "regenerated"}
@@ -138,6 +139,12 @@ def record_message_feedback(
     outcome = str(outcome).strip().lower()
     if outcome not in VALID_OUTCOMES:
         raise ValueError(f"Invalid feedback outcome: {outcome}")
+    if reason is not None:
+        reason = str(reason).strip().lower()
+        if reason not in VALID_FEEDBACK_REASONS:
+            raise ValueError(
+                f"Invalid feedback reason: {reason}. Allowed: {sorted(VALID_FEEDBACK_REASONS)}"
+            )
 
     workspace_id = ctx.require_scoped_workspace()
     tenant_id = ctx.require_tenant()
@@ -158,14 +165,18 @@ def record_message_feedback(
 
         previous = _latest_feedback_for_message(conn, message_id)
         previous_outcome = previous["outcome"] if previous else None
-        if previous_outcome == outcome:
-            # Idempotent: nothing changes in the track record.
+        previous_reason = previous.get("reason") if previous else None
+        if previous_outcome == outcome and previous_reason == reason:
+            # Idempotent: nothing changes in the track record or reason.
             return {
                 "message_id": message_id,
                 "outcome": outcome,
                 "previous_outcome": previous_outcome,
                 "reason": reason,
             }
+        # E4-5: if the outcome is unchanged but the reason changed, we still
+        # record a new feedback row so the typed reason reaches the detector.
+        # The track-record counters stay the same.
 
         route = None
         try:
@@ -204,11 +215,14 @@ def record_message_feedback(
                 reason,
                 ctx.actor_id,
                 ctx.actor_role_at_decision,
-                45,
+                47,
                 "v1",
                 now,
             ),
         )
+
+        # E4-5: every explicit feedback event feeds the personal learning thermometer.
+        increment_unconsolidated_count(ctx, conn)
 
         if previous_outcome is None:
             if outcome == "accepted":

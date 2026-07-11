@@ -445,3 +445,9 @@ DETECTOR_REGISTRY: dict[str, Any] = {
     "stale_source": detect_stale_sources,
     "unreviewed_gold": detect_unreviewed_gold,
 }
+
+# E4-5: personal-memory detector is registered lazily to avoid a circular import
+# with the memory module, which needs AmbientFinding for its return type.
+from .living_agent.memory import detect_personal_memory_patterns  # noqa: E402
+
+DETECTOR_REGISTRY["personal_memory"] = detect_personal_memory_patterns

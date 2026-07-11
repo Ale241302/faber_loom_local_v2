@@ -38,6 +38,7 @@ from .living_agent.briefs import (
     is_brief_stale,
     refresh_workspace_brief,
 )
+from .living_agent.memory import orchestrate_memory_proposals
 
 logger = logging.getLogger(__name__)
 
@@ -847,51 +848,83 @@ class AmbientOrchestrator:
                     findings = detector_fn(ctx, conn)
                     latency_ms = int((time.time() - detector_start) * 1000)
 
-                    visible_count = 0
-                    dark_count = 0
-                    merged_count = 0
-                    for finding in findings:
-                        if proposals_so_far >= max_proposals:
-                            break
-                        result = self._handle_finding(
-                            conn,
-                            ctx,
-                            cycle_id,
-                            workspace_id,
-                            finding,
-                            dark_mode,
+                    if slug == "personal_memory":
+                        # E4-5: personal-memory findings feed private memory_proposal
+                        # rows, not ambient_proposal / WorkLoom drafts.
+                        mem_result = orchestrate_memory_proposals(ctx, conn, findings)
+                        proposals_count = len(mem_result.get("created", [])) + len(
+                            mem_result.get("merged", [])
                         )
-                        proposals_so_far += 1
-                        if result["state"] == "visible":
-                            visible_count += 1
-                        elif result["state"] == "dark":
-                            dark_count += 1
-                        elif result["state"] == "merged":
-                            merged_count += 1
+                        proposals_so_far += proposals_count
+                        update_detector_run(
+                            conn,
+                            detector_run["id"],
+                            tenant_id,
+                            workspace_id,
+                            status="ok",
+                            proposals_count=proposals_count,
+                            latency_ms=latency_ms,
+                            evidence_json={
+                                "findings_count": len(findings),
+                                "created": len(mem_result.get("created", [])),
+                                "merged": len(mem_result.get("merged", [])),
+                            },
+                        )
+                        stats["detectors_run"] += 1
+                        stats["proposals_created"] += proposals_count
+                        ws_evidence["detectors"].append({
+                            "slug": slug,
+                            "status": "ok",
+                            "findings": len(findings),
+                            "created": len(mem_result.get("created", [])),
+                            "merged": len(mem_result.get("merged", [])),
+                        })
+                    else:
+                        visible_count = 0
+                        dark_count = 0
+                        merged_count = 0
+                        for finding in findings:
+                            if proposals_so_far >= max_proposals:
+                                break
+                            result = self._handle_finding(
+                                conn,
+                                ctx,
+                                cycle_id,
+                                workspace_id,
+                                finding,
+                                dark_mode,
+                            )
+                            proposals_so_far += 1
+                            if result["state"] == "visible":
+                                visible_count += 1
+                            elif result["state"] == "dark":
+                                dark_count += 1
+                            elif result["state"] == "merged":
+                                merged_count += 1
 
-                    update_detector_run(
-                        conn,
-                        detector_run["id"],
-                        tenant_id,
-                        workspace_id,
-                        status="ok",
-                        proposals_count=len(findings),
-                        latency_ms=latency_ms,
-                        evidence_json={"findings_count": len(findings)},
-                    )
+                        update_detector_run(
+                            conn,
+                            detector_run["id"],
+                            tenant_id,
+                            workspace_id,
+                            status="ok",
+                            proposals_count=len(findings),
+                            latency_ms=latency_ms,
+                            evidence_json={"findings_count": len(findings)},
+                        )
 
-                    stats["detectors_run"] += 1
-                    stats["proposals_created"] += len(findings)
-                    stats["proposals_visible"] += visible_count
-                    stats["proposals_dark"] += dark_count
-                    ws_evidence["detectors"].append({
-                        "slug": slug,
-                        "status": "ok",
-                        "findings": len(findings),
-                        "visible": visible_count,
-                        "dark": dark_count,
-                        "merged": merged_count,
-                    })
+                        stats["detectors_run"] += 1
+                        stats["proposals_created"] += len(findings)
+                        stats["proposals_visible"] += visible_count
+                        stats["proposals_dark"] += dark_count
+                        ws_evidence["detectors"].append({
+                            "slug": slug,
+                            "status": "ok",
+                            "findings": len(findings),
+                            "visible": visible_count,
+                            "dark": dark_count,
+                            "merged": merged_count,
+                        })
                 except Exception as exc:
                     latency_ms = int((time.time() - detector_start) * 1000)
                     logger.exception("Detector %s failed", slug)

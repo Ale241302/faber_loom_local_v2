@@ -943,3 +943,24 @@ button { background: none; border: none; cursor: pointer; }
 .agent-step-cost { font-family: var(--font-mono); }
 .btn-danger { background: var(--coral); color: #fff; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
 .btn-danger:hover { opacity: .9; }
+
+/* ════════ PERSONAL MEMORY (E4-5) ════════ */
+.feedback-row { display: flex; gap: 6px; }
+.feedback-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.feedback-chip { padding: 3px 8px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-raised); color: var(--text-muted); font-size: 10.5px; cursor: pointer; }
+.feedback-chip:hover { border-color: var(--coral); color: var(--text-primary); }
+.feedback-chip-active { background: var(--coral-soft); border-color: var(--coral); color: var(--text-primary); }
+
+.thermometer { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-raised); cursor: pointer; }
+.thermometer:hover { border-color: var(--coral); }
+.thermometer-dot { width: 8px; height: 8px; border-radius: 50%; }
+.thermometer-cool .thermometer-dot { background: var(--sage); }
+.thermometer-warm .thermometer-dot { background: var(--amber); }
+.thermometer-hot .thermometer-dot { background: var(--coral); animation: pulse-dot 1.4s infinite; }
+.thermometer-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+.proposal-list { display: flex; flex-direction: column; gap: 10px; }
+.proposal-card { padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }
+.proposal-summary { font-size: 13px; color: var(--text-primary); margin-bottom: 4px; }
+.proposal-meta { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 10px; }

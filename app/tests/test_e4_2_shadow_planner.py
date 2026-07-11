@@ -574,7 +574,7 @@ def test_message_feedback_updates_track_record(client: TestClient) -> None:
 
     resp = client.post(
         f"/api/workspaces/{ws}/chats/{chat_id}/messages/{message_id}/feedback",
-        json={"outcome": "rejected", "reason": "hallucination"},
+        json={"outcome": "rejected", "reason": "wrong"},
         headers=_headers("owner"),
     )
     assert resp.status_code == 200

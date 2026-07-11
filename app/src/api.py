@@ -171,6 +171,16 @@ from .living_agent.autonomy import (
 )
 from .living_agent.briefs import get_workspace_brief
 from .living_agent.feedback import record_message_feedback
+from .living_agent.memory import (
+    apply_memory_proposal,
+    archive_stale_memory_proposals,
+    build_memory_context,
+    detect_personal_memory_patterns,
+    get_learning_state,
+    ignore_memory_proposal,
+    list_memory_proposals,
+    orchestrate_memory_proposals,
+)
 from .living_agent.orchestrator import TaskOrchestrator
 from .living_agent.tasks import get_task, list_tasks
 from .models import (
@@ -193,6 +203,8 @@ from .models import (
     HealthRead,
     KBSourceCreate,
     KBSourceRead,
+    LearningStateRead,
+    MemoryProposalRead,
     ObjectCreate,
     ObjectRead,
     ObjectUpdate,
@@ -1456,6 +1468,126 @@ def api_create_message_feedback(
 
 
 # ---------------------------------------------------------------------------
+# E4-5: Personal memory (CAPA 1) endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/workspaces/{workspace_id}/memory/learning-state",
+    response_model=LearningStateRead,
+)
+def api_get_learning_state(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> LearningStateRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return LearningStateRead(**get_learning_state(ctx, conn))
+
+
+@router.get(
+    "/workspaces/{workspace_id}/memory/proposals",
+    response_model=list[MemoryProposalRead],
+)
+def api_list_memory_proposals(
+    workspace_id: str,
+    request: Request,
+    state: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[MemoryProposalRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    rows = list_memory_proposals(ctx, conn, state=state)
+    return [MemoryProposalRead(**row) for row in rows]
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/index",
+    response_model=dict[str, Any],
+)
+def api_index_memory_proposals(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    """Run the personal-memory detector and materialize/update proposals."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    findings = detect_personal_memory_patterns(ctx, conn)
+    result = orchestrate_memory_proposals(ctx, conn, findings)
+    return {
+        "findings": len(findings),
+        "created": result.get("created", []),
+        "merged": result.get("merged", []),
+    }
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/proposals/{proposal_id}/apply",
+    response_model=dict[str, Any],
+)
+def api_apply_memory_proposal(
+    workspace_id: str,
+    proposal_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        return apply_memory_proposal(ctx, conn, proposal_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/proposals/{proposal_id}/ignore",
+    response_model=dict[str, Any],
+)
+def api_ignore_memory_proposal(
+    workspace_id: str,
+    proposal_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        return ignore_memory_proposal(ctx, conn, proposal_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/hygiene",
+    response_model=dict[str, Any],
+)
+def api_memory_hygiene(
+    workspace_id: str,
+    request: Request,
+    max_age_days: int = 30,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return archive_stale_memory_proposals(ctx, conn, max_age_days=max_age_days)
+
+
+# ---------------------------------------------------------------------------
 # E4-3: Agent task orchestration endpoints
 # ---------------------------------------------------------------------------
 
@@ -2023,6 +2155,9 @@ def api_create_completion(
     system_content = _SYSTEM_PROMPT
     if skill_context:
         system_content = f"{skill_context}\n\n{system_content}"
+    memory_context = build_memory_context(ctx, conn, query=user_message)
+    if memory_context:
+        system_content = f"{memory_context}\n\n{system_content}"
     history = [{"role": "system", "content": system_content}]
     history.extend(get_message_history(ctx, conn, chat_id))
 
@@ -2762,6 +2897,8 @@ def _execute_skill_run(
         provider_slug=provider_slug,
         model=model,
         spent_usd=spent_usd,
+        ctx=ctx,
+        conn=conn,
     )
 
     with transaction(conn, ctx=ctx):

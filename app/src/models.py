@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 46
+SCHEMA_VERSION = 47
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1702,6 +1702,96 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE usage_record ADD COLUMN task_id TEXT;
     CREATE INDEX IF NOT EXISTS idx_usage_record_task_id ON usage_record(task_id);
     """,
+    47: """
+    -- E4-5 — Memoria viva (CAPA 1 personal)
+    CREATE TABLE IF NOT EXISTS user_learning_state (
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        agent_slug TEXT NOT NULL DEFAULT 'default',
+        detection_threshold INTEGER NOT NULL DEFAULT 3,
+        notification_cadence TEXT NOT NULL DEFAULT 'weekly',
+        auto_archive_ignored_after_days INTEGER DEFAULT 30,
+        unconsolidated_count INTEGER NOT NULL DEFAULT 0,
+        last_indexed_at TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 47,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, workspace_id, user_id, agent_slug)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_learning_state_user
+        ON user_learning_state(tenant_id, workspace_id, user_id);
+
+    CREATE TABLE IF NOT EXISTS memory_proposal (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        agent_slug TEXT NOT NULL DEFAULT 'default',
+        summary TEXT NOT NULL,
+        detected_count INTEGER NOT NULL DEFAULT 1,
+        first_detected TEXT NOT NULL,
+        last_detected TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        state TEXT NOT NULL DEFAULT 'pending'
+            CHECK (state IN ('pending','applied','ignored')),
+        applied_at TEXT,
+        applied_namespace TEXT,
+        applied_key TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 47,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_proposal_user_state
+        ON memory_proposal(tenant_id, workspace_id, user_id, state);
+    CREATE INDEX IF NOT EXISTS idx_memory_proposal_workspace
+        ON memory_proposal(tenant_id, workspace_id, state);
+
+    -- CAPA 1 personal memory blocks (app-local mirror of M17 semantics)
+    CREATE TABLE IF NOT EXISTS memory_block (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact','preference','instruction','episode')),
+        importance REAL NOT NULL DEFAULT 0.5,
+        source TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        archived_at TEXT,
+        UNIQUE (tenant_id, workspace_id, user_id, namespace, key),
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_block_user_ns
+        ON memory_block(tenant_id, workspace_id, user_id, namespace, archived_at);
+
+    CREATE TABLE IF NOT EXISTS memory_revision (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        block_id TEXT NOT NULL REFERENCES memory_block(id) ON DELETE CASCADE,
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'fact',
+        importance REAL NOT NULL DEFAULT 0.5,
+        edited_by TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_revision_block
+        ON memory_revision(tenant_id, workspace_id, block_id, created_at);
+    """,
 }
 
 
@@ -2365,6 +2455,37 @@ class MessageFeedbackRead(BaseModel):
     previous_outcome: str | None = None
     reason: str | None = None
     created_at: str | None = None
+
+
+class MemoryProposalRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    workspace_id: str
+    user_id: str
+    agent_slug: str
+    summary: str
+    detected_count: int
+    first_detected: str
+    last_detected: str
+    evidence_json: str | dict[str, Any] | None = None
+    state: str
+    applied_at: str | None = None
+    applied_namespace: str | None = None
+    applied_key: str | None = None
+    created_at: str
+    updated_at: str
+    approved_by: str | None = None
+
+
+class LearningStateRead(BaseModel):
+    user_id: str
+    unconsolidated_count: int
+    detection_threshold: int
+    notification_cadence: str
+    level: str
+    last_indexed_at: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
