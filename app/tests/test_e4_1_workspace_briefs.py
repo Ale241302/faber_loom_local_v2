@@ -91,6 +91,19 @@ def test_build_brief_default_content(client: TestClient) -> None:
     assert "source_counts" in brief
     assert "recent_titles" in brief
     assert "open_invoices" in brief
+    assert "items" not in brief["open_invoices"]
+    assert "total_usd" in brief["open_invoices"]
+
+
+def test_build_brief_open_invoices_are_aggregates_only(client: TestClient) -> None:
+    ws_id = _workspace_id(client)
+    conn = connect()
+    ctx = _context(ws_id, role="owner")
+    brief = build_workspace_brief(ctx, conn, ws_id)
+
+    invoices = brief.get("open_invoices", {})
+    assert set(invoices.keys()) <= {"count", "total_usd"}
+    assert "items" not in invoices
 
 
 def test_build_brief_closed_space(client: TestClient) -> None:
@@ -180,6 +193,71 @@ def test_get_brief_endpoint_returns_persisted_brief(client: TestClient) -> None:
     assert data["workspace_id"] == ws_id
     assert data["schema_version"] == 42
     assert data["brief"]["level"] == "content"
+    assert "open_invoices" in data["brief"]
+    assert "items" not in data["brief"]["open_invoices"]
+
+
+def test_get_brief_endpoint_degrades_for_non_approver(client: TestClient) -> None:
+    ws_id = _workspace_id(client)
+    conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CONTENT,
+        approver_roles={"owner"},
+        updated_by="test",
+    )
+    refresh_workspace_brief(_context(ws_id, role="owner"), conn, ws_id)
+
+    resp = client.get(f"/api/workspaces/{ws_id}/brief", headers=_headers("editor"))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["brief"]["level"] == "index"
+    assert "open_invoices" not in data["brief"]
+
+
+def test_get_brief_endpoint_closed_space_is_sealed(client: TestClient) -> None:
+    ws_id = _workspace_id(client)
+    conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CLOSED,
+        updated_by="test",
+    )
+    refresh_workspace_brief(_context(ws_id, role="owner"), conn, ws_id)
+
+    resp = client.get(f"/api/workspaces/{ws_id}/brief", headers=_headers("owner"))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["brief"]["level"] == "closed"
+    assert data["brief"]["sealed"] is True
+    assert "open_invoices" not in data["brief"]
+    assert "recent_titles" not in data["brief"]
+
+
+def test_get_brief_endpoint_ceo_only_excludes_non_ceo(client: TestClient) -> None:
+    ws_id = _workspace_id(client)
+    conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CONTENT,
+        approver_roles={"owner"},
+        ceo_only=True,
+        updated_by="test",
+    )
+    refresh_workspace_brief(_context(ws_id, role="owner"), conn, ws_id)
+
+    resp = client.get(f"/api/workspaces/{ws_id}/brief", headers=_headers("owner"))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["brief"]["level"] == "closed"
+    assert data["brief"]["sealed"] is True
+    assert "recent_titles" not in data["brief"]
 
 
 def test_ambient_cycle_refreshes_brief(client: TestClient) -> None:

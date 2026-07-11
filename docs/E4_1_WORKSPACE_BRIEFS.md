@@ -13,8 +13,8 @@ fuentes.
 - **Índice únicamente:** conteos por tipo de fuente, títulos recientes,
   entidades frecuentes (heurística barata sobre títulos), rutinas activas,
   última corrida de rutina y actividad reciente resumida.
-- **Agregados de negocio:** facturas abiertas (sólo cuando el espacio está a
-  nivel `content`), totales y conteos.
+- **Agregados de negocio:** facturas abiertas (totales y conteos únicamente;
+  nunca ítems detallados).
 - **Nunca genera en caliente:** los endpoints solo leen la caché persistida.
 - **Regeneración:** ciclo ambiental (`ambient.AmbientOrchestrator._process_workspace`).
 - **Política de stale:** por defecto `max_age_h=24` o `max_writes=50` desde el
@@ -51,8 +51,10 @@ nada:
 ## API
 
 - `GET /api/workspaces/{workspace_id}/brief`
-  - Devuelve el brief persistido.
+  - Devuelve el brief persistido, re-mediado por los roles del solicitante.
   - **Nunca** lo genera inline; si no existe responde `404`.
+  - `CLOSED` o `CEO-only` sin `ceo` devuelven solo `sealed`, `level` y `object_count`.
+  - `INDEX` devuelve el brief sin agregados de facturas.
   - Respuesta: `WorkspaceBriefRead`.
 
 ## UI

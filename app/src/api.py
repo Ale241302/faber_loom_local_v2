@@ -145,6 +145,7 @@ from .gold import (
     promote_gold_candidate,
 )
 from .ingest import IngestError, extract_text_from_object, load_image_attachment
+from .key_broker import KeyLevel, resolve_read_level
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
 from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
@@ -993,10 +994,12 @@ def api_get_workspace_brief(
     request: Request,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceBriefRead:
-    """Return the persisted workspace brief (cold cache).
+    """Return the persisted workspace brief (cold cache), mediated by the key broker.
 
     This endpoint never generates a brief inline; regeneration happens in the
-    ambient cycle. If no brief exists yet, the caller receives 404.
+    ambient cycle. If no brief exists yet, the caller receives 404. The stored
+    brief is re-mediada at read time using the requester's roles so that a
+    CLOSED space or a non-approver never receives CONTENT-level aggregates.
     """
     ctx = context_from_request(request, workspace_id=workspace_id)
     if get_workspace(ctx, conn) is None:
@@ -1004,7 +1007,29 @@ def api_get_workspace_brief(
     row = get_workspace_brief(conn, ctx, workspace_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brief not found")
-    return WorkspaceBriefRead(**row)
+
+    user_roles = {ctx.actor_role_at_decision} if ctx.actor_role_at_decision else set()
+    level, _ = resolve_read_level(
+        conn,
+        tenant_id=ctx.require_tenant(),
+        space_id=workspace_id,
+        user_roles=user_roles,
+        default=KeyLevel.CONTENT,
+    )
+
+    brief = (row.get("brief") or {}).copy()
+    if level == KeyLevel.CLOSED:
+        brief = {
+            "sealed": True,
+            "level": "closed",
+            "object_count": sum((row.get("source_counts") or {}).values()),
+        }
+    elif level == KeyLevel.INDEX:
+        brief.pop("open_invoices", None)
+        brief["level"] = "index"
+        brief["sealed"] = brief.get("sealed", True)
+
+    return WorkspaceBriefRead(**{**row, "brief": brief})
 
 
 # -----------------------------------------------------------------------------

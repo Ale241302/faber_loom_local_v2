@@ -89,11 +89,13 @@ def _recent_titles(conn: Any, ctx: Context, workspace_id: str, limit: int) -> li
 
 
 def _open_invoices(conn: Any, ctx: Context, workspace_id: str) -> dict[str, Any]:
+    """Return aggregated open-invoice data only; no item details are persisted."""
+
     # manual_invoice is tenant-scoped (no workspace_id column in v37 schema).
     with transaction(conn, ctx=ctx):
         rows = conn.execute(
             """
-            SELECT invoice_id, customer_name, total, status, created_at
+            SELECT total
             FROM manual_invoice
             WHERE tenant_id = ? AND status IN ('draft', 'sent')
             ORDER BY created_at DESC
@@ -105,15 +107,6 @@ def _open_invoices(conn: Any, ctx: Context, workspace_id: str) -> dict[str, Any]
     return {
         "count": len(rows),
         "total_usd": round(total, 4),
-        "items": [
-            {
-                "invoice_id": row["invoice_id"],
-                "customer_name": row["customer_name"],
-                "status": row["status"],
-                "total_usd": float(row["total"] or 0.0),
-            }
-            for row in rows
-        ],
     }
 
 
