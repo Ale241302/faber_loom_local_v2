@@ -236,7 +236,14 @@ from .storage import (
 )
 from .skill_catalog import seed_global_skill_catalog
 from .skills import _extract_runtime, compile_skill_md, execute_skill, routine_to_skill
-from .skill_primitives import attach_evidence, external_lookup
+from .skill_primitives import (
+    PROMOTION_THRESHOLDS,
+    attach_evidence,
+    compute_pack_readiness,
+    external_lookup,
+    infer_pack_id,
+    promote_pack,
+)
 from .connectors.tax_authority import build_tax_fetcher
 from .connectors.whatsapp_inbound import (
     WhatsAppInboundError,
@@ -5247,6 +5254,132 @@ def api_import_faberloom_routines(
             )
 
     return [RoutineRead(**row) for row in imported]
+
+
+# -----------------------------------------------------------------------------
+# E3-4: Pack promotion readiness
+# -----------------------------------------------------------------------------
+
+
+class PackReadinessItem(BaseModel):
+    pack_id: str
+    status: str
+    skill_count: int
+    imported_count: int
+    required_golden_cases: int
+    golden_cases_total: int
+    golden_cases_approved: int
+    golden_cases_verified: int
+    track_records_total: int
+    track_records_meeting_threshold: int
+    thresholds: dict[str, Any]
+    can_promote: bool
+    blockers: list[str]
+
+
+class PackReadinessResponse(BaseModel):
+    workspace_id: str
+    thresholds: dict[str, Any]
+    packs: list[PackReadinessItem]
+
+
+class PromotePackRequest(BaseModel):
+    confirmation_token: str
+
+
+class PromotePackResponse(BaseModel):
+    pack_id: str
+    status: str
+    promoted_at: str
+    promoted_by: str
+
+
+def _pack_confirmation_token(pack_id: str) -> str:
+    return hashlib.sha256(pack_id.encode("utf-8")).hexdigest()[:16]
+
+
+@router.get("/workspaces/{workspace_id}/packs/readiness", response_model=PackReadinessResponse)
+def api_get_pack_readiness(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PackReadinessResponse:
+    """Return promotion readiness for every pack in the workspace catalog."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    from .db import get_global_skills
+
+    global_skills = get_global_skills(conn, tenant_id="global", active_only=True)
+    pack_ids = sorted({row["pack_id"] for row in global_skills})
+
+    packs: list[PackReadinessItem] = []
+    for pack_id in pack_ids:
+        snapshot = compute_pack_readiness(ctx, conn, pack_id=pack_id)
+        packs.append(
+            PackReadinessItem(
+                pack_id=snapshot["pack_id"],
+                status=snapshot["status"],
+                skill_count=snapshot["skill_count"],
+                imported_count=snapshot["imported_count"],
+                required_golden_cases=snapshot["required_golden_cases"],
+                golden_cases_total=snapshot["golden_cases"]["total"],
+                golden_cases_approved=snapshot["golden_cases"]["approved"],
+                golden_cases_verified=snapshot["golden_cases"]["verified"],
+                track_records_total=snapshot["track_records"]["total"],
+                track_records_meeting_threshold=snapshot["track_records"]["meeting_threshold"],
+                thresholds=snapshot["thresholds"],
+                can_promote=snapshot["can_promote"],
+                blockers=snapshot["blockers"],
+            )
+        )
+
+    return PackReadinessResponse(
+        workspace_id=workspace_id,
+        thresholds=PROMOTION_THRESHOLDS,
+        packs=packs,
+    )
+
+
+@router.post("/workspaces/{workspace_id}/packs/{pack_id}/promote", response_model=PromotePackResponse)
+def api_promote_pack(
+    workspace_id: str,
+    pack_id: str,
+    request: Request,
+    payload: PromotePackRequest,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotePackResponse:
+    """Promote a pack to ACTIVE after all human gates are met."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    if ctx.actor_role_at_decision not in ("owner", "admin", "curador"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner/admin/curador role required to promote a pack",
+        )
+
+    expected = _pack_confirmation_token(pack_id)
+    if payload.confirmation_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Action requires explicit confirmation; provide confirmation_token={expected}",
+        )
+
+    user = getattr(request.state, "user", {}) or {}
+    user_id = user.get("user_id") or user.get("sub") or "local"
+    try:
+        result = promote_pack(ctx, conn, pack_id=pack_id, approved_by=user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    return PromotePackResponse(**result)
 
 
 # -----------------------------------------------------------------------------

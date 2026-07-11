@@ -961,6 +961,12 @@ def ensure_skill_factory_rows(
     }
 
 
+PROMOTION_THRESHOLDS = {
+    "runs_total": 100,
+    "acceptance_rate": 0.90,
+}
+
+
 def promote_pack(
     ctx: Context,
     conn: Any,
@@ -1030,7 +1036,9 @@ def promote_pack(
         if len(tracks) != len(pack_skill_ids):
             raise ValueError(f"Pack {pack_id} is missing track records")
         for track in tracks:
-            if track["runs_total"] < 100 or (track["acceptance_rate"] or 0.0) < 0.90:
+            if track["runs_total"] < PROMOTION_THRESHOLDS["runs_total"] or (
+                track["acceptance_rate"] or 0.0
+            ) < PROMOTION_THRESHOLDS["acceptance_rate"]:
                 raise ValueError(f"Pack {pack_id} does not meet track-record thresholds")
 
         now = utc_now()
@@ -1052,6 +1060,167 @@ def promote_pack(
         )
 
         return {"pack_id": pack_id, "status": "active", "promoted_at": now, "promoted_by": approved_by}
+
+
+def compute_pack_readiness(
+    ctx: Context,
+    conn: Any,
+    *,
+    pack_id: str,
+) -> dict[str, Any]:
+    """Return a readiness snapshot for ``pack_id`` in the scoped workspace.
+
+    The result is read-only and safe to expose in the promotion readiness UI.
+    It never invents data: missing golden cases or track records are reported
+    as blockers.
+
+    Promotion gates are evaluated over the skills already imported into the
+    workspace, matching the behaviour of ``promote_pack`` (which derives the
+    active skill set from existing golden cases / manifests).
+    """
+
+    enforce_tenant_scoped(ctx)
+    workspace_id = ctx.require_scoped_workspace()
+
+    from .db import get_global_skills
+
+    global_skills = get_global_skills(
+        conn, tenant_id="global", active_only=True, pack_id=pack_id
+    )
+    global_skill_ids = [row["skill_id"] for row in global_skills]
+    skill_count = len(global_skill_ids)
+
+    # Imported manifests in the current workspace.
+    imported: dict[str, dict[str, Any]] = {}
+    if global_skill_ids:
+        placeholders = ",".join("?" for _ in global_skill_ids)
+        imported_rows = conn.execute(
+            f"""
+            SELECT * FROM skill_manifest
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *global_skill_ids),
+        ).fetchall()
+        imported = {row["skill_id"]: row_to_dict(row) for row in imported_rows}
+
+    imported_count = len(imported)
+
+    # Effective status per skill: imported manifest wins; otherwise catalog status.
+    statuses: dict[str, str] = {}
+    for row in global_skills:
+        sid = row["skill_id"]
+        if sid in imported:
+            statuses[sid] = imported[sid].get("status") or "shadow"
+        else:
+            manifest = json.loads(row["manifest_json"] or "{}")
+            statuses[sid] = (
+                manifest.get("metadata", {}).get("fbl", {}).get("status") or "shadow"
+            )
+
+    # Skills that participate in the promotion gate are the imported ones.
+    # If nothing is imported yet, we still report global counts but block promotion.
+    gate_skill_ids = list(imported.keys()) if imported else global_skill_ids
+    gate_count = len(gate_skill_ids)
+
+    # Golden cases for the gating skills.
+    total_cases = approved_cases = verified_cases = 0
+    if gate_skill_ids:
+        placeholders = ",".join("?" for _ in gate_skill_ids)
+        total_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+        approved_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders}) AND approved = 1
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+        verified_cases = conn.execute(
+            f"""
+            SELECT COUNT(*) AS cnt FROM golden_case
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+              AND approved = 1 AND verified_by IS NOT NULL AND verified_by != ''
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchone()["cnt"]
+
+    # Track records for the gating skills.
+    tracks: list[dict[str, Any]] = []
+    if gate_skill_ids:
+        placeholders = ",".join("?" for _ in gate_skill_ids)
+        track_rows = conn.execute(
+            f"""
+            SELECT * FROM skill_track_record
+            WHERE workspace_id = ? AND tenant_id = ? AND skill_id IN ({placeholders})
+            """,
+            (workspace_id, ctx.tenant_id, *gate_skill_ids),
+        ).fetchall()
+        tracks = [row_to_dict(row) for row in track_rows]
+    meeting_threshold_count = sum(
+        1
+        for t in tracks
+        if t.get("runs_total", 0) >= PROMOTION_THRESHOLDS["runs_total"]
+        and (t.get("acceptance_rate") or 0.0) >= PROMOTION_THRESHOLDS["acceptance_rate"]
+    )
+
+    pack = conn.execute(
+        """
+        SELECT * FROM pack_status
+        WHERE workspace_id = ? AND tenant_id = ? AND pack_id = ?
+        """,
+        (workspace_id, ctx.tenant_id, pack_id),
+    ).fetchone()
+    pack_row = row_to_dict(pack) if pack else None
+
+    blockers: list[str] = []
+    if pack_row is None:
+        blockers.append("Pack no importado en este workspace")
+    if imported_count == 0:
+        blockers.append("Ningún skill del pack ha sido importado")
+    pending_cases = total_cases - approved_cases
+    if pending_cases > 0:
+        blockers.append(f"Hay {pending_cases} golden cases sin aprobar")
+    unverified_cases = approved_cases - verified_cases
+    if unverified_cases > 0:
+        blockers.append(f"Hay {unverified_cases} golden cases aprobados sin verificar")
+    if len(tracks) < gate_count:
+        blockers.append(f"Faltan {gate_count - len(tracks)} track records")
+    if meeting_threshold_count < gate_count:
+        blockers.append(
+            f"Solo {meeting_threshold_count}/{gate_count} skills importados cumplen el umbral "
+            f"de track record (>= {PROMOTION_THRESHOLDS['runs_total']} runs, "
+            f">= {PROMOTION_THRESHOLDS['acceptance_rate']*100:.0f}% acceptance)"
+        )
+
+    can_promote = pack_row is not None and imported_count > 0 and not blockers
+
+    return {
+        "pack_id": pack_id,
+        "status": (pack_row.get("status") if pack_row else "not_imported"),
+        "skill_count": skill_count,
+        "imported_count": imported_count,
+        "skill_statuses": statuses,
+        "required_golden_cases": (
+            pack_row.get("required_golden_cases", 0) if pack_row else 0
+        ),
+        "golden_cases": {
+            "total": total_cases,
+            "approved": approved_cases,
+            "verified": verified_cases,
+        },
+        "track_records": {
+            "total": len(tracks),
+            "meeting_threshold": meeting_threshold_count,
+        },
+        "thresholds": PROMOTION_THRESHOLDS,
+        "can_promote": can_promote,
+        "blockers": blockers,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1149,4 +1318,6 @@ __all__ = [
     "ensure_skill_factory_rows",
     "promote_pack",
     "infer_pack_id",
+    "compute_pack_readiness",
+    "PROMOTION_THRESHOLDS",
 ]
