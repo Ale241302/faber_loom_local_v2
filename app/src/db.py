@@ -92,6 +92,7 @@ WORKSPACE_COLUMNS = """
     id,
     name,
     slug,
+    kind,
     seal_id,
     field_aliases_json,
     tenant_id,
@@ -605,6 +606,27 @@ def get_workspace_by_slug(
     return system_get_workspace_by_slug(ctx, conn, slug)
 
 
+def get_workspace_by_kind(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    kind: str,
+) -> dict[str, Any] | None:
+    """Return the first workspace of the given kind for the tenant, if any."""
+
+    ctx.require_system()
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            f"""
+            SELECT {WORKSPACE_COLUMNS}
+            FROM workspace
+            WHERE tenant_id = ? AND kind = ?
+            ORDER BY created_at ASC LIMIT 1
+            """,
+            (ctx.tenant_id, kind),
+        ).fetchone()
+    return row_to_dict(row) if row else None
+
+
 def create_workspace(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -628,6 +650,7 @@ def create_workspace(
         parent_id = payload.parent_id
         inherits_kb = payload.inherits_kb
         confidential = getattr(payload, "confidential", 0) or 0
+        kind = getattr(payload, "kind", "standard") or "standard"
         if parent_id:
             parent = conn.execute(
                 "SELECT id, tenant_id FROM workspace WHERE id = ?",
@@ -644,6 +667,7 @@ def create_workspace(
                 id,
                 name,
                 slug,
+                kind,
                 seal_id,
                 field_aliases_json,
                 tenant_id,
@@ -662,12 +686,13 @@ def create_workspace(
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 workspace_id,
                 name,
                 slug,
+                kind,
                 seal_id,
                 '{}',
                 ctx.tenant_id,

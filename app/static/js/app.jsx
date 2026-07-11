@@ -251,7 +251,7 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, generalWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
   const loadCounts = useCallback(async () => {
@@ -307,12 +307,27 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     stackloom: "cola-acc",
     kb: "kb-acc", "hitl-signals": "kb-acc",
     gold: "gold-acc",
-    skills: "caps-acc", agents: "caps-acc",
+    skills: "caps-acc",
     routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc", billing: "tenant-acc",
     health: "tenant-acc", foundation: "tenant-acc",
   }[nav];
 
+  const userRole = user?.role || "";
+  const canManageSkills = ["owner", "curator", "admin"].includes(userRole) || isPlatformAdmin(user);
+
   return <aside className={cx("rail", hidden && "hidden")}>
+    {generalWorkspace && (
+      <div className="rail-section" style={{ paddingBottom: 8, borderBottom: "1px solid var(--border-subtle)" }}>
+        <button
+          type="button"
+          className={cx("rail-item", activeWorkspaceId === generalWorkspace.id && "is-active")}
+          onClick={() => setActiveWorkspaceId(generalWorkspace.id)}
+          title="Chat general del tenant"
+        >
+          <span style={{ fontStyle: "italic" }}>— {generalWorkspace.display_name || "Faber"}</span>
+        </button>
+      </div>
+    )}
     <div className="mode-group" aria-label="Modos de FaberLoom">
       {MODES.map((item) => <button key={item.id} type="button" className={cx("mode-button", mode === item.id && "is-active")} onClick={() => go(item.id, { operar: "space", aprender: "kb", admin: "settings" }[item.id])}>{item.label}</button>)}
     </div>
@@ -365,7 +380,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <Accordion items={[
           { id: "caps-acc", title: "Capacidades", badge: counts.routines, children: <>
             <RailItem label="Skills" icon="spark" badge={counts.skills} active={nav === "skills"} onClick={() => setNav("skills")} />
-            <RailItem label="Agentes" icon="layers" badge={counts.agents} active={nav === "agents"} onClick={() => setNav("agents")} />
+            {canManageSkills && <RailItem label="Fábrica de skills" icon="layers" badge={counts.agents} active={nav === "agents"} onClick={() => setNav("agents")} />}
           </> }
         ]} defaultOpen={activeAccordionId === "caps-acc" ? ["caps-acc"] : []} />
         <Accordion items={[
@@ -1395,7 +1410,7 @@ function ToolsetPanel({ activeWorkspace }) {
     .filter((r) => r.is_active && r.approved_by)
     .filter((r) => {
       if (tab === "skills") return r.category === "skill";
-      if (tab === "agents") return r.category === "agent";
+      if (tab === "agente") return false;
       if (tab === "templates") return r.category === "template";
       if (tab === "knowledge") return r.category === "reference";
       return false;
@@ -1407,12 +1422,12 @@ function ToolsetPanel({ activeWorkspace }) {
     : [];
 
   const filtered = [...routineItems, ...skillItems];
-  const isExecutableTab = tab === "skills" || tab === "agents";
+  const isExecutableTab = tab === "skills";
 
   return <div className="toolset-panel">
     <div className="toolset-tabs">
       {[
-        { id: "agents", label: "Agentes", icon: "spark" },
+        { id: "agente", label: "Agente", icon: "spark" },
         { id: "skills", label: "Skills", icon: "check" },
         { id: "templates", label: "Templates", icon: "layers" },
         { id: "knowledge", label: "Conocimiento", icon: "book" },
@@ -1425,7 +1440,18 @@ function ToolsetPanel({ activeWorkspace }) {
     <div className="toolset-body">
       {loading && <div style={S.loading}>Cargando…</div>}
       {error && <div style={S.error}>{error}</div>}
-      {!loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
+      {tab === "agente" && (
+        <div style={{ padding: "8px 4px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Estado del Agente Vivo</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 12 }}>
+            El agente responde desde el índice de tus workspaces y profundiza solo con tu autoridad.
+          </div>
+          <button type="button" className="toolset-invoke" onClick={() => window.dispatchEvent(new CustomEvent("faberloom:nav", { detail: { nav: "agent-tasks" } }))}>
+            <Icon name="layers" size={14}/>Ver tareas en curso
+          </button>
+        </div>
+      )}
+      {tab !== "agente" && !loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
       <div className="toolset-list">
         {filtered.map((item) => (
           <ToolsetItem
@@ -3666,7 +3692,6 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "audit" ? <AuditView activeWorkspace={activeWorkspace} features={features}/>
      : (nav === "mail" || nav === "inbox") && features?.email_connector_enabled ? <MailView activeWorkspace={activeWorkspace}/>
      : nav === "skills" ? <SkillsView activeWorkspace={activeWorkspace}/>
-     : nav === "agents" ? <AgentsView activeWorkspace={activeWorkspace}/>
      : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
      : nav === "billing" ? <BillingView user={user}/>
@@ -3819,6 +3844,7 @@ function App({ user, onLogout }) {
   const [mode, setMode] = useState("operar");
   const [nav, setNav] = useState("space");
   const [workspaces, setWorkspaces] = useState(boot ? boot.workspaces : []);
+  const [generalWorkspace, setGeneralWorkspace] = useState(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(boot ? boot.activeWorkspaceId : null);
   const [status, setStatus] = useState(boot && boot.workspaces.length ? "ready" : "loading");
   const [theme, setTheme] = useState(getInitialTheme);
@@ -3851,12 +3877,17 @@ function App({ user, onLogout }) {
   useEffect(() => {
     if (boot && boot.workspaces.length) return;
     let cancelled = false;
-    apiGet("/api/workspaces")
-      .then((payload) => {
+    Promise.all([
+      apiGet("/api/workspaces").catch(() => ({ workspaces: [] })),
+      apiGet("/api/workspaces/general").catch(() => null),
+    ])
+      .then(([payload, general]) => {
         if (cancelled) return;
         const list = Array.isArray(payload) ? payload : (payload.workspaces || []);
         setWorkspaces(list);
-        setActiveWorkspaceId((current) => current || (list[0] && list[0].id) || null);
+        setGeneralWorkspace(general);
+        const firstId = general?.id || (list[0] && list[0].id) || null;
+        setActiveWorkspaceId((current) => current || firstId);
         setStatus("ready");
       })
       .catch(() => { if (!cancelled) setStatus("error"); });
@@ -3888,7 +3919,8 @@ function App({ user, onLogout }) {
     if (cmd.type === "theme") { setTheme(cmd.value); pushToast("Tema cambiado a " + cmd.value, "success"); }
   };
 
-  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+  const allWorkspaces = useMemo(() => generalWorkspace ? [generalWorkspace, ...workspaces] : workspaces, [workspaces, generalWorkspace]);
+  const activeWorkspace = allWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
 
   useEffect(() => {
     if (!activeWorkspace) { setBudget(null); return; }
@@ -3903,7 +3935,7 @@ function App({ user, onLogout }) {
     <Topbar workspaceId={activeWorkspaceId} onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
-      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
       <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView} user={user}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>

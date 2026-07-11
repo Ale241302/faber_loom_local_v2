@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 47
+SCHEMA_VERSION = 48
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1792,6 +1792,12 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_memory_revision_block
         ON memory_revision(tenant_id, workspace_id, block_id, created_at);
     """,
+    48: """
+    -- E4-4 — Presencia única: chat general del tenant (ws-general)
+    ALTER TABLE workspace ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard';
+    CREATE INDEX IF NOT EXISTS idx_workspace_kind_tenant
+        ON workspace(tenant_id, kind);
+    """,
 }
 
 
@@ -1844,6 +1850,7 @@ class WorkspaceCreate(BaseModel):
     inherits_kb: int = Field(default=0, ge=0, le=1)
     confidential: int = Field(default=0, ge=0, le=1)
     passphrase: str | None = Field(default=None, max_length=200)
+    kind: Literal["standard", "tenant_general"] = Field(default="standard")
 
     @field_validator("name")
     @classmethod
@@ -1870,6 +1877,7 @@ class WorkspaceRead(BaseModel):
     id: str
     name: str
     slug: str
+    kind: str = "standard"
     field_aliases_json: str | None = None
     tenant_id: str | None = None
     user_id: str | None = None
@@ -1887,6 +1895,12 @@ class WorkspaceRead(BaseModel):
     is_canary: int = 0
     created_at: str
     updated_at: str
+
+
+class GeneralWorkspaceRead(WorkspaceRead):
+    """Tenant general workspace enriched with the agent's display name."""
+
+    display_name: str = "Faber"
 
 
 class UserRead(BaseModel):

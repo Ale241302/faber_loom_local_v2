@@ -182,11 +182,13 @@ from .living_agent.memory import (
     orchestrate_memory_proposals,
 )
 from .living_agent.orchestrator import TaskOrchestrator
+from .living_agent.presence import handle_presence_message
 from .living_agent.tasks import get_task, list_tasks
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
     ChatCompletionRequest,
+    GeneralWorkspaceRead,
     ChatCompletionResponse,
     ChatCreate,
     ChatInvokeRequest,
@@ -999,7 +1001,29 @@ def api_list_workspaces(
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceListRead:
     ctx = context_from_request(request)
-    return WorkspaceListRead(workspaces=[WorkspaceRead(**row) for row in list_workspaces(ctx, conn)])
+    all_workspaces = list_workspaces(ctx, conn)
+    # E4-4: ws-general no aparece en el listado normal de workspaces.
+    visible = [ws for ws in all_workspaces if ws.get("kind") != "tenant_general"]
+    return WorkspaceListRead(workspaces=[WorkspaceRead(**row) for row in visible])
+
+
+@router.get("/workspaces/general", response_model=GeneralWorkspaceRead)
+def api_get_general_workspace(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> GeneralWorkspaceRead:
+    """Return the tenant's general chat workspace (ws-general), if any."""
+
+    ctx = context_from_request(request)
+    from .db import get_workspace_by_kind
+    from .entity_identity import get_identity
+
+    ws = get_workspace_by_kind(ctx, conn, "tenant_general")
+    if ws is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="General workspace not found")
+    identity = get_identity(conn, ctx.tenant_id or "default")
+    display_name = identity.name if identity is not None else "Faber"
+    return GeneralWorkspaceRead(**{**ws, "display_name": display_name})
 
 
 @router.post("/workspaces", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -1009,6 +1033,13 @@ def api_create_workspace(
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceRead:
     bootstrap_ctx = context_from_request(request)
+    if payload.kind == "tenant_general":
+        role = bootstrap_ctx.actor_role_at_decision or ""
+        if role not in {"platform_admin", "system", "owner"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Creating a tenant_general workspace requires platform_admin or system role",
+            )
     event: AuditEvent | None = None
     try:
         with transaction(conn, ctx=bootstrap_ctx):
@@ -1832,6 +1863,101 @@ def _build_user_message_with_attachment(
     )
 
 
+def _handle_presence_completion(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    chat_id: str,
+    payload: ChatCompletionRequest,
+    workspace: dict[str, Any],
+    request: Request,
+) -> ChatCompletionResponse:
+    """E4-4: chat general del tenant (ws-general) via Agente Vivo.
+
+    Responde desde workspace_brief INDEX + memoria personal; profundiza a
+    workspaces concretos sin elevar privilegios.
+    """
+
+    # Reject @mentions / skill_ids / auto mode in the general chat for now;
+    # they should target a concrete workspace or use the task flow.
+    if _AT_MENTION_RE.match(payload.message.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="@routine mentions are not supported in the general chat",
+        )
+    if payload.skill_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Skill selection is not supported in the general chat",
+        )
+    if payload.mode == "auto":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Auto mode is not supported in the general chat",
+        )
+
+    from uuid import uuid4
+
+    correlation_id = str(uuid4())
+    user_message = payload.message.strip()
+
+    presence_result = handle_presence_message(
+        ctx,
+        conn,
+        user_message,
+        correlation_id=correlation_id,
+    )
+
+    audit_event: AuditEvent | None = None
+    assistant_message: MessageRead | None = None
+    with transaction(conn, ctx=ctx):
+        insert_message(
+            ctx,
+            conn,
+            chat_id=chat_id,
+            role="user",
+            content=user_message,
+            route={"presence": True, "correlation_id": correlation_id},
+        )
+        assistant_row = insert_message(
+            ctx,
+            conn,
+            chat_id=chat_id,
+            role="assistant",
+            content=presence_result["content"],
+            route={
+                "presence": True,
+                "intent": presence_result.get("intent"),
+                "level": presence_result.get("level"),
+                "target_workspace_id": presence_result.get("target_workspace_id"),
+                "correlation_id": correlation_id,
+            },
+        )
+        assistant_message = _serialize_message(assistant_row)
+        audit_payload = presence_result.get("audit_payload") or {}
+        audit_payload["chat_id"] = chat_id
+        audit_payload["workspace_id"] = workspace["id"]
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="living_agent.read",
+            payload=audit_payload,
+            mirror_jsonl=False,
+        )
+
+    if audit_event is not None:
+        _mirror_audit(audit_event)
+
+    return ChatCompletionResponse(
+        message=assistant_message,
+        provider_slug="presence",
+        model="presence",
+        input_tokens=0,
+        output_tokens=0,
+        cost_usd=0.0,
+        duration_ms=0,
+    )
+
+
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/completions", response_model=ChatCompletionResponse)
 def api_create_completion(
     workspace_id: str,
@@ -1842,10 +1968,15 @@ def api_create_completion(
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> ChatCompletionResponse:
     ctx = context_from_request(request, workspace_id=workspace_id)
-    if get_workspace(ctx, conn) is None:
+    workspace = get_workspace(ctx, conn)
+    if workspace is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    # E4-4: chat general del tenant (ws-general) enruta a la presencia única.
+    if workspace.get("kind") == "tenant_general":
+        return _handle_presence_completion(ctx, conn, chat_id, payload, workspace, request)
 
     byo_mode = resolve(conn, ctx, "routing.byo_mode", default="hibrido")
 

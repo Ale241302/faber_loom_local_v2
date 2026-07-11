@@ -480,6 +480,18 @@ def _bootstrap_approved_tenant(
             )
             workspace_id = workspace["id"]
 
+            # E4-4: chat general del tenant as a system workspace.
+            general_ws = create_workspace(
+                bootstrap_ctx,
+                app_conn,
+                WorkspaceCreate(
+                    name="Chat general",
+                    slug="general",
+                    kind="tenant_general",
+                ),
+            )
+            general_workspace_id = general_ws["id"]
+
             now = utcnow()
             tenant_defaults: list[tuple[str, Any]] = [
                 ("ambient.enabled", False),
