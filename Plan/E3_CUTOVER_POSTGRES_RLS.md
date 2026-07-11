@@ -64,7 +64,7 @@ stamp: 2026-07-07
 - [x] Eliminar/verificar variable `FABERLOOM_DEV_TRUST_HEADERS` de cualquier `.env`/compose (no estaba presente).
 - [x] Validación de tests: suite local 480 passed/12 skipped; tests Postgres E3 23 passed; producción health + `/api/me` + `/api/workspaces` OK.
 - [x] Monitoreo inicial: logs muestran arranque limpio, conexiones Postgres devueltas al pool (`rolling back returned connection`).
-- [ ] Documentar incidente en `docs/audits/` si aplica (pendiente a criterio del owner).
+- [x] Documentar incidente en `docs/audits/` si aplica. **Resuelto:** no se registró incidente durante el corte; el cierre parcial E3 se documenta en `docs/audits/ACTA_ETAPA3_CIERRE_PARCIALES_20260710.md` y `docs/audits/AUDIT_E3_CIERRE_PARCIALES_20260710.md`.
 
 ## 6. Notas para el próximo despliegue
 
