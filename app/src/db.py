@@ -1641,6 +1641,7 @@ def insert_usage_record(
     step_index: int | None = None,
     chain_id: str | None = None,
     capability: str | None = None,
+    task_id: str | None = None,
     key_origin: str | None = None,
 ) -> dict[str, Any]:
     with transaction(conn, ctx=ctx):
@@ -1690,12 +1691,13 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                task_id,
                 platform_key_used,
                 platform_key_surcharge_usd,
                 byo_mode_at_run,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -1725,6 +1727,7 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                task_id,
                 platform_key_used,
                 platform_key_surcharge_usd,
                 byo_mode,

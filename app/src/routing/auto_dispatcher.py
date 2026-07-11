@@ -413,12 +413,13 @@ def run_auto_chain(
         )
 
     # E4-2 R11: log the natural planner decision with full plan and correlation.
+    plan_id: str | None = None
     decision_chain_id: str | None = None
     try:
         from ..living_agent.planner import log_planner_decision
 
         decision_chain_id = start_chain(ctx, conn, chat_id=chat_id, kind="auto")
-        log_planner_decision(
+        log = log_planner_decision(
             ctx,
             conn,
             mode="natural",
@@ -428,20 +429,51 @@ def run_auto_chain(
             task_ref=chat_id,
             planner_cost_usd=plan.planner_cost_usd,
         )
+        plan_id = log.get("id")
     except Exception:
         logger.exception("Failed to log natural planner decision for chat %s", chat_id)
 
-    return execute_plan(
-        ctx,
-        conn,
+    # E4-3: run the plan under the task orchestrator (HITL, kill, budget, artifacts).
+    from ..living_agent.orchestrator import TaskOrchestrator
+
+    task = TaskOrchestrator(ctx, conn, policy=policy).run_task_from_plan(
         chat_id=chat_id,
         user_request=user_request,
         plan=plan,
+        plan_id=plan_id,
         attachments=attachments,
-        policy=policy,
         image_attachment=image_attachment,
         chain_id=decision_chain_id,
     )
+    if task.get("status") in {"failed", "killed", "degraded"}:
+        raise NoCapacityError(task.get("output_text") or "Agent task did not complete")
+    last_step = None
+    for s in reversed(task.get("steps", [])):
+        if s["status"] == "completed":
+            last_step = s
+            break
+
+    return {
+        "content": task.get("output_text") or "",
+        "provider_slug": last_step["provider_slug"] if last_step else "router",
+        "model": last_step["model"] if last_step else "unknown",
+        "input_tokens": sum(s["input_tokens"] for s in task.get("steps", [])),
+        "output_tokens": sum(s["output_tokens"] for s in task.get("steps", [])),
+        "cost_usd": round(task.get("cost_total_usd", 0.0), 8),
+        "duration_ms": sum(s["duration_ms"] for s in task.get("steps", [])),
+        "chain_id": task.get("chain_id") or task.get("id"),
+        "task_id": task.get("id"),
+        "steps": [
+            {
+                "step_index": s["step_index"],
+                "provider_slug": s["provider_slug"],
+                "model": s["model"],
+                "capability": s["capability"],
+                "cost_usd": s["cost_usd"],
+            }
+            for s in task.get("steps", [])
+        ],
+    }
 
 
 def _build_plan(
@@ -692,16 +724,25 @@ def _render_step_input(
     pdf_context: str,
     previous_result: dict[str, Any] | None,
 ) -> str:
+    prior = ""
+    if previous_result is not None:
+        prior = str(previous_result.get("content", previous_result.get("output", ""))).strip()
+
     if step["task"] == "analyze_image":
         return f"User request: {user_request}\n\nResponde considerando la imagen adjunta."
     if step["task"] == "summarize_pdf" and pdf_context:
         return f"Summarize the following PDF text in one paragraph:\n\n{pdf_context[:6000]}"
     if step["task"] == "generate_image" and previous_result:
-        prior = str(previous_result.get("content", previous_result.get("output", "")))
         return f"Generate an image that illustrates this summary: {prior[:1000]}"
     if pdf_context:
-        return f"Context from PDF:\n\n{pdf_context[:6000]}\n\nUser request: {user_request}\n\n{step['prompt']}"
-    return f"User request: {user_request}\n\n{step['prompt']}"
+        base = f"Context from PDF:\n\n{pdf_context[:6000]}\n\nUser request: {user_request}\n\n{step['prompt']}"
+        if prior:
+            base += f"\n\nResultado del paso anterior:\n{prior[:4000]}"
+        return base
+    base = f"User request: {user_request}\n\n{step['prompt']}"
+    if prior:
+        base += f"\n\nResultado del paso anterior:\n{prior[:4000]}"
+    return base
 
 
 OPENAI_IMAGE_FLAT_COST_USD = 0.04

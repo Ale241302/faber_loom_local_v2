@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 45
+SCHEMA_VERSION = 46
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1631,6 +1631,77 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);
     CREATE INDEX IF NOT EXISTS idx_message_feedback_workspace_id ON message_feedback(workspace_id, tenant_id);
     """,
+    46: """
+    -- E4-3: agent task orchestration (multi-step natural mode with HITL, kill switch and budget).
+    CREATE TABLE IF NOT EXISTS agent_task (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        chat_id TEXT,
+        plan_id TEXT REFERENCES planner_decision_log(id) ON DELETE SET NULL,
+        user_request TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('planned', 'running', 'paused_hitl', 'completed', 'killed', 'failed', 'degraded')),
+        cost_total_usd REAL NOT NULL DEFAULT 0.0,
+        budget_cap_usd REAL,
+        est_cost_usd REAL,
+        kill_requested_at TEXT,
+        kill_requested_by TEXT,
+        hitl_step_id TEXT,
+        hitl_token TEXT,
+        output_text TEXT,
+        output_ref TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 46,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_task_workspace ON agent_task(tenant_id, workspace_id, status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_chat ON agent_task(chat_id);
+
+    CREATE TABLE IF NOT EXISTS agent_task_step (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        task_id TEXT NOT NULL REFERENCES agent_task(id) ON DELETE CASCADE,
+        step_index INTEGER NOT NULL,
+        step_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        task TEXT,
+        prompt TEXT,
+        provider_slug TEXT,
+        model TEXT,
+        input_ref TEXT,
+        output_ref TEXT,
+        evidence_id TEXT,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused_hitl', 'completed', 'failed', 'skipped')),
+        status_reason TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 46,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_task_step_task ON agent_task_step(task_id, step_index);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_step_status ON agent_task_step(task_id, status);
+
+    -- Link usage records to agent tasks for ledger aggregation.
+    ALTER TABLE usage_record ADD COLUMN task_id TEXT;
+    CREATE INDEX IF NOT EXISTS idx_usage_record_task_id ON usage_record(task_id);
+    """,
 }
 
 
@@ -1809,6 +1880,77 @@ class PromotionResponse(BaseModel):
     action: str
     promoted_at: str | None = None
     audit_event_id: str | None = None
+
+
+class AgentTaskStepRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    step_index: int
+    step_id: str
+    capability: str
+    task: str | None = None
+    prompt: str | None = None
+    provider_slug: str | None = None
+    model: str | None = None
+    input_ref: str | None = None
+    output_ref: str | None = None
+    evidence_id: str | None = None
+    cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
+    status: str
+    status_reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AgentTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str | None = None
+    workspace_id: str
+    chat_id: str | None = None
+    plan_id: str | None = None
+    user_request: str
+    status: str
+    cost_total_usd: float = 0.0
+    budget_cap_usd: float | None = None
+    est_cost_usd: float | None = None
+    kill_requested_at: str | None = None
+    kill_requested_by: str | None = None
+    hitl_step_id: str | None = None
+    hitl_token: str | None = None
+    output_text: str | None = None
+    output_ref: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    created_at: str
+    updated_at: str
+    steps: list[AgentTaskStepRead] = Field(default_factory=list)
+
+
+class AgentTaskCreate(BaseModel):
+    user_request: str = Field(min_length=1, max_length=20000)
+    chat_id: str | None = None
+
+
+class AgentTaskApproveRequest(BaseModel):
+    confirmation_token: str
+
+
+class AgentTaskKillRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class AgentTaskRejectRequest(BaseModel):
+    token: str = Field(min_length=1)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class AuditEvent(BaseModel):

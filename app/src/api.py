@@ -121,6 +121,7 @@ from .faberloom_catalog import (
 )
 from .living_agent.planner import (
     get_shadow_report,
+    log_planner_decision,
     run_shadow_plan,
     run_shadow_plan_background,
     update_model_track_record,
@@ -154,7 +155,12 @@ from .ingest import IngestError, extract_text_from_object, load_image_attachment
 from .key_broker import KeyLevel, resolve_read_level
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
-from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
+from .routing.auto_dispatcher import (
+    AutoDispatcherError,
+    NaturalPlanner,
+    NoCapacityError,
+    run_auto_chain,
+)
 from .routing.policy import resolve_routing_mode
 from .plans import PlanError, get_plan_surcharge_pct
 from .living_agent.autonomy import (
@@ -165,6 +171,8 @@ from .living_agent.autonomy import (
 )
 from .living_agent.briefs import get_workspace_brief
 from .living_agent.feedback import record_message_feedback
+from .living_agent.orchestrator import TaskOrchestrator
+from .living_agent.tasks import get_task, list_tasks
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -196,6 +204,11 @@ from .models import (
     EmailAccountRotateRequest,
     EmailAccountWrite,
     FeaturesRead,
+    AgentTaskApproveRequest,
+    AgentTaskCreate,
+    AgentTaskKillRequest,
+    AgentTaskRead,
+    AgentTaskRejectRequest,
     MailMessageRead,
     MessageFeedbackRead,
     MessageFeedbackRequest,
@@ -1440,6 +1453,166 @@ def api_create_message_feedback(
             detail=str(exc),
         ) from exc
     return MessageFeedbackRead(**feedback)
+
+
+# ---------------------------------------------------------------------------
+# E4-3: Agent task orchestration endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks", response_model=AgentTaskRead)
+def api_create_agent_task(
+    workspace_id: str,
+    payload: AgentTaskCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    policy = get_routing_policy(ctx, conn)
+    planner = NaturalPlanner(policy=policy)
+    plan = planner.plan(
+        ctx,
+        conn,
+        user_request=payload.user_request,
+        attachments=[],
+        policy=policy,
+    )
+
+    log = log_planner_decision(
+        ctx,
+        conn,
+        mode="natural",
+        plan=plan,
+        correlation_id=payload.chat_id,
+        task_ref=payload.chat_id,
+        planner_cost_usd=plan.planner_cost_usd,
+    )
+
+    try:
+        task = TaskOrchestrator(ctx, conn, policy=policy).run_task_from_plan(
+            chat_id=payload.chat_id,
+            user_request=payload.user_request,
+            plan=plan,
+            plan_id=log.get("id"),
+        )
+    except NoCapacityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except AutoDispatcherError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return AgentTaskRead(**task)
+
+
+@router.get("/workspaces/{workspace_id}/agent-tasks", response_model=list[AgentTaskRead])
+def api_list_agent_tasks(
+    workspace_id: str,
+    request: Request,
+    status_filter: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[AgentTaskRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    tasks = list_tasks(ctx, conn, workspace_id=workspace_id, status=status_filter)
+    return [AgentTaskRead(**t) for t in tasks]
+
+
+@router.get("/workspaces/{workspace_id}/agent-tasks/{task_id}", response_model=AgentTaskRead)
+def api_get_agent_task(
+    workspace_id: str,
+    task_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    task = get_task(ctx, conn, task_id, include_steps=True)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/kill", response_model=AgentTaskRead)
+def api_kill_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskKillRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).kill_task(
+            task_id,
+            reason=payload.reason,
+            requested_by=ctx.actor_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/approve", response_model=AgentTaskRead)
+def api_approve_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskApproveRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).approve_hitl_step(task_id, payload.confirmation_token)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/reject", response_model=AgentTaskRead)
+def api_reject_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskRejectRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).reject_hitl_step(
+            task_id,
+            payload.token,
+            reason=payload.reason,
+            rejected_by=ctx.actor_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return AgentTaskRead(**task)
 
 
 def _build_skill_context(

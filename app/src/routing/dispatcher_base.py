@@ -25,6 +25,7 @@ class DispatchStep:
     chosen: dict[str, Any] | None = None
     reason: str = ""
     inputs_from: str | None = None
+    requires_hitl: bool = False
 
 
 @dataclass
