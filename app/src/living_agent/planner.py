@@ -381,18 +381,8 @@ def get_shadow_report(
         cost_rows = conn.execute(
             """
             SELECT mode,
-                   COALESCE(SUM((
-                       SELECT SUM(value)
-                       FROM json_each(
-                           json_extract(plan_json, '$.est_total_cost_usd')
-                       )
-                   )), 0) AS est_cost,
-                   COALESCE(SUM((
-                       SELECT COALESCE(value, 0)
-                       FROM json_each(
-                           json_extract(actual_outcome_json, '$.actual_cost_usd')
-                       )
-                   )), 0) AS actual_cost
+                   COALESCE(SUM(json_extract(plan_json, '$.est_total_cost_usd')), 0) AS est_cost,
+                   COALESCE(SUM(json_extract(actual_outcome_json, '$.cost_usd')), 0) AS actual_cost
             FROM planner_decision_log
             WHERE tenant_id = ? AND created_at > ?
             GROUP BY mode

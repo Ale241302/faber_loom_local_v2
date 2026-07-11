@@ -80,16 +80,35 @@ def test_workspace_brief_table_exists(client: TestClient) -> None:
     assert row is not None
 
 
-def test_build_brief_default_content(client: TestClient) -> None:
+def test_build_brief_default_index(client: TestClient) -> None:
     ws_id = _workspace_id(client)
     conn = connect()
     ctx = _context(ws_id, role="owner")
     brief = build_workspace_brief(ctx, conn, ws_id)
 
     assert brief["sealed"] is False
-    assert brief["level"] == "content"
+    assert brief["level"] == "index"
     assert "source_counts" in brief
     assert "recent_titles" in brief
+    assert "open_invoices" not in brief
+
+
+def test_build_brief_content_with_approver_shows_invoices(client: TestClient) -> None:
+    ws_id = _workspace_id(client)
+    conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CONTENT,
+        approver_roles={"owner"},
+        updated_by="test",
+    )
+
+    ctx = _context(ws_id, role="owner")
+    brief = build_workspace_brief(ctx, conn, ws_id)
+
+    assert brief["level"] == "content"
     assert "open_invoices" in brief
     assert "items" not in brief["open_invoices"]
     assert "total_usd" in brief["open_invoices"]
@@ -98,6 +117,15 @@ def test_build_brief_default_content(client: TestClient) -> None:
 def test_build_brief_open_invoices_are_aggregates_only(client: TestClient) -> None:
     ws_id = _workspace_id(client)
     conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CONTENT,
+        approver_roles={"owner"},
+        updated_by="test",
+    )
+
     ctx = _context(ws_id, role="owner")
     brief = build_workspace_brief(ctx, conn, ws_id)
 
@@ -161,7 +189,7 @@ def test_refresh_persists_brief(client: TestClient) -> None:
     fetched = get_workspace_brief(conn, ctx, ws_id)
     assert fetched is not None
     assert fetched["workspace_id"] == ws_id
-    assert fetched["brief"]["level"] == "content"
+    assert fetched["brief"]["level"] == "index"
 
 
 def test_is_brief_stale_missing(client: TestClient) -> None:
@@ -192,9 +220,8 @@ def test_get_brief_endpoint_returns_persisted_brief(client: TestClient) -> None:
     data = resp.json()
     assert data["workspace_id"] == ws_id
     assert data["schema_version"] == 42
-    assert data["brief"]["level"] == "content"
-    assert "open_invoices" in data["brief"]
-    assert "items" not in data["brief"]["open_invoices"]
+    assert data["brief"]["level"] == "index"
+    assert "open_invoices" not in data["brief"]
 
 
 def test_get_brief_endpoint_degrades_for_non_approver(client: TestClient) -> None:

@@ -212,7 +212,7 @@ def build_workspace_brief(
         tenant_id=tenant_id,
         space_id=workspace_id,
         user_roles=roles,
-        default=KeyLevel.CONTENT,
+        default=KeyLevel.INDEX,
     )
 
     if level == KeyLevel.CLOSED:
@@ -242,7 +242,7 @@ def build_workspace_brief(
         "last_routine_run": last_run,
         "recent_activity": activity,
     }
-    if level == KeyLevel.CONTENT:
+    if level == KeyLevel.CONTENT and ("owner" in roles or "curator" in roles or "ceo" in roles):
         brief["open_invoices"] = _open_invoices(conn, ctx, workspace_id)
 
     return brief

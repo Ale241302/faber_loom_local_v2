@@ -1102,7 +1102,7 @@ def api_get_workspace_brief(
         tenant_id=ctx.require_tenant(),
         space_id=workspace_id,
         user_roles=user_roles,
-        default=KeyLevel.CONTENT,
+        default=KeyLevel.INDEX,
     )
 
     brief = (row.get("brief") or {}).copy()

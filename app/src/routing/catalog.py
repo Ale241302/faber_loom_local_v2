@@ -18,6 +18,11 @@ from ..db import (
     list_model_catalog,
 )
 from ..db_adapter import transaction
+from ..living_agent.constants import (
+    TRACK_RECORD_ACCEPTANCE_BONUS_THRESHOLD,
+    TRACK_RECORD_FILTER_MIN_SAMPLES,
+    TRACK_RECORD_FILTER_THRESHOLD,
+)
 from ..router import cost as router_cost
 from ..router.registry import build_router
 
@@ -79,7 +84,7 @@ def _score(entry: dict[str, Any], complexity: str, track_record: dict[str, Any] 
     bonus = 0.0
     if track_record and track_record.get("total_decisions", 0) > 0:
         acceptance = track_record.get("accepted_count", 0) / track_record["total_decisions"]
-        if acceptance >= 0.90:
+        if acceptance >= TRACK_RECORD_ACCEPTANCE_BONUS_THRESHOLD:
             bonus = -0.05  # small cost discount to prefer proven models
 
     if complexity == "low":
@@ -305,11 +310,11 @@ def resolve_model_for_capability(
             continue
         if preferred_provider and entry["provider_slug"] != preferred_provider:
             continue
-        # E4-2: discard models with poor track record (>=20 samples, <70% accepted).
+        # E4-2: discard models with poor track record (>=N samples, <T% accepted).
         tr = _track_record(entry)
-        if tr and tr.get("total_decisions", 0) >= 20:
+        if tr and tr.get("total_decisions", 0) >= TRACK_RECORD_FILTER_MIN_SAMPLES:
             acceptance = tr.get("accepted_count", 0) / tr["total_decisions"]
-            if acceptance < 0.70:
+            if acceptance < TRACK_RECORD_FILTER_THRESHOLD:
                 continue
         # Context-window check: descarta modelos que no aguantan el input estimado
         # (margen 20% + espacio para el output).

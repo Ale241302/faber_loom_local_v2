@@ -42,21 +42,23 @@ def resolve_routing_mode(ctx: Context, conn: Any) -> str:
     """
 
     from ..config_cascade import _user_config, _workspace_config, _tenant_config
+    from ..db_adapter import transaction
 
-    # 1. User preference wins.
-    user_mode = _user_config(conn, ctx, "routing.mode")
-    if user_mode in ("manual", "shadow", "natural"):
-        return user_mode
+    with transaction(conn, ctx=ctx):
+        # 1. User preference wins.
+        user_mode = _user_config(conn, ctx, "routing.mode")
+        if user_mode in ("manual", "shadow", "natural"):
+            return user_mode
 
-    # 2. Workspace: explicit mode (future column).
-    workspace_mode = _workspace_config(conn, ctx, "routing.mode")
-    if workspace_mode in ("manual", "shadow", "natural"):
-        return workspace_mode
+        # 2. Workspace: explicit mode.
+        workspace_mode = _workspace_config(conn, ctx, "routing.mode")
+        if workspace_mode in ("manual", "shadow", "natural"):
+            return workspace_mode
 
-    # 3. Tenant setting.
-    tenant_mode = _tenant_config(conn, ctx, "routing.mode")
-    if tenant_mode in ("manual", "shadow", "natural"):
-        return tenant_mode
+        # 3. Tenant setting.
+        tenant_mode = _tenant_config(conn, ctx, "routing.mode")
+        if tenant_mode in ("manual", "shadow", "natural"):
+            return tenant_mode
 
     # 4. Legacy double gate as fallback only when no explicit mode is set.
     global_enabled = os.getenv("FABERLOOM_AUTO_MODE_ENABLED", "false").lower() in {

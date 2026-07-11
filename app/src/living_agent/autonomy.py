@@ -22,14 +22,17 @@ from ..audit import audit_writer
 from ..context import Context
 from ..db import get_routing_policy, update_routing_policy, utc_now
 from ..db_adapter import transaction
+from .constants import (
+    ACE_ABSURD_COST_RATIO,
+    ACE_COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION,
+    ACE_DEFAULT_REPORT_DAYS,
+    ACE_DEGRADE_OVERRUN_RATIO,
+    ACE_DEGRADE_WINDOW_HOURS,
+    ACE_MIN_SHADOW_DECISIONS_FOR_PROMOTION,
+)
 
 
 _TOKEN_SALT = "faberloom-e4-2-shadow-promotion"
-_MIN_DECISIONS_FOR_PROMOTION = 50
-_COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION = 30
-_DEFAULT_REPORT_DAYS = 14
-_DEFAULT_DEGRADE_WINDOW_HOURS = 24
-_DEGRADE_OVERRUN_RATIO = 1.5
 
 
 def generate_promotion_token(workspace_id: str, action: str) -> str:
@@ -52,8 +55,8 @@ def evaluate_promotion_readiness(
     conn: Any,
     workspace_id: str,
     *,
-    days: int = _DEFAULT_REPORT_DAYS,
-    min_decisions: int = _MIN_DECISIONS_FOR_PROMOTION,
+    days: int = ACE_DEFAULT_REPORT_DAYS,
+    min_decisions: int = ACE_MIN_SHADOW_DECISIONS_FOR_PROMOTION,
 ) -> dict[str, Any]:
     """Return whether a workspace may be promoted from ``shadow`` to ``natural``.
 
@@ -103,7 +106,7 @@ def evaluate_promotion_readiness(
               AND json_extract(plan_json, '$.est_total_cost_usd') >
                   json_extract(actual_outcome_json, '$.cost_usd') * ?
             """,
-            (tenant_id, workspace_id, since, _DEGRADE_OVERRUN_RATIO),
+            (tenant_id, workspace_id, since, ACE_ABSURD_COST_RATIO),
         ).fetchone()
         absurd_count = int(absurd_row["n"]) if absurd_row else 0
 
@@ -115,7 +118,7 @@ def evaluate_promotion_readiness(
     if degraded_count >= 2 and last_degraded_at:
         try:
             last = datetime.fromisoformat(last_degraded_at.replace("Z", "+00:00"))
-            if (_now() - last).days < _COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION:
+            if (_now() - last).days < ACE_COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION:
                 in_cooldown = True
         except Exception:
             pass
@@ -215,8 +218,8 @@ def degrade_workspace_if_needed(
     conn: Any,
     workspace_id: str,
     *,
-    window_hours: int = _DEFAULT_DEGRADE_WINDOW_HOURS,
-    overrun_ratio: float = _DEGRADE_OVERRUN_RATIO,
+    window_hours: int = ACE_DEGRADE_WINDOW_HOURS,
+    overrun_ratio: float = ACE_DEGRADE_OVERRUN_RATIO,
 ) -> dict[str, Any]:
     """Automatically degrade a workspace to ``shadow`` if real cost overruns the estimate.
 

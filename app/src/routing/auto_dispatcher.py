@@ -190,6 +190,7 @@ def execute_plan(
     attachments: list[dict[str, Any]] | None = None,
     policy: dict[str, Any] | None = None,
     image_attachment: dict[str, Any] | None = None,
+    chain_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute a pre-built dispatch plan and return the aggregated result."""
 
@@ -199,7 +200,8 @@ def execute_plan(
         policy = get_routing_policy(ctx, conn)
 
     attachments = attachments or []
-    chain_id = start_chain(ctx, conn, chat_id=chat_id, kind="auto")
+    if chain_id is None:
+        chain_id = start_chain(ctx, conn, chat_id=chat_id, kind="auto")
 
     pdf_texts: list[str] = []
     for att in attachments:
@@ -410,13 +412,14 @@ def run_auto_chain(
     try:
         from ..living_agent.planner import log_planner_decision
 
+        decision_chain_id = start_chain(ctx, conn, chat_id=chat_id, kind="auto")
         log_planner_decision(
             ctx,
             conn,
             mode="natural",
             plan=plan,
             correlation_id=chat_id,
-            chain_id=start_chain(ctx, conn, chat_id=chat_id, kind="auto"),
+            chain_id=decision_chain_id,
             task_ref=chat_id,
             planner_cost_usd=plan.planner_cost_usd,
         )
@@ -432,6 +435,7 @@ def run_auto_chain(
         attachments=attachments,
         policy=policy,
         image_attachment=image_attachment,
+        chain_id=decision_chain_id,
     )
 
 

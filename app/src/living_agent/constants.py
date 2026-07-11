@@ -1,0 +1,14 @@
+"""Shared constants for the living agent / autonomy subsystem (E4)."""
+
+# Track-record thresholds used by the model catalog scoring logic.
+TRACK_RECORD_ACCEPTANCE_BONUS_THRESHOLD = 0.90
+TRACK_RECORD_FILTER_THRESHOLD = 0.70
+TRACK_RECORD_FILTER_MIN_SAMPLES = 20
+
+# ACE promotion/degradation thresholds.
+ACE_MIN_SHADOW_DECISIONS_FOR_PROMOTION = 50
+ACE_COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION = 30
+ACE_DEGRADE_WINDOW_HOURS = 24
+ACE_DEGRADE_OVERRUN_RATIO = 1.5
+ACE_ABSURD_COST_RATIO = 1.5
+ACE_DEFAULT_REPORT_DAYS = 14
