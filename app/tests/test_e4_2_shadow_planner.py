@@ -14,8 +14,10 @@ from app.src.living_agent.autonomy import (
     evaluate_promotion_readiness,
     generate_promotion_token,
 )
+from app.src.living_agent.feedback import record_message_feedback
 from app.src.living_agent.planner import (
     get_shadow_report,
+    run_shadow_plan,
     update_model_track_record,
 )
 
@@ -439,3 +441,197 @@ def test_degradation_overrun_returns_to_shadow(client: TestClient) -> None:
     ).fetchone()
     assert policy["mode"] == "shadow"
     assert policy["degraded_count"] == 1
+
+
+
+def test_shadow_plan_usage_record_status_succeeded(client: TestClient) -> None:
+    """The shadow planner must record its cost as a real usage_record."""
+
+    ws = _setup_workspace(client)
+    conn = connect()
+    ctx = Context(workspace_id=ws, tenant_id="default", user_id="test", actor_id="test")
+
+    from app.src.db import get_routing_policy
+
+    policy = get_routing_policy(ctx.with_workspace(ws), conn)
+    plan = run_shadow_plan(
+        ctx,
+        conn,
+        chat_id="chat-shadow",
+        user_request="Tell me about looms",
+        actual_outcome={"provider_slug": "fake", "model": "fake-model", "cost_usd": 0.001, "duration_ms": 3},
+        policy=policy,
+    )
+    assert plan is not None
+
+    row = conn.execute(
+        """
+        SELECT status FROM usage_record
+        WHERE tenant_id = ? AND workspace_id = ? AND provider_slug = ? AND model = ?
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        ("default", ws, "living_agent", "shadow_plan"),
+    ).fetchone()
+    assert row is not None
+    assert row["status"] == "succeeded"
+
+
+def test_promotion_clears_promoted_at_on_rollback(client: TestClient) -> None:
+    ws = _setup_workspace(client)
+    conn = connect()
+    ctx = Context(workspace_id=ws, tenant_id="default", user_id="test", actor_id="test")
+    for _ in range(50):
+        _insert_decision(conn, ctx, ws, mode="shadow", est_cost=0.01, actual_cost=0.02)
+    conn.commit()
+
+    from app.src.db import update_routing_policy
+
+    update_routing_policy(ctx.with_workspace(ws), conn, mode="natural", promoted_at=utc_now())
+
+    token = generate_promotion_token(ws, "rollback-natural")
+    resp = client.post(
+        f"/api/workspaces/{ws}/routing/promote",
+        json={"mode": "shadow", "confirmation_token": token},
+        headers=_headers("owner"),
+    )
+    assert resp.status_code == 200
+
+    row = conn.execute(
+        "SELECT mode, promoted_at FROM workspace_routing_policy WHERE workspace_id = ?",
+        (ws,),
+    ).fetchone()
+    assert row["mode"] == "shadow"
+    assert row["promoted_at"] is None
+
+
+def test_degradation_clears_promoted_at(client: TestClient) -> None:
+    ws = _setup_workspace(client)
+    conn = connect()
+    ctx = Context(workspace_id=ws, tenant_id="default", user_id="test", actor_id="test")
+
+    from app.src.db import update_routing_policy
+
+    update_routing_policy(
+        ctx.with_workspace(ws),
+        conn,
+        mode="natural",
+        promoted_at=utc_now(),
+        degraded_count=1,
+    )
+    _insert_decision(conn, ctx, ws, mode="natural", est_cost=0.01, actual_cost=0.01)
+    conn.execute(
+        """
+        INSERT INTO usage_record (
+            id, tenant_id, workspace_id, chat_id, provider_slug, model,
+            input_tokens, output_tokens, cost_usd, duration_ms, status,
+            attempts_json, request_json, response_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_id("usg"),
+            ctx.require_tenant(),
+            ws,
+            new_id("cht"),
+            "fake",
+            "fake-model",
+            10,
+            10,
+            1.0,
+            1,
+            "succeeded",
+            "[]",
+            "{}",
+            "{}",
+            utc_now(),
+        ),
+    )
+
+    result = degrade_workspace_if_needed(ctx, conn, ws)
+    assert result["degraded"] is True
+
+    row = conn.execute(
+        "SELECT mode, promoted_at FROM workspace_routing_policy WHERE workspace_id = ?",
+        (ws,),
+    ).fetchone()
+    assert row["mode"] == "shadow"
+    assert row["promoted_at"] is None
+
+
+def test_message_feedback_updates_track_record(client: TestClient) -> None:
+    """A manual assistant message can receive rejected feedback that feeds the track record."""
+
+    ws = _setup_workspace(client)
+    resp = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Feedback"}, headers=_headers("owner"))
+    chat_id = resp.json()["id"]
+
+    resp = client.post(
+        f"/api/workspaces/{ws}/chats/{chat_id}/completions",
+        json={"message": "hello", "mode": "manual", "provider_slug": "fake", "model": "fake-model"},
+        headers=_headers("owner"),
+    )
+    assert resp.status_code == 200
+    message_id = resp.json()["message"]["id"]
+
+    resp = client.post(
+        f"/api/workspaces/{ws}/chats/{chat_id}/messages/{message_id}/feedback",
+        json={"outcome": "rejected", "reason": "hallucination"},
+        headers=_headers("owner"),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["outcome"] == "rejected"
+    assert data["previous_outcome"] is None
+
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT total_decisions, accepted_count, rejected_count
+        FROM model_track_record
+        WHERE tenant_id = ? AND capability = ? AND provider_slug = ? AND model = ?
+        """,
+        ("default", "chat", "fake", "fake-model"),
+    ).fetchone()
+    assert row is not None
+    assert row["total_decisions"] == 1
+    assert row["accepted_count"] == 0
+    assert row["rejected_count"] == 1
+
+
+def test_message_feedback_changes_previous_outcome(client: TestClient) -> None:
+    ws = _setup_workspace(client)
+    resp = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Feedback"}, headers=_headers("owner"))
+    chat_id = resp.json()["id"]
+
+    resp = client.post(
+        f"/api/workspaces/{ws}/chats/{chat_id}/completions",
+        json={"message": "hello", "mode": "manual", "provider_slug": "fake", "model": "fake-model"},
+        headers=_headers("owner"),
+    )
+    message_id = resp.json()["message"]["id"]
+
+    client.post(
+        f"/api/workspaces/{ws}/chats/{chat_id}/messages/{message_id}/feedback",
+        json={"outcome": "rejected"},
+        headers=_headers("owner"),
+    )
+    resp = client.post(
+        f"/api/workspaces/{ws}/chats/{chat_id}/messages/{message_id}/feedback",
+        json={"outcome": "accepted"},
+        headers=_headers("owner"),
+    )
+    data = resp.json()
+    assert data["outcome"] == "accepted"
+    assert data["previous_outcome"] == "rejected"
+
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT total_decisions, accepted_count, rejected_count
+        FROM model_track_record
+        WHERE tenant_id = ? AND capability = ? AND provider_slug = ? AND model = ?
+        """,
+        ("default", "chat", "fake", "fake-model"),
+    ).fetchone()
+    assert row["total_decisions"] == 1
+    assert row["accepted_count"] == 1
+    assert row["rejected_count"] == 0

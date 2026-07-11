@@ -756,6 +756,7 @@ def update_routing_policy(
     require_local_only: bool | None = None,
     mode: str | None = None,
     promoted_at: str | None = None,
+    clear_promoted_at: bool = False,
     degraded_count: int | None = None,
     last_degraded_at: str | None = None,
 ) -> dict[str, Any]:
@@ -783,6 +784,8 @@ def update_routing_policy(
             updates["mode"] = mode
         if promoted_at is not None:
             updates["promoted_at"] = promoted_at
+        if clear_promoted_at:
+            updates["promoted_at"] = None
         if degraded_count is not None:
             updates["degraded_count"] = degraded_count
         if last_degraded_at is not None:

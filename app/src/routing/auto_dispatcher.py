@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -31,6 +32,9 @@ from ..router.registry import build_router
 from .catalog import has_catalog_capability, resolve_model_for_capability
 from .dispatcher_base import DispatchPlan, DispatchStep, TaskDispatcher, step_id_for_index
 from .pdf_images import extract_pdf_text_and_images
+
+
+logger = logging.getLogger(__name__)
 
 
 class NoCapacityError(RuntimeError):
@@ -409,6 +413,7 @@ def run_auto_chain(
         )
 
     # E4-2 R11: log the natural planner decision with full plan and correlation.
+    decision_chain_id: str | None = None
     try:
         from ..living_agent.planner import log_planner_decision
 

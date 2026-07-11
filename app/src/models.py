@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 44
+SCHEMA_VERSION = 45
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1611,6 +1611,26 @@ MIGRATIONS: dict[int, str] = {
     BEFORE UPDATE ON tenant_invoice_sequence
     BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
+    45: """
+    -- E4-3 readiness: explicit human feedback per assistant message so the
+    -- model track record can learn from rejected/regenerated responses.
+    CREATE TABLE IF NOT EXISTS message_feedback (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('accepted', 'rejected', 'regenerated')),
+        previous_outcome TEXT CHECK (previous_outcome IN ('accepted', 'rejected', 'regenerated')),
+        reason TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 45,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);
+    CREATE INDEX IF NOT EXISTS idx_message_feedback_workspace_id ON message_feedback(workspace_id, tenant_id);
+    """,
 }
 
 
@@ -2189,6 +2209,20 @@ class MessageRead(BaseModel):
     source_version: str | None = None
     approved_by: str | None = None
     created_at: str
+
+
+class MessageFeedbackRequest(BaseModel):
+    outcome: Literal["accepted", "rejected", "regenerated"]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class MessageFeedbackRead(BaseModel):
+    id: str | None = None
+    message_id: str
+    outcome: str
+    previous_outcome: str | None = None
+    reason: str | None = None
+    created_at: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):

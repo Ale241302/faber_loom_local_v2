@@ -406,6 +406,43 @@ function ContextStrip({ activeWorkspace }) {
   </div>;
 }
 
+function MessageFeedback({ workspaceId, chatId, messageId, currentOutcome, onChange }) {
+  const [outcome, setOutcome] = useState(currentOutcome || null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (value) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await apiPost(`/api/workspaces/${workspaceId}/chats/${chatId}/messages/${messageId}/feedback`, { outcome: value });
+      setOutcome(res.outcome);
+      if (onChange) onChange(res.outcome);
+    } catch (err) {
+      console.error("Feedback failed", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const btn = (value, label) => {
+    const active = outcome === value;
+    return <button
+      type="button"
+      className={cx("feedback-btn", active && "feedback-btn-active")}
+      disabled={submitting}
+      onClick={() => submit(value)}
+      title={label}
+      aria-pressed={active}
+    >{label}</button>;
+  };
+
+  return <div className="message-feedback" aria-label="Retroalimentación del mensaje">
+    {btn("accepted", "👍 Útil")}
+    {btn("rejected", "👎 No útil")}
+    {btn("regenerated", "🔄 Regenerar")}
+  </div>;
+}
+
 function ChatList({ chats, activeChatId, setActiveChatId, onCreate, onRename, onRequestDelete }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -1140,6 +1177,14 @@ function SpaceView({ activeWorkspace }) {
                 {r.fallback && <span className="route-fallback">fallback</span>}
               </div>;
             })()}
+            {msg.role === "assistant" && activeWorkspace && activeChat && (
+              <MessageFeedback
+                workspaceId={activeWorkspace.id}
+                chatId={activeChat.id}
+                messageId={msg.id}
+                currentOutcome={null}
+              />
+            )}
           </div>
         ))}
         {busy && <div className="message message-assistant">

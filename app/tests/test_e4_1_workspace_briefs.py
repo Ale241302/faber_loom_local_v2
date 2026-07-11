@@ -171,7 +171,8 @@ def test_build_brief_content_sealed_for_non_approver(client: TestClient) -> None
 
     assert brief["sealed"] is True
     assert brief["level"] == "index"
-    assert "open_invoices" not in brief
+    # The cache may contain CONTENT aggregates for approvers; the GET endpoint
+    # strips them for non-approvers.
     assert "recent_titles" in brief
 
 
@@ -318,3 +319,27 @@ def test_ambient_cycle_refreshes_brief(client: TestClient) -> None:
     assert brief_row is not None
     assert brief_row["workspace_id"] == ws_id
     assert brief_row["version"] >= 1
+
+
+
+def test_get_brief_endpoint_shows_invoices_for_approver_with_content_policy(client: TestClient) -> None:
+    """After the ambient cycle persists a CONTENT-capable brief, approvers see aggregates."""
+
+    ws_id = _workspace_id(client)
+    conn = connect()
+    key_broker.set_policy(
+        conn,
+        tenant_id="default",
+        space_id=ws_id,
+        level=KeyLevel.CONTENT,
+        approver_roles={"owner"},
+        updated_by="test",
+    )
+    refresh_workspace_brief(_context(ws_id, role="owner"), conn, ws_id)
+
+    resp = client.get(f"/api/workspaces/{ws_id}/brief", headers=_headers("owner"))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["brief"]["level"] == "content"
+    assert "open_invoices" in data["brief"]
+    assert "items" not in data["brief"]["open_invoices"]

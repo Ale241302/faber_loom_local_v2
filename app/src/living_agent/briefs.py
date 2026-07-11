@@ -215,6 +215,18 @@ def build_workspace_brief(
         default=KeyLevel.INDEX,
     )
 
+    # Cache the maximum CONTENT aggregates the workspace policy allows for its
+    # approvers. The ambient cycle runs with role ``system`` and would otherwise
+    # never persist invoice aggregates; the GET endpoint re-mediates them by
+    # the requester's actual roles, so non-approvers still never see them.
+    max_level, _ = resolve_read_level(
+        conn,
+        tenant_id=tenant_id,
+        space_id=workspace_id,
+        user_roles={"owner", "curator", "ceo"},
+        default=KeyLevel.INDEX,
+    )
+
     if level == KeyLevel.CLOSED:
         source_counts = _source_counts(conn, ctx, workspace_id)
         return {
@@ -242,7 +254,7 @@ def build_workspace_brief(
         "last_routine_run": last_run,
         "recent_activity": activity,
     }
-    if level == KeyLevel.CONTENT and ("owner" in roles or "curator" in roles or "ceo" in roles):
+    if max_level == KeyLevel.CONTENT:
         brief["open_invoices"] = _open_invoices(conn, ctx, workspace_id)
 
     return brief

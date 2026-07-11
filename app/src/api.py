@@ -164,6 +164,7 @@ from .living_agent.autonomy import (
     promote_or_rollback_workspace,
 )
 from .living_agent.briefs import get_workspace_brief
+from .living_agent.feedback import record_message_feedback
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
@@ -196,6 +197,8 @@ from .models import (
     EmailAccountWrite,
     FeaturesRead,
     MailMessageRead,
+    MessageFeedbackRead,
+    MessageFeedbackRequest,
     MessageRead,
     ModelCatalogEntryCreate,
     ModelCatalogEntryRead,
@@ -1404,6 +1407,39 @@ def api_list_messages(
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
     return [_serialize_message(row) for row in get_messages(ctx, conn, chat_id)]
+
+
+@router.post(
+    "/workspaces/{workspace_id}/chats/{chat_id}/messages/{message_id}/feedback",
+    response_model=MessageFeedbackRead,
+)
+def api_create_message_feedback(
+    workspace_id: str,
+    chat_id: str,
+    message_id: str,
+    payload: MessageFeedbackRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> MessageFeedbackRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if get_chat(ctx, conn, chat_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+    try:
+        feedback = record_message_feedback(
+            ctx,
+            conn,
+            message_id=message_id,
+            outcome=payload.outcome,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return MessageFeedbackRead(**feedback)
 
 
 def _build_skill_context(

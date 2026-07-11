@@ -710,6 +710,11 @@ button { background: none; border: none; cursor: pointer; }
 .message-route span { display: inline-flex; align-items: center; gap: 4px; }
 .message-route svg { color: var(--coral); }
 .route-fallback { background: var(--amber-soft, #f5e6c8); color: var(--text-secondary); padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+.message-feedback { display: flex; gap: 8px; margin-top: 8px; }
+.feedback-btn { background: transparent; border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 8px; font-size: 11px; color: var(--text-muted); cursor: pointer; transition: border-color .15s, color .15s; }
+.feedback-btn:hover { border-color: var(--coral); color: var(--coral); }
+.feedback-btn-active { border-color: var(--coral); background: rgba(201, 100, 66, .08); color: var(--coral); }
+.feedback-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ════════ THINKING STEPS ════════ */
 .thinking-current { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-style: italic; color: var(--text-secondary); }

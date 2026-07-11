@@ -125,7 +125,7 @@ def record_shadow_plan_cost(
         output_tokens=0,
         cost_usd=cost_usd,
         duration_ms=duration_ms,
-        status="ok",
+        status="succeeded",
         error=None,
         attempts_json=[],
         request_json={"correlation_id": correlation_id, "mode": "shadow"},

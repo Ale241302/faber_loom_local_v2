@@ -184,7 +184,7 @@ def promote_or_rollback_workspace(
         if requested_mode == "natural":
             updates["promoted_at"] = now
         else:
-            updates["promoted_at"] = None
+            updates["clear_promoted_at"] = True
         update_routing_policy(ctx, conn, workspace_id=workspace_id, **updates)
 
         action = (
@@ -268,6 +268,7 @@ def degrade_workspace_if_needed(
                 conn,
                 workspace_id=workspace_id,
                 mode="shadow",
+                clear_promoted_at=True,
                 degraded_count=degraded_count + 1,
                 last_degraded_at=now,
             )
