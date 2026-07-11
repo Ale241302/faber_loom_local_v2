@@ -407,6 +407,7 @@ _SETTING_REGISTRY: dict[str, dict[str, Any]] = {
     "smtp.port": {"label": "Puerto SMTP", "description": "Puerto del servidor SMTP."},
     "smtp.use_ssl": {"label": "SMTP usa SSL", "description": "Usar conexión SSL/TLS al enviar correo."},
     "smtp.username": {"label": "Usuario SMTP", "description": "Usuario para autenticación SMTP."},
+    "routing.mode": {"label": "Modo de routing", "description": "manual, shadow o natural."},
     "routing.auto_dispatch": {"label": "Despacho automático", "description": "Ejecutar acciones sin confirmación HITL."},
     "routing.max_budget_usd": {"label": "Presupuesto máximo (USD)", "description": "Presupuesto máximo por ejecución automática."},
     "routing.max_steps": {"label": "Pasos máximos", "description": "Número máximo de pasos en modo automático."},
@@ -430,6 +431,11 @@ def _coerce_setting_value(key: str, raw: Any) -> Any:
         value = str(raw).strip().lower()
         if value not in {"estricto", "hibrido"}:
             raise ValueError(f"Invalid BYO mode '{value}': must be 'estricto' or 'hibrido'")
+        return value
+    if key == "routing.mode":
+        value = str(raw).strip().lower()
+        if value not in {"manual", "shadow", "natural"}:
+            raise ValueError(f"Invalid routing mode '{value}': must be manual, shadow or natural")
         return value
     return str(raw)
 

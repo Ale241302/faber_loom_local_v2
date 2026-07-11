@@ -28,14 +28,15 @@ logger = logging.getLogger(__name__)
 def resolve_routing_mode(ctx: Context, conn: Any) -> str:
     """Return the effective routing mode for the current context.
 
-    Resolution order (user > workspace > tenant > default):
+    Resolution order (user > workspace > tenant > legacy fallback > default):
       1. User preference ``routing.mode``.
-      2. Workspace explicit ``routing.mode`` when supported, otherwise the
-         legacy mapping ``FABERLOOM_AUTO_MODE_ENABLED`` env var plus
-         ``workspace_routing_policy.auto_mode_enabled`` -> ``natural``.
+      2. Workspace explicit ``routing.mode`` when supported.
       3. Tenant setting ``routing.mode``.
-      4. Default ``manual``.
+      4. Legacy mapping ``FABERLOOM_AUTO_MODE_ENABLED`` env var plus
+         ``workspace_routing_policy.auto_mode_enabled`` -> ``natural``.
+      5. Default ``manual``.
 
+    The explicit ``routing.mode`` flag wins over the legacy env var mapping.
     The env var is DEPRECATED; callers should set ``routing.mode`` through the
     settings cascade instead.
     """
@@ -47,11 +48,17 @@ def resolve_routing_mode(ctx: Context, conn: Any) -> str:
     if user_mode in ("manual", "shadow", "natural"):
         return user_mode
 
-    # 2. Workspace: explicit mode (future column) or legacy double gate.
+    # 2. Workspace: explicit mode (future column).
     workspace_mode = _workspace_config(conn, ctx, "routing.mode")
     if workspace_mode in ("manual", "shadow", "natural"):
         return workspace_mode
 
+    # 3. Tenant setting.
+    tenant_mode = _tenant_config(conn, ctx, "routing.mode")
+    if tenant_mode in ("manual", "shadow", "natural"):
+        return tenant_mode
+
+    # 4. Legacy double gate as fallback only when no explicit mode is set.
     global_enabled = os.getenv("FABERLOOM_AUTO_MODE_ENABLED", "false").lower() in {
         "1",
         "true",
@@ -66,12 +73,7 @@ def resolve_routing_mode(ctx: Context, conn: Any) -> str:
             )
             return "natural"
 
-    # 3. Tenant setting.
-    tenant_mode = _tenant_config(conn, ctx, "routing.mode")
-    if tenant_mode in ("manual", "shadow", "natural"):
-        return tenant_mode
-
-    # 4. Default.
+    # 5. Default.
     return "manual"
 
 
