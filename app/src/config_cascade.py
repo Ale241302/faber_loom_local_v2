@@ -26,6 +26,7 @@ class ConfigCascadeError(Exception):
 DEFAULTS: dict[str, Any] = {
     "smtp.use_ssl": True,
     "smtp.port": 465,
+    "routing.mode": "manual",
     "routing.auto_dispatch": False,
     "routing.max_budget_usd": 2.0,
     "routing.max_steps": 4,

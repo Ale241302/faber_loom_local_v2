@@ -65,6 +65,21 @@ MODEL_QUALITY: dict[str, int] = {
 }
 DEFAULT_MODEL_QUALITY = 2
 
+
+def _score(entry: dict[str, Any], complexity: str) -> tuple[float, float]:
+    """Lower tuple sorts first. La prioridad manual del admin NO participa:
+    el modo auto decide por calidad del modelo y costo según complejidad."""
+    cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
+    quality = MODEL_QUALITY.get(entry["model"], DEFAULT_MODEL_QUALITY)
+    if complexity == "low":
+        # CHEAPEST_FIRST: el más barato; a igual costo, el de más calidad.
+        return (cost_per_1k, -quality)
+    if complexity == "high":
+        # BEST_FIRST: el de más calidad; a igual calidad, el más barato.
+        return (-quality, cost_per_1k)
+    # medium: mejor valor — costo por unidad de calidad.
+    return (cost_per_1k / max(quality, 1), cost_per_1k)
+
 # Ventana de contexto aproximada (tokens) por modelo, para descartar candidatos
 # que no aguantan el input estimado de un paso (tareas largas / PDFs).
 MODEL_CONTEXT_TOKENS: dict[str, int] = {
@@ -265,21 +280,7 @@ def resolve_model_for_capability(
     if complexity not in {"low", "medium", "high"}:
         complexity = "medium"
 
-    def _score(entry: dict[str, Any]) -> tuple[float, float]:
-        """Lower tuple sorts first. La prioridad manual del admin NO participa:
-        el modo auto decide por calidad del modelo y costo según complejidad."""
-        cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
-        quality = MODEL_QUALITY.get(entry["model"], DEFAULT_MODEL_QUALITY)
-        if capability == "cheap" or complexity == "low":
-            # CHEAPEST_FIRST: el más barato; a igual costo, el de más calidad.
-            return (cost_per_1k, -quality)
-        if complexity == "high":
-            # BEST_FIRST: el de más calidad; a igual calidad, el más barato.
-            return (-quality, cost_per_1k)
-        # medium: mejor valor — costo por unidad de calidad.
-        return (cost_per_1k / max(quality, 1), cost_per_1k)
-
-    for entry in sorted(candidates, key=_score):
+    for entry in sorted(candidates, key=lambda e: _score(e, complexity)):
         if provider_allowlist and entry["provider_slug"] not in provider_allowlist:
             continue
         allowed_models = model_allowlist.get(entry["provider_slug"])

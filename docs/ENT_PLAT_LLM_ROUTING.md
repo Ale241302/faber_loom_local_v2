@@ -406,3 +406,28 @@ Changelog:
 - v2.1 (2026-06-24): +Fugu Standard como provider externo en tenant_model_allowlist (FG-02 sesion Fugu). Matriz N0/N1/N2/N3/N4 documentada.
 - - v2.0 (2026-04-21): Canoniza veredicto Kimi Swarm #4 (LOW confidence adaptive routing F1). Downgrade a tiered hardcoded F1 en YAML git (§F). Adaptive postpuesto F2 gated a 5K×3 meses (§G). +Tabla `tenant_model_allowlist` (data residency hard block). +HA LiteLLM 2 instancias (§E2). +tenant_id obligatorio en `llm_usage_log` + RLS. +Circuit breakers spec (§F.3). Cold start 30 días manual (§F.4). Arena Mode descartado F1 (DEC-007). Mejoras Kimi F2 archivadas (§G.2). Separación MWT vs FaberLoom (§H). Refs: docs/archivo/kimi_swarm_4_adaptive_routing.md, ENT_GOB_DECISIONES DEC-006/007/008, ENT_PLAT_MEMORY_STACK, SPEC_FABERLOOM_ARCHITECTURE, SPEC_FABERLOOM_WORKFLOW_ENGINE.
 - v2.0.1 (2026-06-23, FB-STD-CODEX-2026-06-23-01): fix mecánico de ref colgante `archivo/kimi_swarm_4_adaptive_routing.md` → `docs/archivo/kimi_swarm_4_adaptive_routing.md`.
+
+
+## F1-shadow / E4-0 Append — Routing modes (2026-07-11)
+
+E4-0 introduces a single tri-state flag ``routing.mode`` that replaces the
+legacy double gate for automatic routing:
+
+| Mode     | Behaviour |
+|----------|-----------|
+| ``manual``  | Human selects the model/preset for every message (default). |
+| ``shadow``  | Planner runs in the background, logs its decisions, produces no user-visible output and has no side effects. |
+| ``natural`` | Planner + automatic execution; equivalent to the former "auto" mode. |
+
+Resolution follows the existing configuration cascade: user preference >
+workspace > tenant > default. The explicit ``routing.mode`` value always wins.
+
+**Backwards compatibility:** the legacy double gate
+``FABERLOOM_AUTO_MODE_ENABLED`` env var + ``workspace_routing_policy.auto_mode_enabled``
+maps to ``routing.mode = "natural"`` when both are true. The env var is
+**DEPRECATED** and logs a warning; new configurations should set
+``routing.mode`` through the settings cascade.
+
+**Scope in E4:** ``shadow`` is observation-only (planner-level). ``natural`` may
+execute internal steps but any step with external effect remains draft-first
+and gated by WorkLoom HITL (Regla Sagrada).
