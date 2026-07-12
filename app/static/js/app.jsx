@@ -1495,15 +1495,19 @@ function WorkspaceBriefPanel({ activeWorkspace }) {
     if (!activeWorkspace) return;
     setLoading(true);
     setError(null);
-    apiGet(`/api/workspaces/${activeWorkspace.id}/brief`)
-      .then((data) => setBrief(data))
-      .catch((err) => {
-        if (String(err.message || "").includes("404")) {
+    apiFetch(`/api/workspaces/${activeWorkspace.id}/brief`, { headers: authHeaders() })
+      .then(async (res) => {
+        if (res.status === 404) {
           setError("not_ready");
-        } else {
-          setError(err.message || "Error");
+          return;
         }
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+        }
+        setBrief(await res.json());
       })
+      .catch((err) => setError(err.message || "Error"))
       .finally(() => setLoading(false));
   }, [activeWorkspace]);
 
