@@ -380,7 +380,6 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <Accordion items={[
           { id: "caps-acc", title: "Capacidades", badge: counts.routines, children: <>
             <RailItem label="Skills" icon="spark" badge={counts.skills} active={nav === "skills"} onClick={() => setNav("skills")} />
-            {canManageSkills && <RailItem label="Fábrica de skills" icon="layers" badge={counts.agents} active={nav === "agents"} onClick={() => setNav("agents")} />}
           </> }
         ]} defaultOpen={activeAccordionId === "caps-acc" ? ["caps-acc"] : []} />
         <Accordion items={[

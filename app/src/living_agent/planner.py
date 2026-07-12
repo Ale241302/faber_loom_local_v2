@@ -22,6 +22,20 @@ from ..routing.auto_dispatcher import NaturalPlanner
 logger = logging.getLogger(__name__)
 
 
+def _safe_json_loads(value: Any) -> dict[str, Any]:
+    """Parse a JSON string/object safely; return {} on failure."""
+
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
 SHADOW_CAPABILITY = "shadow_plan"
 SHADOW_PROVIDER = "living_agent"
 SHADOW_MODEL = "shadow_plan"
@@ -380,23 +394,24 @@ def get_shadow_report(
 
         cost_rows = conn.execute(
             """
-            SELECT mode,
-                   COALESCE(SUM(json_extract(plan_json, '$.est_total_cost_usd')), 0) AS est_cost,
-                   COALESCE(SUM(json_extract(actual_outcome_json, '$.cost_usd')), 0) AS actual_cost
+            SELECT mode, plan_json, actual_outcome_json
             FROM planner_decision_log
             WHERE tenant_id = ? AND created_at > ?
-            GROUP BY mode
             """,
             (tenant_id, since),
         ).fetchall()
 
     total_by_mode = {row["mode"]: int(row["n"]) for row in total_rows}
-    cost_by_mode = {}
+    cost_by_mode: dict[str, dict[str, float]] = {}
     for row in cost_rows:
-        cost_by_mode[row["mode"]] = {
-            "estimated_cost_usd": float(row["est_cost"] or 0.0),
-            "actual_cost_usd": float(row["actual_cost"] or 0.0),
-        }
+        mode = row["mode"]
+        bucket = cost_by_mode.setdefault(
+            mode, {"estimated_cost_usd": 0.0, "actual_cost_usd": 0.0}
+        )
+        plan = _safe_json_loads(row["plan_json"])
+        outcome = _safe_json_loads(row["actual_outcome_json"])
+        bucket["estimated_cost_usd"] += float(plan.get("est_total_cost_usd") or 0.0)
+        bucket["actual_cost_usd"] += float(outcome.get("cost_usd") or 0.0)
 
     # ACE metrics.
     with transaction(conn, ctx=ctx):
