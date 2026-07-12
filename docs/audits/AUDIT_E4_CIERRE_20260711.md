@@ -34,6 +34,7 @@
 - Fix frontend null workspace: `LearningThermometer` ya no dispara `/api/workspaces/null/memory/learning-state` antes de cargar el workspace activo.
 - Fix backend shadow-report: cost query usa parsing en Python en lugar de `json_extract()` para ser compatible con PostgreSQL.
 - Fix menú lateral: se eliminó el ítem duplicado "Fábrica de skills" (ya existe "Skills").
+- Fix frontend brief 404: `WorkspaceBriefPanel` ahora trata el 404 como estado normal "Aún no hay brief" sin lanzar excepción a la consola.
 
 ## Fixes de deploy
 
