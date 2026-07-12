@@ -12,7 +12,7 @@ from typing import Any
 from .ambient import seed_ambient_config
 from .audit import audit_writer
 from .context import Context, system_context
-from .db import create_workspace, get_workspace_by_slug, transaction
+from .db import create_workspace, get_workspace_by_kind, get_workspace_by_slug, transaction
 from .kb import ingest_kb_source
 from .models import AuditEvent, WorkspaceCreate
 
@@ -25,11 +25,41 @@ CANARY_WORKSPACE_SLUG = "canary"
 CANARY_TENANT_ID = "canary"
 
 
+def ensure_tenant_general_workspace(
+    conn: sqlite3.Connection,
+    ctx: Context,
+) -> dict[str, Any]:
+    """Ensure the tenant has a ws-general workspace; create it idempotently."""
+
+    from .context import DEFAULT_TENANT_ID, system_context
+
+    system_ctx = system_context(tenant_id=ctx.tenant_id)
+    with transaction(conn, ctx=system_ctx):
+        existing = get_workspace_by_kind(system_ctx, conn, "tenant_general")
+        if existing is not None:
+            return existing
+
+    # Slug is globally unique. The default tenant keeps the legacy 'general'
+    # slug for backwards compatibility; other tenants use a scoped slug.
+    general_slug = "general" if ctx.tenant_id == DEFAULT_TENANT_ID else f"general-{ctx.tenant_id}"
+    with transaction(conn, ctx=system_ctx):
+        existing_legacy = get_workspace_by_slug(system_ctx, conn, general_slug)
+        if existing_legacy is not None:
+            return existing_legacy
+        created = create_workspace(
+            system_ctx,
+            conn,
+            WorkspaceCreate(name="Chat general", slug=general_slug, kind="tenant_general"),
+        )
+        return created
+
+
 def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
     bootstrap_ctx = system_context()
     with transaction(conn, ctx=bootstrap_ctx):
         existing = get_workspace_by_slug(bootstrap_ctx, conn, DEMO_WORKSPACE_SLUG)
     if existing is not None:
+        ensure_tenant_general_workspace(conn, bootstrap_ctx)
         return existing
 
     event: AuditEvent | None = None
@@ -89,6 +119,8 @@ TEL-DEMO-003,Gabardina stretch,15.75,USD,85,2026-06-01,2026-09-30
     with transaction(conn, ctx=workspace_ctx):
         seed_ambient_config(conn, workspace_ctx.tenant_id)
 
+    ensure_tenant_general_workspace(conn, workspace_ctx)
+
     with transaction(conn, ctx=workspace_ctx):
         ingest_kb_source(
             workspace_ctx,
@@ -146,6 +178,7 @@ def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
     with transaction(conn, ctx=canary_ctx):
         existing = get_workspace_by_slug(canary_ctx, conn, CANARY_WORKSPACE_SLUG)
     if existing is not None:
+        ensure_tenant_general_workspace(conn, canary_ctx)
         return existing
 
     event: AuditEvent | None = None
@@ -159,6 +192,7 @@ def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:
             "UPDATE workspace SET is_canary = 1 WHERE id = ?",
             (created["id"],),
         )
+        ensure_tenant_general_workspace(conn, canary_ctx)
         workspace_ctx = Context(
             workspace_id=created["id"],
             tenant_id=created.get("tenant_id") or DEFAULT_TENANT_ID,

@@ -26,12 +26,18 @@ class ConfigCascadeError(Exception):
 DEFAULTS: dict[str, Any] = {
     "smtp.use_ssl": True,
     "smtp.port": 465,
+    "routing.mode": "manual",
     "routing.auto_dispatch": False,
     "routing.max_budget_usd": 2.0,
     "routing.max_steps": 4,
     "routing.byo_mode": "hibrido",
     "model.default": "openai/gpt-4o-mini",
     "whatsapp_inbound.enabled": False,
+    "signup.approval": "manual",
+    "signup.daily_limit": 100,
+    "signup.disposable_domains": ["mailinator.com", "guerrillamail.com", "tempmail.com"],
+    "signup.captcha.required": False,
+    "signup.captcha.provider": None,
 }
 
 
@@ -60,10 +66,12 @@ def _workspace_config(conn: Any, ctx: Context, key: str) -> Any:
         ).fetchone()
         if row is None:
             return None
+        mode = row["mode"]
         mapping = {
             "routing.auto_dispatch": row["auto_mode_enabled"],
             "routing.max_budget_usd": row["budget_cap_usd"],
             "routing.max_steps": row["max_auto_steps"],
+            "routing.mode": mode if mode is not None else None,
         }
         return mapping.get(key)
 

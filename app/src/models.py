@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 48
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1196,6 +1196,95 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_key_policy_tenant ON key_policy(tenant_id);
     """,
+    42: """
+    -- E4-1: workspace briefs (awareness INDEX-only del Agente Vivo).
+    CREATE TABLE IF NOT EXISTS workspace_brief (
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        brief_json TEXT NOT NULL DEFAULT '{}',
+        computed_at TEXT,
+        source_counts_json TEXT NOT NULL DEFAULT '{}',
+        staleness_policy_json TEXT NOT NULL DEFAULT '{"max_age_h": 24, "max_writes": 50}',
+        generation_cost_usd REAL NOT NULL DEFAULT 0.0,
+        version INTEGER NOT NULL DEFAULT 0,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 42,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, workspace_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_brief_tenant ON workspace_brief(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_brief_computed_at ON workspace_brief(computed_at);
+    """,
+    43: """
+    -- E4-2: planner decision log (R11) and per-model track record.
+    CREATE TABLE IF NOT EXISTS planner_decision_log (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        chain_id TEXT,
+        task_ref TEXT,
+        mode TEXT NOT NULL CHECK (mode IN ('shadow', 'natural')),
+        plan_json TEXT NOT NULL DEFAULT '{}',
+        actual_outcome_json TEXT NOT NULL DEFAULT '{}',
+        correlation_id TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 43,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_tenant_mode_created
+        ON planner_decision_log(tenant_id, mode, created_at);
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_workspace
+        ON planner_decision_log(workspace_id, tenant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_planner_decision_log_correlation
+        ON planner_decision_log(correlation_id);
+
+    CREATE TABLE IF NOT EXISTS model_track_record (
+        tenant_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        provider_slug TEXT NOT NULL,
+        model TEXT NOT NULL,
+        total_decisions INTEGER NOT NULL DEFAULT 0,
+        accepted_count INTEGER NOT NULL DEFAULT 0,
+        regenerated_count INTEGER NOT NULL DEFAULT 0,
+        rejected_count INTEGER NOT NULL DEFAULT 0,
+        avg_cost_usd REAL NOT NULL DEFAULT 0.0,
+        avg_latency_ms REAL NOT NULL DEFAULT 0.0,
+        last_used_at TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 43,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, capability, provider_slug, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_model_track_record_tenant_capability
+        ON model_track_record(tenant_id, capability);
+    """,
+    44: """
+    -- E4-2 follow-up: workspace-level routing mode + ACE promotion/degradation bookkeeping.
+    ALTER TABLE workspace_routing_policy ADD COLUMN mode TEXT;
+    ALTER TABLE workspace_routing_policy ADD COLUMN promoted_at TEXT;
+    ALTER TABLE workspace_routing_policy ADD COLUMN degraded_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE workspace_routing_policy ADD COLUMN last_degraded_at TEXT;
+    -- Mode is intentionally NULL by default so the workspace does not override
+    -- tenant/user settings until an owner explicitly promotes/degrades it.
+    """,
     33: """
     -- E3-4 Wave 0: Skill Factory Foundation tables.
     CREATE TABLE IF NOT EXISTS skill_manifest (
@@ -1522,6 +1611,193 @@ MIGRATIONS: dict[int, str] = {
     BEFORE UPDATE ON tenant_invoice_sequence
     BEGIN SELECT CASE WHEN NEW.tenant_id IS NULL THEN RAISE(ABORT, 'tenant_id is required') END; END;
     """,
+    45: """
+    -- E4-3 readiness: explicit human feedback per assistant message so the
+    -- model track record can learn from rejected/regenerated responses.
+    CREATE TABLE IF NOT EXISTS message_feedback (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('accepted', 'rejected', 'regenerated')),
+        previous_outcome TEXT CHECK (previous_outcome IN ('accepted', 'rejected', 'regenerated')),
+        reason TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 45,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);
+    CREATE INDEX IF NOT EXISTS idx_message_feedback_workspace_id ON message_feedback(workspace_id, tenant_id);
+    """,
+    46: """
+    -- E4-3: agent task orchestration (multi-step natural mode with HITL, kill switch and budget).
+    CREATE TABLE IF NOT EXISTS agent_task (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        chat_id TEXT,
+        plan_id TEXT REFERENCES planner_decision_log(id) ON DELETE SET NULL,
+        user_request TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('planned', 'running', 'paused_hitl', 'completed', 'killed', 'failed', 'degraded')),
+        cost_total_usd REAL NOT NULL DEFAULT 0.0,
+        budget_cap_usd REAL,
+        est_cost_usd REAL,
+        kill_requested_at TEXT,
+        kill_requested_by TEXT,
+        hitl_step_id TEXT,
+        hitl_token TEXT,
+        output_text TEXT,
+        output_ref TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 46,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_task_workspace ON agent_task(tenant_id, workspace_id, status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_chat ON agent_task(chat_id);
+
+    CREATE TABLE IF NOT EXISTS agent_task_step (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        task_id TEXT NOT NULL REFERENCES agent_task(id) ON DELETE CASCADE,
+        step_index INTEGER NOT NULL,
+        step_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        task TEXT,
+        prompt TEXT,
+        provider_slug TEXT,
+        model TEXT,
+        input_ref TEXT,
+        output_ref TEXT,
+        evidence_id TEXT,
+        cost_usd REAL NOT NULL DEFAULT 0.0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused_hitl', 'completed', 'failed', 'skipped')),
+        status_reason TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 46,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_task_step_task ON agent_task_step(task_id, step_index);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_step_status ON agent_task_step(task_id, status);
+
+    -- Link usage records to agent tasks for ledger aggregation.
+    ALTER TABLE usage_record ADD COLUMN task_id TEXT;
+    CREATE INDEX IF NOT EXISTS idx_usage_record_task_id ON usage_record(task_id);
+    """,
+    47: """
+    -- E4-5 — Memoria viva (CAPA 1 personal)
+    CREATE TABLE IF NOT EXISTS user_learning_state (
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        agent_slug TEXT NOT NULL DEFAULT 'default',
+        detection_threshold INTEGER NOT NULL DEFAULT 3,
+        notification_cadence TEXT NOT NULL DEFAULT 'weekly',
+        auto_archive_ignored_after_days INTEGER DEFAULT 30,
+        unconsolidated_count INTEGER NOT NULL DEFAULT 0,
+        last_indexed_at TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 47,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, workspace_id, user_id, agent_slug)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_learning_state_user
+        ON user_learning_state(tenant_id, workspace_id, user_id);
+
+    CREATE TABLE IF NOT EXISTS memory_proposal (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        agent_slug TEXT NOT NULL DEFAULT 'default',
+        summary TEXT NOT NULL,
+        detected_count INTEGER NOT NULL DEFAULT 1,
+        first_detected TEXT NOT NULL,
+        last_detected TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        state TEXT NOT NULL DEFAULT 'pending'
+            CHECK (state IN ('pending','applied','ignored')),
+        applied_at TEXT,
+        applied_namespace TEXT,
+        applied_key TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 47,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_proposal_user_state
+        ON memory_proposal(tenant_id, workspace_id, user_id, state);
+    CREATE INDEX IF NOT EXISTS idx_memory_proposal_workspace
+        ON memory_proposal(tenant_id, workspace_id, state);
+
+    -- CAPA 1 personal memory blocks (app-local mirror of M17 semantics)
+    CREATE TABLE IF NOT EXISTS memory_block (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact','preference','instruction','episode')),
+        importance REAL NOT NULL DEFAULT 0.5,
+        source TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        archived_at TEXT,
+        UNIQUE (tenant_id, workspace_id, user_id, namespace, key),
+        FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_block_user_ns
+        ON memory_block(tenant_id, workspace_id, user_id, namespace, archived_at);
+
+    CREATE TABLE IF NOT EXISTS memory_revision (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        block_id TEXT NOT NULL REFERENCES memory_block(id) ON DELETE CASCADE,
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'fact',
+        importance REAL NOT NULL DEFAULT 0.5,
+        edited_by TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_revision_block
+        ON memory_revision(tenant_id, workspace_id, block_id, created_at);
+    """,
+    48: """
+    -- E4-4 — Presencia única: chat general del tenant (ws-general)
+    ALTER TABLE workspace ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard';
+    CREATE INDEX IF NOT EXISTS idx_workspace_kind_tenant
+        ON workspace(tenant_id, kind);
+    """,
 }
 
 
@@ -1541,6 +1817,20 @@ class TenantHealthLimitRead(BaseModel):
 class TenantHealthFlagsRead(BaseModel):
     drafts_pending_approval: int
     invoices_overdue: int
+
+
+class TenantHealthAgentRead(BaseModel):
+    briefs_total: int
+    briefs_stale: int
+    briefs_fresh: int
+    tasks_pending: int
+    tasks_running: int
+    tasks_paused: int
+    tasks_completed: int
+    tasks_failed: int
+    memory_blocks_active: int
+    memory_blocks_archived: int
+    cost_living_agent_30d: float
 
 
 class TenantHealthRead(BaseModel):
@@ -1565,6 +1855,7 @@ class TenantHealthRead(BaseModel):
     users: int
     last_owner_login: str | None = None
     flags: TenantHealthFlagsRead
+    agent: TenantHealthAgentRead
 
 
 class WorkspaceCreate(BaseModel):
@@ -1574,6 +1865,7 @@ class WorkspaceCreate(BaseModel):
     inherits_kb: int = Field(default=0, ge=0, le=1)
     confidential: int = Field(default=0, ge=0, le=1)
     passphrase: str | None = Field(default=None, max_length=200)
+    kind: Literal["standard", "tenant_general"] = Field(default="standard")
 
     @field_validator("name")
     @classmethod
@@ -1600,6 +1892,7 @@ class WorkspaceRead(BaseModel):
     id: str
     name: str
     slug: str
+    kind: str = "standard"
     field_aliases_json: str | None = None
     tenant_id: str | None = None
     user_id: str | None = None
@@ -1617,6 +1910,12 @@ class WorkspaceRead(BaseModel):
     is_canary: int = 0
     created_at: str
     updated_at: str
+
+
+class GeneralWorkspaceRead(WorkspaceRead):
+    """Tenant general workspace enriched with the agent's display name."""
+
+    display_name: str = "Faber"
 
 
 class UserRead(BaseModel):
@@ -1644,6 +1943,135 @@ class WorkspaceFieldAliasesUpdate(BaseModel):
 
 class WorkspaceListRead(BaseModel):
     workspaces: list[WorkspaceRead]
+
+
+class WorkspaceBriefRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str | None = None
+    workspace_id: str
+    brief: dict[str, Any] = Field(default_factory=dict)
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    staleness_policy: dict[str, Any] = Field(default_factory=dict)
+    generation_cost_usd: float = 0.0
+    version: int = 0
+    computed_at: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ShadowReportRead(BaseModel):
+    tenant_id: str
+    days: int
+    since: str
+    decisions_count: dict[str, int] = Field(default_factory=dict)
+    cost_by_mode: dict[str, dict[str, float]] = Field(default_factory=dict)
+    model_records: list[dict[str, Any]] = Field(default_factory=list)
+    human_alignment_score: float = 100.0
+    oscillation_count: int = 0
+
+
+class PromotionReadinessRead(BaseModel):
+    workspace_id: str
+    ready: bool
+    shadow_decisions: int
+    min_decisions: int
+    estimated_cost_usd: float
+    actual_cost_usd: float
+    projected_savings_usd: float
+    absurd_decisions: int
+    degraded_count: int
+    in_cooldown: bool
+    window_days: int
+
+
+class PromotionRequest(BaseModel):
+    mode: Literal["natural", "shadow"]
+    confirmation_token: str
+
+
+class PromotionResponse(BaseModel):
+    workspace_id: str
+    mode: str
+    action: str
+    promoted_at: str | None = None
+    audit_event_id: str | None = None
+
+
+class AgentTaskStepRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    step_index: int
+    step_id: str
+    capability: str
+    task: str | None = None
+    prompt: str | None = None
+    provider_slug: str | None = None
+    model: str | None = None
+    input_ref: str | None = None
+    output_ref: str | None = None
+    evidence_id: str | None = None
+    cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
+    status: str
+    status_reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AgentTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str | None = None
+    workspace_id: str
+    chat_id: str | None = None
+    plan_id: str | None = None
+    user_request: str
+    status: str
+    cost_total_usd: float = 0.0
+    budget_cap_usd: float | None = None
+    est_cost_usd: float | None = None
+    kill_requested_at: str | None = None
+    kill_requested_by: str | None = None
+    hitl_step_id: str | None = None
+    hitl_token: str | None = None
+    output_text: str | None = None
+    output_ref: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    created_at: str
+    updated_at: str
+    steps: list[AgentTaskStepRead] = Field(default_factory=list)
+
+
+class AgentTaskCreate(BaseModel):
+    user_request: str = Field(min_length=1, max_length=20000)
+    chat_id: str | None = None
+
+
+class AgentTaskApproveRequest(BaseModel):
+    confirmation_token: str
+
+
+class AgentTaskKillRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class AgentTaskRejectRequest(BaseModel):
+    token: str = Field(min_length=1)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class AuditEvent(BaseModel):
@@ -2044,6 +2472,51 @@ class MessageRead(BaseModel):
     source_version: str | None = None
     approved_by: str | None = None
     created_at: str
+
+
+class MessageFeedbackRequest(BaseModel):
+    outcome: Literal["accepted", "rejected", "regenerated"]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class MessageFeedbackRead(BaseModel):
+    id: str | None = None
+    message_id: str
+    outcome: str
+    previous_outcome: str | None = None
+    reason: str | None = None
+    created_at: str | None = None
+
+
+class MemoryProposalRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    workspace_id: str
+    user_id: str
+    agent_slug: str
+    summary: str
+    detected_count: int
+    first_detected: str
+    last_detected: str
+    evidence_json: str | dict[str, Any] | None = None
+    state: str
+    applied_at: str | None = None
+    applied_namespace: str | None = None
+    applied_key: str | None = None
+    created_at: str
+    updated_at: str
+    approved_by: str | None = None
+
+
+class LearningStateRead(BaseModel):
+    user_id: str
+    unconsolidated_count: int
+    detection_threshold: int
+    notification_cadence: str
+    level: str
+    last_indexed_at: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):

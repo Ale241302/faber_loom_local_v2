@@ -116,6 +116,16 @@ ALTER TABLE ambient_proposal ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ambient_proposal FORCE ROW LEVEL SECURITY;
 ALTER TABLE object ENABLE ROW LEVEL SECURITY;
 ALTER TABLE object FORCE ROW LEVEL SECURITY;
+ALTER TABLE workspace_brief ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_brief FORCE ROW LEVEL SECURITY;
+ALTER TABLE planner_decision_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE planner_decision_log FORCE ROW LEVEL SECURITY;
+ALTER TABLE model_track_record ENABLE ROW LEVEL SECURITY;
+ALTER TABLE model_track_record FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_task ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_task FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_task_step ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_task_step FORCE ROW LEVEL SECURITY;
 
 -- refresh_tokens is intentionally left out of RLS in E3-1: it is globally
 -- scoped by user_id today and will receive a tenant_id column in E3-2.
@@ -140,7 +150,9 @@ BEGIN
               'tenant_invoice_sequence',
               'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
-              'ambient_proposal', 'object'
+              'ambient_proposal', 'object', 'workspace_brief',
+              'planner_decision_log', 'model_track_record',
+              'agent_task', 'agent_task_step'
           )
     LOOP
         EXECUTE format(
@@ -198,6 +210,10 @@ SELECT _create_tenant_workspace_policy('workspace_model_catalog');
 SELECT _create_tenant_workspace_policy('ambient_workspace_config');
 SELECT _create_tenant_workspace_policy('ambient_proposal');
 SELECT _create_tenant_workspace_policy('object');
+SELECT _create_tenant_workspace_policy('workspace_brief');
+SELECT _create_tenant_workspace_policy('planner_decision_log');
+SELECT _create_tenant_workspace_policy('agent_task');
+SELECT _create_tenant_workspace_policy('agent_task_step');
 
 -- ---------------------------------------------------------------------------
 -- 7. Special workspace-owned tables with optional workspace_id
@@ -268,6 +284,11 @@ CREATE POLICY tenant_policy ON ambient_config
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
 
 CREATE POLICY tenant_policy ON ambient_detector
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE POLICY tenant_policy ON model_track_record
     FOR ALL
     USING (tenant_id = current_setting('app.current_tenant', true))
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true));

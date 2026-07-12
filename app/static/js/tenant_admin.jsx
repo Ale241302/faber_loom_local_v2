@@ -6,7 +6,7 @@
 
 var { useCallback, useEffect, useMemo, useState } = React;
 
-const ADMIN_S = {
+var ADMIN_S = {
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" },
   title: { margin: 0, font: "italic 500 22px/1.2 var(--font-title)" },
   meta: { color: "var(--text-muted)", fontSize: 12, fontFamily: "var(--font-mono)" },
@@ -37,7 +37,7 @@ const ADMIN_S = {
   modalActions: { display: "flex", gap: 10, justifyContent: "flex-end" },
 };
 
-const STATUS_STYLES = {
+var STATUS_STYLES = {
   pending: { background: "var(--amber-soft)", borderColor: "var(--amber-deep)", color: "var(--amber)" },
   active: { background: "var(--sage-soft)", borderColor: "var(--sage-deep)", color: "var(--sage)" },
   suspended: { background: "var(--vino-soft)", borderColor: "var(--vino-deep)", color: "var(--vino)" },

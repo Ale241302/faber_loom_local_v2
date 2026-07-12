@@ -1,12 +1,12 @@
 var { useCallback, useEffect, useMemo, useRef, useState } = React;
 
-const MODES = [
+var MODES = [
   { id: "operar", label: "Operar" },
   { id: "aprender", label: "Aprender" },
   { id: "admin", label: "Admin" },
 ];
 
-const NAV = {
+var NAV = {
   operar: [
     { id: "space", label: "FaberLoom", sub: "Canvas y chat", badge: "SL0", icon: "loom" },
     { id: "workloom", label: "WorkLoom", sub: "Cola HITL", badge: "SL3", icon: "check" },
@@ -18,6 +18,7 @@ const NAV = {
   ],
   admin: [
     { id: "settings", label: "Router / Proveedores", sub: "Modelos, keys y presupuesto", badge: "SL1", icon: "settings" },
+    { id: "routing-shadow", label: "Routing en sombra", sub: "Shadow vs natural", badge: "E4-2", icon: "activity" },
     { id: "audit", label: "Auditoría", sub: "JSONL hoy", badge: "SL0", icon: "audit" },
     { id: "tenant-settings", label: "Config. en cascada", sub: "Tenant / workspace / user", badge: "E3-2", icon: "settings" },
     { id: "tenant-admin", label: "Admin de plataforma", sub: "Aprobar / suspender tenants", badge: "E3-2", icon: "shield" },
@@ -26,7 +27,7 @@ const NAV = {
   ],
 };
 
-const S = {
+var S = {
   view: { minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "auto" },
   grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, alignItems: "start" },
   grid3: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, alignItems: "start" },
@@ -117,7 +118,7 @@ function authHeaders() {
 // trabajo. Ante un 401 intentamos renovar con el refresh token (cookie de 7
 // días, rotativa) y reintentamos el request una vez. Si el refresh también
 // falla, recargamos la página para que AuthGate muestre el login.
-let _refreshingSession = null;
+var _refreshingSession = null;
 function _refreshSession() {
   if (!_refreshingSession) {
     _refreshingSession = fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin" })
@@ -223,7 +224,7 @@ function BudgetChip({ budget, onClick }) {
   );
 }
 
-function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggleRight, onOpenRouting }) {
+function Topbar({ workspaceId, onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggleRight, onOpenRouting }) {
   return <header className="topbar">
     <button type="button" className="ceja" aria-label="Panel izquierdo" onClick={onToggleLeft}><Icon name="panel-l" size={18}/></button>
     <div className="brand" aria-label="FaberLoom">
@@ -232,6 +233,7 @@ function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggle
     </div>
     <div className="cmdk" role="button" tabIndex="0" onClick={onOpenPalette} aria-label="Buscar o ejecutar"><Icon name="search" size={16}/><span className="cmdk-label">Buscar o ejecutar…</span><kbd>Ctrl K</kbd></div>
     <div className="topbar-actions">
+      <LearningThermometer workspaceId={workspaceId} />
       <BudgetChip budget={budget} onClick={onOpenRouting} />
       <ThemeSwitcher theme={theme} onChange={setTheme} />
       <span className="status-chip"><span className="status-dot" aria-hidden="true"/>Local-first</span>
@@ -239,7 +241,7 @@ function Topbar({ onOpenPalette, theme, setTheme, budget, onToggleLeft, onToggle
     </div>
   </header>;
 }
-const DOTS = ["var(--coral)", "var(--amber)", "var(--sage)", "var(--slate)", "var(--vino)"];
+var DOTS = ["var(--coral)", "var(--amber)", "var(--sage)", "var(--slate)", "var(--vino)"];
 
 function RailItem({ label, icon, dot, badge, active, onClick }) {
   return <button type="button" className={cx("nav-item", active && "is-active")} onClick={onClick}>
@@ -249,7 +251,7 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
+function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, generalWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
   const loadCounts = useCallback(async () => {
@@ -305,12 +307,27 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     stackloom: "cola-acc",
     kb: "kb-acc", "hitl-signals": "kb-acc",
     gold: "gold-acc",
-    skills: "caps-acc", agents: "caps-acc",
+    skills: "caps-acc",
     routing: "tenant-acc", audit: "tenant-acc", users: "tenant-acc", settings: "tenant-acc", billing: "tenant-acc",
     health: "tenant-acc", foundation: "tenant-acc",
   }[nav];
 
+  const userRole = user?.role || "";
+  const canManageSkills = ["owner", "curator", "admin"].includes(userRole) || isPlatformAdmin(user);
+
   return <aside className={cx("rail", hidden && "hidden")}>
+    {generalWorkspace && (
+      <div className="rail-section" style={{ paddingBottom: 8, borderBottom: "1px solid var(--border-subtle)" }}>
+        <button
+          type="button"
+          className={cx("rail-item", activeWorkspaceId === generalWorkspace.id && "is-active")}
+          onClick={() => setActiveWorkspaceId(generalWorkspace.id)}
+          title="Chat general del tenant"
+        >
+          <span style={{ fontStyle: "italic" }}>— {generalWorkspace.display_name || "Faber"}</span>
+        </button>
+      </div>
+    )}
     <div className="mode-group" aria-label="Modos de FaberLoom">
       {MODES.map((item) => <button key={item.id} type="button" className={cx("mode-button", mode === item.id && "is-active")} onClick={() => go(item.id, { operar: "space", aprender: "kb", admin: "settings" }[item.id])}>{item.label}</button>)}
     </div>
@@ -363,12 +380,13 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <Accordion items={[
           { id: "caps-acc", title: "Capacidades", badge: counts.routines, children: <>
             <RailItem label="Skills" icon="spark" badge={counts.skills} active={nav === "skills"} onClick={() => setNav("skills")} />
-            <RailItem label="Agentes" icon="layers" badge={counts.agents} active={nav === "agents"} onClick={() => setNav("agents")} />
           </> }
         ]} defaultOpen={activeAccordionId === "caps-acc" ? ["caps-acc"] : []} />
         <Accordion items={[
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
+            <RailItem label="Routing en sombra" icon="activity" active={nav === "routing-shadow"} onClick={() => setNav("routing-shadow")} />
+            <RailItem label="Agent Tasks" icon="layers" active={nav === "agent-tasks"} onClick={() => setNav("agent-tasks")} />
             <RailItem label="Facturación" icon="credit-card" active={nav === "billing"} onClick={() => setNav("billing")} />
             <RailItem label="Salud" icon="activity" active={nav === "health"} onClick={() => setNav("health")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
@@ -401,6 +419,183 @@ function ContextStrip({ activeWorkspace }) {
       <div className="context-sub">{activeWorkspace ? "Espacio activo · flujos reales contra el backend local" : "Selecciona o crea un workspace para usar las vistas operativas."}</div>
     </div>
     <div className="context-actions"><span className="pill pill-muted"><Icon name="route" size={16}/>Router SL1a</span><span className="pill pill-muted"><Icon name="database" size={16}/>KB SL2</span><span className="pill pill-muted"><Icon name="shield" size={16}/>HITL SL5</span></div>
+  </div>;
+}
+
+var FEEDBACK_REASONS = [
+  { id: "helpful", label: "Útil" },
+  { id: "too_long", label: "Muy largo" },
+  { id: "too_short", label: "Muy corto" },
+  { id: "wrong", label: "Incorrecto" },
+  { id: "off_topic", label: "Desvía" },
+  { id: "unsafe", label: "Inapropiado" },
+  { id: "other", label: "Otro" },
+];
+
+function MessageFeedback({ workspaceId, chatId, messageId, currentOutcome, currentReason, onChange }) {
+  const [outcome, setOutcome] = useState(currentOutcome || null);
+  const [reason, setReason] = useState(currentReason || null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (value, selectedReason) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const body = { outcome: value };
+      if (selectedReason) body.reason = selectedReason;
+      const res = await apiPost(`/api/workspaces/${workspaceId}/chats/${chatId}/messages/${messageId}/feedback`, body);
+      setOutcome(res.outcome);
+      if (res.reason) setReason(res.reason);
+      if (onChange) onChange(res.outcome, res.reason);
+    } catch (err) {
+      console.error("Feedback failed", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const btn = (value, label) => {
+    const active = outcome === value;
+    return <button
+      type="button"
+      className={cx("feedback-btn", active && "feedback-btn-active")}
+      disabled={submitting}
+      onClick={() => submit(value, reason)}
+      title={label}
+      aria-pressed={active}
+    >{label}</button>;
+  };
+
+  return <div className="message-feedback" aria-label="Retroalimentación del mensaje">
+    <div className="feedback-row">
+      {btn("accepted", "👍 Útil")}
+      {btn("rejected", "👎 No útil")}
+      {btn("regenerated", "🔄 Regenerar")}
+    </div>
+    {outcome !== null && <div className="feedback-reasons">
+      {FEEDBACK_REASONS.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          className={cx("feedback-chip", reason === r.id && "feedback-chip-active")}
+          disabled={submitting}
+          onClick={() => { setReason(r.id); submit(outcome, r.id); }}
+          title={r.label}
+        >{r.label}</button>
+      ))}
+    </div>}
+  </div>;
+}
+
+function LearningThermometer({ workspaceId }) {
+  const [state, setState] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      const data = await apiGet(`/api/workspaces/${workspaceId}/memory/learning-state`);
+      setState(data);
+    } catch (err) {
+      console.error("learning-state failed", err);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  if (!state) return null;
+  const dotClass = state.level === "hot" ? "thermometer-hot" : state.level === "warm" ? "thermometer-warm" : "thermometer-cool";
+  const title = `Memoria personal: ${state.unconsolidated_count} eventos sin consolidar`;
+  return <>
+    <button type="button" className={cx("thermometer", dotClass)} onClick={() => setOpen(true)} title={title} aria-label={title}>
+      <span className="thermometer-dot" />
+      <span className="thermometer-count">{state.unconsolidated_count}</span>
+    </button>
+    {open && <LearningIndexModal workspaceId={workspaceId} onClose={() => setOpen(false)} onChanged={refresh} />}
+  </>;
+}
+
+function LearningIndexModal({ workspaceId, onClose, onChanged }) {
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiGet(`/api/workspaces/${workspaceId}/memory/proposals?state=pending`);
+      setProposals(data);
+    } catch (err) {
+      setError(err.message || "Error cargando propuestas");
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId]);
+
+  const index = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/index`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error indexando");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async (id) => {
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/proposals/${id}/apply`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error aplicando propuesta");
+    }
+  };
+
+  const ignore = async (id) => {
+    try {
+      await apiPost(`/api/workspaces/${workspaceId}/memory/proposals/${id}/ignore`, {});
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || "Error ignorando propuesta");
+    }
+  };
+
+  useEffect(() => { load(); }, [load]);
+
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <h3 className="modal-title">Memoria personal</h3>
+      <p className="modal-sub">Revisa patrones detectados a partir de tu feedback. Solo se aplican con tu aprobación.</p>
+      {error && <div className="error">{error}</div>}
+      <div className="inline-group">
+        <button type="button" className="btn-primary" onClick={index} disabled={loading}>{loading ? "Indexando…" : "Indexar ahora"}</button>
+        <button type="button" className="btn" onClick={onClose}>Cerrar</button>
+      </div>
+      <div className="proposal-list" style={{ marginTop: 14 }}>
+        {proposals.length === 0 && <div className="empty">Sin propuestas pendientes.</div>}
+        {proposals.map((p) => (
+          <div key={p.id} className="proposal-card">
+            <div className="proposal-summary">{p.summary}</div>
+            <div className="proposal-meta">Detectado {p.detected_count} vez{p.detected_count > 1 ? "es" : ""}</div>
+            <div className="inline-group">
+              <button type="button" className="btn-primary" onClick={() => apply(p.id)}>Aplicar</button>
+              <button type="button" className="btn" onClick={() => ignore(p.id)}>Ignorar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   </div>;
 }
 
@@ -477,7 +672,7 @@ function EmptyMessages({ activeWorkspace }) {
   return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Escribe abajo para crear un chat nuevo y conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
 }
 
-const THINKING_STEPS = [
+var THINKING_STEPS = [
   { key: "reason", label: "Razonando sobre tu consulta" },
   { key: "context", label: "Consultando el contexto del workspace" },
   { key: "route", label: "Seleccionando el modelo" },
@@ -1138,6 +1333,14 @@ function SpaceView({ activeWorkspace }) {
                 {r.fallback && <span className="route-fallback">fallback</span>}
               </div>;
             })()}
+            {msg.role === "assistant" && activeWorkspace && activeChat && (
+              <MessageFeedback
+                workspaceId={activeWorkspace.id}
+                chatId={activeChat.id}
+                messageId={msg.id}
+                currentOutcome={null}
+              />
+            )}
           </div>
         ))}
         {busy && <div className="message message-assistant">
@@ -1207,7 +1410,7 @@ function ToolsetPanel({ activeWorkspace }) {
     .filter((r) => r.is_active && r.approved_by)
     .filter((r) => {
       if (tab === "skills") return r.category === "skill";
-      if (tab === "agents") return r.category === "agent";
+      if (tab === "agente") return false;
       if (tab === "templates") return r.category === "template";
       if (tab === "knowledge") return r.category === "reference";
       return false;
@@ -1219,12 +1422,12 @@ function ToolsetPanel({ activeWorkspace }) {
     : [];
 
   const filtered = [...routineItems, ...skillItems];
-  const isExecutableTab = tab === "skills" || tab === "agents";
+  const isExecutableTab = tab === "skills";
 
   return <div className="toolset-panel">
     <div className="toolset-tabs">
       {[
-        { id: "agents", label: "Agentes", icon: "spark" },
+        { id: "agente", label: "Agente", icon: "spark" },
         { id: "skills", label: "Skills", icon: "check" },
         { id: "templates", label: "Templates", icon: "layers" },
         { id: "knowledge", label: "Conocimiento", icon: "book" },
@@ -1237,7 +1440,18 @@ function ToolsetPanel({ activeWorkspace }) {
     <div className="toolset-body">
       {loading && <div style={S.loading}>Cargando…</div>}
       {error && <div style={S.error}>{error}</div>}
-      {!loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
+      {tab === "agente" && (
+        <div style={{ padding: "8px 4px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Estado del Agente Vivo</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 12 }}>
+            El agente responde desde el índice de tus workspaces y profundiza solo con tu autoridad.
+          </div>
+          <button type="button" className="toolset-invoke" onClick={() => window.dispatchEvent(new CustomEvent("faberloom:nav", { detail: { nav: "agent-tasks" } }))}>
+            <Icon name="layers" size={14}/>Ver tareas en curso
+          </button>
+        </div>
+      )}
+      {tab !== "agente" && !loading && filtered.length === 0 && <div style={S.empty}>Sin {tab} activos y aprobados.<br/><small>Crealos en Admin → Skills y presioná Aprobar para invocarlos desde el chat.</small></div>}
       <div className="toolset-list">
         {filtered.map((item) => (
           <ToolsetItem
@@ -1272,6 +1486,91 @@ function ToolsetItem({ item, onInvoke }) {
   </div>;
 }
 
+function WorkspaceBriefPanel({ activeWorkspace }) {
+  const [brief, setBrief] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    setError(null);
+    apiFetch(`/api/workspaces/${activeWorkspace.id}/brief?missing_ok=1`, { headers: authHeaders() })
+      .then(async (res) => {
+        if (res.status === 404) {
+          setError("not_ready");
+          return;
+        }
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+        }
+        const data = await res.json();
+        if (data && data.ready === false) {
+          setError("not_ready");
+          return;
+        }
+        setBrief(data);
+      })
+      .catch((err) => setError(err.message || "Error"))
+      .finally(() => setLoading(false));
+  }, [activeWorkspace]);
+
+  if (!activeWorkspace) return null;
+  if (loading) return <div style={S.loading}>Cargando brief…</div>;
+  if (error === "not_ready") {
+    return (
+      <div style={{ ...S.card, marginTop: 12, opacity: 0.85 }}>
+        <div style={S.cardTitle}>Brief del workspace</div>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+          Aún no hay brief. Se genera en frío durante el ciclo ambiental.
+        </p>
+      </div>
+    );
+  }
+  if (error) return <div style={{ ...S.error, marginTop: 12 }}>{error}</div>;
+  if (!brief) return null;
+
+  const b = brief.brief || {};
+  const sourceTotal = Object.values(b.source_counts || {}).reduce((a, n) => a + (n || 0), 0);
+  return (
+    <div style={{ ...S.card, marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <div style={S.cardTitle}>Brief del workspace</div>
+        <span style={{ ...S.badge, background: b.level === "closed" ? "var(--vino-soft)" : "var(--sage-soft)" }}>{b.level || "—"}</span>
+      </div>
+      <div style={{ ...S.cardMeta, marginBottom: 10 }}>v{brief.version || 0} · {brief.computed_at ? new Date(brief.computed_at).toLocaleString() : "—"}</div>
+      {b.sealed && <div style={{ ...S.error, marginBottom: 10, fontSize: 12 }}>Espacio sellado</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, marginBottom: 12 }}>
+        <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Fuentes</div>
+          <div style={{ fontWeight: 600, marginTop: 2 }}>{sourceTotal}</div>
+        </div>
+        <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Rutinas activas</div>
+          <div style={{ fontWeight: 600, marginTop: 2 }}>{(b.active_routines || []).length}</div>
+        </div>
+        {b.open_invoices && (
+          <div style={{ padding: 8, background: "var(--bg-sunken)", borderRadius: 6 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Facturas abiertas</div>
+            <div style={{ fontWeight: 600, marginTop: 2 }}>${Number(b.open_invoices.total_usd || 0).toFixed(2)}</div>
+          </div>
+        )}
+      </div>
+      {(b.recent_titles || []).length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>Títulos recientes</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {b.recent_titles.slice(0, 5).map((t) => (
+              <div key={t.id} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.35 }}>· {t.title}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RightRail({ open, activeWorkspace }) {
   return <aside className={cx("rail3", !open && "hidden")} aria-label="Toolset">
     <div className="rail3-header">
@@ -1279,6 +1578,7 @@ function RightRail({ open, activeWorkspace }) {
       <span>Toolset</span>
     </div>
     <ToolsetPanel activeWorkspace={activeWorkspace}/>
+    <WorkspaceBriefPanel activeWorkspace={activeWorkspace}/>
   </aside>;
 }
 
@@ -2493,7 +2793,7 @@ function WorkloomView({ activeWorkspace }) {
   </div>;
 }
 
-const PROVIDER_LABELS = {
+var PROVIDER_LABELS = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google / Gemini",
@@ -2789,8 +3089,8 @@ function AuditHistoryPanel({ activeWorkspace }) {
   </section>;
 }
 
-const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "", is_app_password: 1 };
-const IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0, is_app_password: 1 };
+var SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "", is_app_password: 1 };
+var IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0, is_app_password: 1 };
 
 function IMAPConfigPanel({ activeWorkspace }) {
   const [accounts, setAccounts] = useState([]);
@@ -3401,7 +3701,6 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "audit" ? <AuditView activeWorkspace={activeWorkspace} features={features}/>
      : (nav === "mail" || nav === "inbox") && features?.email_connector_enabled ? <MailView activeWorkspace={activeWorkspace}/>
      : nav === "skills" ? <SkillsView activeWorkspace={activeWorkspace}/>
-     : nav === "agents" ? <AgentsView activeWorkspace={activeWorkspace}/>
      : nav === "gold" ? <GoldView activeWorkspace={activeWorkspace}/>
      : nav === "users" ? <UsersView activeWorkspace={activeWorkspace}/>
      : nav === "billing" ? <BillingView user={user}/>
@@ -3411,6 +3710,8 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "foundation" && window.FoundationSection ? <window.FoundationSection initialView={foundationView} activeWorkspace={activeWorkspace}/>
      : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
      : nav === "promotion" && window.PromotionReadinessPanel ? <window.PromotionReadinessPanel activeWorkspace={activeWorkspace} user={user}/>
+     : nav === "routing-shadow" && window.ShadowReportPanel ? <window.ShadowReportPanel tenantId={user?.tenant_id || "default"} />
+     : nav === "agent-tasks" && window.AgentTasksPanel ? <window.AgentTasksPanel workspaceId={activeWorkspace?.id} />
      : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
@@ -3552,6 +3853,7 @@ function App({ user, onLogout }) {
   const [mode, setMode] = useState("operar");
   const [nav, setNav] = useState("space");
   const [workspaces, setWorkspaces] = useState(boot ? boot.workspaces : []);
+  const [generalWorkspace, setGeneralWorkspace] = useState(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(boot ? boot.activeWorkspaceId : null);
   const [status, setStatus] = useState(boot && boot.workspaces.length ? "ready" : "loading");
   const [theme, setTheme] = useState(getInitialTheme);
@@ -3584,12 +3886,17 @@ function App({ user, onLogout }) {
   useEffect(() => {
     if (boot && boot.workspaces.length) return;
     let cancelled = false;
-    apiGet("/api/workspaces")
-      .then((payload) => {
+    Promise.all([
+      apiGet("/api/workspaces").catch(() => ({ workspaces: [] })),
+      apiGet("/api/workspaces/general").catch(() => null),
+    ])
+      .then(([payload, general]) => {
         if (cancelled) return;
         const list = Array.isArray(payload) ? payload : (payload.workspaces || []);
         setWorkspaces(list);
-        setActiveWorkspaceId((current) => current || (list[0] && list[0].id) || null);
+        setGeneralWorkspace(general);
+        const firstId = general?.id || (list[0] && list[0].id) || null;
+        setActiveWorkspaceId((current) => current || firstId);
         setStatus("ready");
       })
       .catch(() => { if (!cancelled) setStatus("error"); });
@@ -3621,7 +3928,8 @@ function App({ user, onLogout }) {
     if (cmd.type === "theme") { setTheme(cmd.value); pushToast("Tema cambiado a " + cmd.value, "success"); }
   };
 
-  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+  const allWorkspaces = useMemo(() => generalWorkspace ? [generalWorkspace, ...workspaces] : workspaces, [workspaces, generalWorkspace]);
+  const activeWorkspace = allWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
 
   useEffect(() => {
     if (!activeWorkspace) { setBudget(null); return; }
@@ -3633,10 +3941,10 @@ function App({ user, onLogout }) {
   }, [activeWorkspace]);
 
   return <div className="app-shell">
-    <Topbar onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
+    <Topbar workspaceId={activeWorkspaceId} onOpenPalette={() => setCmdkOpen(true)} theme={theme} setTheme={setTheme} budget={budget} onToggleLeft={() => setLeftRailOpen((v) => !v)} onToggleRight={() => setRightRailOpen((v) => !v)} onOpenRouting={() => { setMode("admin"); setNav("settings"); }}/>
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
-      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
+      <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
       <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView} user={user}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>

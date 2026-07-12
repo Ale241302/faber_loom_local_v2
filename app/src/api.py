@@ -16,7 +16,8 @@ except Exception:  # pragma: no cover - runtime environment may lack sqlcipher3
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from starlette.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -119,6 +120,13 @@ from .faberloom_catalog import (
     import_catalog_items,
     list_catalog,
 )
+from .living_agent.planner import (
+    get_shadow_report,
+    log_planner_decision,
+    run_shadow_plan,
+    run_shadow_plan_background,
+    update_model_track_record,
+)
 from .kb import (
     approve_draft,
     delete_kb_source,
@@ -145,14 +153,43 @@ from .gold import (
     promote_gold_candidate,
 )
 from .ingest import IngestError, extract_text_from_object, load_image_attachment
+from .key_broker import KeyLevel, resolve_read_level
 from .ledger import start_chain
 from .routing import catalog as routing_catalog
-from .routing.auto_dispatcher import AutoDispatcherError, NoCapacityError, run_auto_chain
+from .routing.auto_dispatcher import (
+    AutoDispatcherError,
+    NaturalPlanner,
+    NoCapacityError,
+    run_auto_chain,
+)
+from .routing.policy import resolve_routing_mode
 from .plans import PlanError, get_plan_surcharge_pct
+from .living_agent.autonomy import (
+    degrade_workspace_if_needed,
+    evaluate_promotion_readiness,
+    generate_promotion_token,
+    promote_or_rollback_workspace,
+)
+from .living_agent.briefs import get_workspace_brief
+from .living_agent.feedback import record_message_feedback
+from .living_agent.memory import (
+    apply_memory_proposal,
+    archive_stale_memory_proposals,
+    build_memory_context,
+    detect_personal_memory_patterns,
+    get_learning_state,
+    ignore_memory_proposal,
+    list_memory_proposals,
+    orchestrate_memory_proposals,
+)
+from .living_agent.orchestrator import TaskOrchestrator
+from .living_agent.presence import handle_presence_message
+from .living_agent.tasks import get_task, list_tasks
 from .models import (
     AuditEvent,
     AtMentionInvokeRequest,
     ChatCompletionRequest,
+    GeneralWorkspaceRead,
     ChatCompletionResponse,
     ChatCreate,
     ChatInvokeRequest,
@@ -169,6 +206,8 @@ from .models import (
     HealthRead,
     KBSourceCreate,
     KBSourceRead,
+    LearningStateRead,
+    MemoryProposalRead,
     ObjectCreate,
     ObjectRead,
     ObjectUpdate,
@@ -180,7 +219,14 @@ from .models import (
     EmailAccountRotateRequest,
     EmailAccountWrite,
     FeaturesRead,
+    AgentTaskApproveRequest,
+    AgentTaskCreate,
+    AgentTaskKillRequest,
+    AgentTaskRead,
+    AgentTaskRejectRequest,
     MailMessageRead,
+    MessageFeedbackRead,
+    MessageFeedbackRequest,
     MessageRead,
     ModelCatalogEntryCreate,
     ModelCatalogEntryRead,
@@ -214,6 +260,11 @@ from .models import (
     SettingsRead,
     SettingsUpdate,
     WorkspaceRead,
+    WorkspaceBriefRead,
+    ShadowReportRead,
+    PromotionReadinessRead,
+    PromotionRequest,
+    PromotionResponse,
     WorkspaceRoutingPolicyRead,
     WorkspaceRoutingPolicyUpdate,
 )
@@ -251,6 +302,15 @@ from .connectors.whatsapp_inbound import (
     process_whatsapp_payload,
     register_whatsapp_number,
     set_whatsapp_secret,
+)
+from .connectors.whatsapp_outbound import (
+    WhatsAppOutboundError,
+    _is_within_24h,
+    delete_whatsapp_outbound_secrets,
+    load_whatsapp_outbound_config,
+    send_message as send_whatsapp_message,
+    send_template,
+    set_whatsapp_outbound_secret,
 )
 from .ambient import (
     ambient_metrics,
@@ -407,6 +467,7 @@ _SETTING_REGISTRY: dict[str, dict[str, Any]] = {
     "smtp.port": {"label": "Puerto SMTP", "description": "Puerto del servidor SMTP."},
     "smtp.use_ssl": {"label": "SMTP usa SSL", "description": "Usar conexión SSL/TLS al enviar correo."},
     "smtp.username": {"label": "Usuario SMTP", "description": "Usuario para autenticación SMTP."},
+    "routing.mode": {"label": "Modo de routing", "description": "manual, shadow o natural."},
     "routing.auto_dispatch": {"label": "Despacho automático", "description": "Ejecutar acciones sin confirmación HITL."},
     "routing.max_budget_usd": {"label": "Presupuesto máximo (USD)", "description": "Presupuesto máximo por ejecución automática."},
     "routing.max_steps": {"label": "Pasos máximos", "description": "Número máximo de pasos en modo automático."},
@@ -430,6 +491,11 @@ def _coerce_setting_value(key: str, raw: Any) -> Any:
         value = str(raw).strip().lower()
         if value not in {"estricto", "hibrido"}:
             raise ValueError(f"Invalid BYO mode '{value}': must be 'estricto' or 'hibrido'")
+        return value
+    if key == "routing.mode":
+        value = str(raw).strip().lower()
+        if value not in {"manual", "shadow", "natural"}:
+            raise ValueError(f"Invalid routing mode '{value}': must be manual, shadow or natural")
         return value
     return str(raw)
 
@@ -487,6 +553,7 @@ def _workspace_settings_list(conn: sqlite3.Connection, ctx: Context, workspace_i
         "routing.auto_dispatch": (bool(policy.get("auto_mode_enabled")), "workspace"),
         "routing.max_budget_usd": (policy.get("budget_cap_usd"), "workspace"),
         "routing.max_steps": (policy.get("max_auto_steps"), "workspace"),
+        "routing.mode": (policy.get("mode"), "workspace"),
         "model.default": (default_model, "workspace"),
     }
 
@@ -532,6 +599,7 @@ def _update_workspace_settings(
             auto_mode_enabled=routing_overrides.get("auto_dispatch"),
             budget_cap_usd=routing_overrides.get("max_budget_usd"),
             max_auto_steps=routing_overrides.get("max_steps"),
+            mode=routing_overrides.get("mode"),
         )
 
     if smtp_overrides:
@@ -734,6 +802,75 @@ async def whatsapp_webhook(
     return result
 
 
+@router.get("/tenants/{tenant_id}/routing/shadow-report", response_model=ShadowReportRead)
+def api_get_shadow_report(
+    tenant_id: str,
+    request: Request,
+    days: int = Query(14, ge=1, le=90),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ShadowReportRead:
+    """Return aggregated shadow vs natural routing metrics for a tenant."""
+
+    ctx = context_from_request(request)
+    # Enforce that the caller belongs to the requested tenant.
+    if ctx.require_tenant() != tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+    report = get_shadow_report(conn, ctx, days=days)
+    return ShadowReportRead(**report)
+
+
+@router.get("/workspaces/{workspace_id}/routing/promotion-readiness", response_model=PromotionReadinessRead)
+def api_get_promotion_readiness(
+    workspace_id: str,
+    request: Request,
+    days: int = Query(14, ge=1, le=90),
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotionReadinessRead:
+    """Return promotion readiness for a workspace from shadow to natural."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if ctx.actor_role_at_decision not in {"owner", "curator", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    readiness = evaluate_promotion_readiness(ctx, conn, workspace_id, days=days)
+    return PromotionReadinessRead(**readiness)
+
+
+@router.post("/workspaces/{workspace_id}/routing/promote", response_model=PromotionResponse)
+def api_promote_workspace(
+    workspace_id: str,
+    payload: PromotionRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> PromotionResponse:
+    """Promote (shadow -> natural) or rollback (natural -> shadow) a workspace.
+
+    Requires the deterministic confirmation token returned by the promotion-readiness
+    endpoint; rollback uses a different token action but the same generation scheme.
+    """
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if ctx.actor_role_at_decision not in {"owner", "curator", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    try:
+        result = promote_or_rollback_workspace(
+            ctx,
+            conn,
+            workspace_id,
+            requested_mode=payload.mode,
+            confirmation_token=payload.confirmation_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return PromotionResponse(**result)
+
+
 @router.get("/tenant/settings", response_model=SettingsRead)
 def api_get_tenant_settings(
     request: Request,
@@ -874,7 +1011,29 @@ def api_list_workspaces(
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceListRead:
     ctx = context_from_request(request)
-    return WorkspaceListRead(workspaces=[WorkspaceRead(**row) for row in list_workspaces(ctx, conn)])
+    all_workspaces = list_workspaces(ctx, conn)
+    # E4-4: ws-general no aparece en el listado normal de workspaces.
+    visible = [ws for ws in all_workspaces if ws.get("kind") != "tenant_general"]
+    return WorkspaceListRead(workspaces=[WorkspaceRead(**row) for row in visible])
+
+
+@router.get("/workspaces/general", response_model=GeneralWorkspaceRead)
+def api_get_general_workspace(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> GeneralWorkspaceRead:
+    """Return the tenant's general chat workspace (ws-general), if any."""
+
+    ctx = context_from_request(request)
+    from .db import get_workspace_by_kind
+    from .entity_identity import get_identity
+
+    ws = get_workspace_by_kind(ctx, conn, "tenant_general")
+    if ws is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="General workspace not found")
+    identity = get_identity(conn, ctx.tenant_id or "default")
+    display_name = identity.name if identity is not None else "Faber"
+    return GeneralWorkspaceRead(**{**ws, "display_name": display_name})
 
 
 @router.post("/workspaces", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -884,6 +1043,13 @@ def api_create_workspace(
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> WorkspaceRead:
     bootstrap_ctx = context_from_request(request)
+    if payload.kind == "tenant_general":
+        role = bootstrap_ctx.actor_role_at_decision or ""
+        if role not in {"platform_admin", "system", "owner"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Creating a tenant_general workspace requires platform_admin or system role",
+            )
     event: AuditEvent | None = None
     try:
         with transaction(conn, ctx=bootstrap_ctx):
@@ -977,6 +1143,54 @@ def api_update_workspace_field_aliases(
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return WorkspaceRead(**updated)
+
+
+@router.get("/workspaces/{workspace_id}/brief", response_model=WorkspaceBriefRead)
+def api_get_workspace_brief(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceBriefRead:
+    """Return the persisted workspace brief (cold cache), mediated by the key broker.
+
+    This endpoint never generates a brief inline; regeneration happens in the
+    ambient cycle. If no brief exists yet, the caller receives 404. The stored
+    brief is re-mediada at read time using the requester's roles so that a
+    CLOSED space or a non-approver never receives CONTENT-level aggregates.
+    """
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    row = get_workspace_brief(conn, ctx, workspace_id)
+    if row is None:
+        if request.query_params.get("missing_ok"):
+            return JSONResponse({"ready": False}, status_code=status.HTTP_200_OK)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brief not found")
+
+    user_roles = {ctx.actor_role_at_decision} if ctx.actor_role_at_decision else set()
+    level, _ = resolve_read_level(
+        conn,
+        tenant_id=ctx.require_tenant(),
+        space_id=workspace_id,
+        user_roles=user_roles,
+        default=KeyLevel.INDEX,
+    )
+
+    brief = (row.get("brief") or {}).copy()
+    response_row = dict(row)
+    if level == KeyLevel.CLOSED:
+        brief = {
+            "sealed": True,
+            "level": "closed",
+            "object_count": sum((row.get("source_counts") or {}).values()),
+        }
+        response_row["source_counts"] = {}
+    elif level == KeyLevel.INDEX:
+        brief.pop("open_invoices", None)
+        brief["level"] = "index"
+        brief["sealed"] = brief.get("sealed", True)
+
+    return WorkspaceBriefRead(**{**response_row, "brief": brief})
 
 
 # -----------------------------------------------------------------------------
@@ -1263,6 +1477,319 @@ def api_list_messages(
     return [_serialize_message(row) for row in get_messages(ctx, conn, chat_id)]
 
 
+@router.post(
+    "/workspaces/{workspace_id}/chats/{chat_id}/messages/{message_id}/feedback",
+    response_model=MessageFeedbackRead,
+)
+def api_create_message_feedback(
+    workspace_id: str,
+    chat_id: str,
+    message_id: str,
+    payload: MessageFeedbackRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> MessageFeedbackRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if get_chat(ctx, conn, chat_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+    try:
+        feedback = record_message_feedback(
+            ctx,
+            conn,
+            message_id=message_id,
+            outcome=payload.outcome,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return MessageFeedbackRead(**feedback)
+
+
+# ---------------------------------------------------------------------------
+# E4-5: Personal memory (CAPA 1) endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/workspaces/{workspace_id}/memory/learning-state",
+    response_model=LearningStateRead,
+)
+def api_get_learning_state(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> LearningStateRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return LearningStateRead(**get_learning_state(ctx, conn))
+
+
+@router.get(
+    "/workspaces/{workspace_id}/memory/proposals",
+    response_model=list[MemoryProposalRead],
+)
+def api_list_memory_proposals(
+    workspace_id: str,
+    request: Request,
+    state: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[MemoryProposalRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    rows = list_memory_proposals(ctx, conn, state=state)
+    return [MemoryProposalRead(**row) for row in rows]
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/index",
+    response_model=dict[str, Any],
+)
+def api_index_memory_proposals(
+    workspace_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    """Run the personal-memory detector and materialize/update proposals."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    findings = detect_personal_memory_patterns(ctx, conn)
+    result = orchestrate_memory_proposals(ctx, conn, findings)
+    return {
+        "findings": len(findings),
+        "created": result.get("created", []),
+        "merged": result.get("merged", []),
+    }
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/proposals/{proposal_id}/apply",
+    response_model=dict[str, Any],
+)
+def api_apply_memory_proposal(
+    workspace_id: str,
+    proposal_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        return apply_memory_proposal(ctx, conn, proposal_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/proposals/{proposal_id}/ignore",
+    response_model=dict[str, Any],
+)
+def api_ignore_memory_proposal(
+    workspace_id: str,
+    proposal_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        return ignore_memory_proposal(ctx, conn, proposal_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memory/hygiene",
+    response_model=dict[str, Any],
+)
+def api_memory_hygiene(
+    workspace_id: str,
+    request: Request,
+    max_age_days: int = 30,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> dict[str, Any]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return archive_stale_memory_proposals(ctx, conn, max_age_days=max_age_days)
+
+
+# ---------------------------------------------------------------------------
+# E4-3: Agent task orchestration endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks", response_model=AgentTaskRead)
+def api_create_agent_task(
+    workspace_id: str,
+    payload: AgentTaskCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    policy = get_routing_policy(ctx, conn)
+    planner = NaturalPlanner(policy=policy)
+    plan = planner.plan(
+        ctx,
+        conn,
+        user_request=payload.user_request,
+        attachments=[],
+        policy=policy,
+    )
+
+    log = log_planner_decision(
+        ctx,
+        conn,
+        mode="natural",
+        plan=plan,
+        correlation_id=payload.chat_id,
+        task_ref=payload.chat_id,
+        planner_cost_usd=plan.planner_cost_usd,
+    )
+
+    try:
+        task = TaskOrchestrator(ctx, conn, policy=policy).run_task_from_plan(
+            chat_id=payload.chat_id,
+            user_request=payload.user_request,
+            plan=plan,
+            plan_id=log.get("id"),
+        )
+    except NoCapacityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except AutoDispatcherError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return AgentTaskRead(**task)
+
+
+@router.get("/workspaces/{workspace_id}/agent-tasks", response_model=list[AgentTaskRead])
+def api_list_agent_tasks(
+    workspace_id: str,
+    request: Request,
+    status_filter: str | None = None,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> list[AgentTaskRead]:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    tasks = list_tasks(ctx, conn, workspace_id=workspace_id, status=status_filter)
+    return [AgentTaskRead(**t) for t in tasks]
+
+
+@router.get("/workspaces/{workspace_id}/agent-tasks/{task_id}", response_model=AgentTaskRead)
+def api_get_agent_task(
+    workspace_id: str,
+    task_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    task = get_task(ctx, conn, task_id, include_steps=True)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/kill", response_model=AgentTaskRead)
+def api_kill_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskKillRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).kill_task(
+            task_id,
+            reason=payload.reason,
+            requested_by=ctx.actor_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/approve", response_model=AgentTaskRead)
+def api_approve_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskApproveRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).approve_hitl_step(task_id, payload.confirmation_token)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return AgentTaskRead(**task)
+
+
+@router.post("/workspaces/{workspace_id}/agent-tasks/{task_id}/reject", response_model=AgentTaskRead)
+def api_reject_agent_task(
+    workspace_id: str,
+    task_id: str,
+    payload: AgentTaskRejectRequest,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> AgentTaskRead:
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    try:
+        task = TaskOrchestrator(ctx, conn).reject_hitl_step(
+            task_id,
+            payload.token,
+            reason=payload.reason,
+            rejected_by=ctx.actor_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return AgentTaskRead(**task)
+
+
 def _build_skill_context(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -1348,19 +1875,120 @@ def _build_user_message_with_attachment(
     )
 
 
+def _handle_presence_completion(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    chat_id: str,
+    payload: ChatCompletionRequest,
+    workspace: dict[str, Any],
+    request: Request,
+) -> ChatCompletionResponse:
+    """E4-4: chat general del tenant (ws-general) via Agente Vivo.
+
+    Responde desde workspace_brief INDEX + memoria personal; profundiza a
+    workspaces concretos sin elevar privilegios.
+    """
+
+    # Reject @mentions / skill_ids / auto mode in the general chat for now;
+    # they should target a concrete workspace or use the task flow.
+    if _AT_MENTION_RE.match(payload.message.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="@routine mentions are not supported in the general chat",
+        )
+    if payload.skill_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Skill selection is not supported in the general chat",
+        )
+    if payload.mode == "auto":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Auto mode is not supported in the general chat",
+        )
+
+    from uuid import uuid4
+
+    correlation_id = str(uuid4())
+    user_message = payload.message.strip()
+
+    presence_result = handle_presence_message(
+        ctx,
+        conn,
+        user_message,
+        correlation_id=correlation_id,
+    )
+
+    audit_event: AuditEvent | None = None
+    assistant_message: MessageRead | None = None
+    with transaction(conn, ctx=ctx):
+        insert_message(
+            ctx,
+            conn,
+            chat_id=chat_id,
+            role="user",
+            content=user_message,
+            route={"presence": True, "correlation_id": correlation_id},
+        )
+        assistant_row = insert_message(
+            ctx,
+            conn,
+            chat_id=chat_id,
+            role="assistant",
+            content=presence_result["content"],
+            route={
+                "presence": True,
+                "intent": presence_result.get("intent"),
+                "level": presence_result.get("level"),
+                "target_workspace_id": presence_result.get("target_workspace_id"),
+                "correlation_id": correlation_id,
+            },
+        )
+        assistant_message = _serialize_message(assistant_row)
+        audit_payload = presence_result.get("audit_payload") or {}
+        audit_payload["chat_id"] = chat_id
+        audit_payload["workspace_id"] = workspace["id"]
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="living_agent.read",
+            payload=audit_payload,
+            mirror_jsonl=False,
+        )
+
+    if audit_event is not None:
+        _mirror_audit(audit_event)
+
+    return ChatCompletionResponse(
+        message=assistant_message,
+        provider_slug="presence",
+        model="presence",
+        input_tokens=0,
+        output_tokens=0,
+        cost_usd=0.0,
+        duration_ms=0,
+    )
+
+
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/completions", response_model=ChatCompletionResponse)
 def api_create_completion(
     workspace_id: str,
     chat_id: str,
     payload: ChatCompletionRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     conn: sqlite3.Connection = Depends(get_workspace_db),
 ) -> ChatCompletionResponse:
     ctx = context_from_request(request, workspace_id=workspace_id)
-    if get_workspace(ctx, conn) is None:
+    workspace = get_workspace(ctx, conn)
+    if workspace is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     if get_chat(ctx, conn, chat_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    # E4-4: chat general del tenant (ws-general) enruta a la presencia única.
+    if workspace.get("kind") == "tenant_general":
+        return _handle_presence_completion(ctx, conn, chat_id, payload, workspace, request)
 
     byo_mode = resolve(conn, ctx, "routing.byo_mode", default="hibrido")
 
@@ -1670,6 +2298,9 @@ def api_create_completion(
     system_content = _SYSTEM_PROMPT
     if skill_context:
         system_content = f"{skill_context}\n\n{system_content}"
+    memory_context = build_memory_context(ctx, conn, query=user_message)
+    if memory_context:
+        system_content = f"{memory_context}\n\n{system_content}"
     history = [{"role": "system", "content": system_content}]
     history.extend(get_message_history(ctx, conn, chat_id))
 
@@ -1878,6 +2509,26 @@ def api_create_completion(
         )
         raise HTTPException(status_code=status_code, detail=detail)
 
+    # E4-2: in shadow mode, plan without executing and compare against the manual
+    # path that just served the user.
+    if resolve_routing_mode(ctx, conn) == "shadow":
+        background_tasks.add_task(
+            run_shadow_plan_background,
+            tenant_id=ctx.require_tenant(),
+            workspace_id=workspace_id,
+            chat_id=chat_id,
+            user_request=payload.message,
+            actor_role=ctx.actor_role_at_decision,
+            actual_outcome={
+                "mode": "manual",
+                "provider_slug": result.provider_slug,
+                "model": result.model,
+                "cost_usd": result.cost_usd,
+                "duration_ms": result.duration_ms,
+            },
+            policy=get_routing_policy(ctx, conn),
+        )
+
     return ChatCompletionResponse(
         message=assistant_message,
         provider_slug=result.provider_slug,
@@ -1952,6 +2603,14 @@ def api_run_auto_chain(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
+
+    # E4-2: automatic degradation to shadow if the real cost overruns the planner
+    # estimate in the analysis window. Runs outside the request transaction so a
+    # degradation failure never affects the user-facing response.
+    try:
+        degrade_workspace_if_needed(ctx, conn, workspace_id)
+    except Exception:
+        logger.exception("Automatic degradation check failed for workspace %s", workspace_id)
 
     return auto_result
 
@@ -2381,6 +3040,8 @@ def _execute_skill_run(
         provider_slug=provider_slug,
         model=model,
         spent_usd=spent_usd,
+        ctx=ctx,
+        conn=conn,
     )
 
     with transaction(conn, ctx=ctx):
@@ -5550,3 +6211,173 @@ def api_ambient_trigger(
         status=result["status"],
         proposals_created=result["proposals_created"],
     )
+
+
+# ---------------------------------------------------------------------------
+# E4-6: WhatsApp outbound Cloud API (draft-first / HITL)
+# ---------------------------------------------------------------------------
+
+
+class WhatsAppOutboundConfigRequest(BaseModel):
+    access_token: str
+    business_account_id: str | None = None
+
+
+class WhatsAppSendRequest(BaseModel):
+    to: str
+    body: str
+    confirmation_token: str | None = None
+    last_customer_message_at: str | None = None
+
+
+class WhatsAppTemplateRequest(BaseModel):
+    to: str
+    template_name: str
+    language_code: str = "en_US"
+    confirmation_token: str | None = None
+
+
+@router.put("/tenants/{tenant_id}/connectors/whatsapp/{phone_number_id}")
+def api_set_whatsapp_outbound_config(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppOutboundConfigRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Store WhatsApp Cloud API secrets for outbound messaging."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    set_whatsapp_outbound_secret(ctx, phone_number_id, "access_token", payload.access_token)
+    set_whatsapp_outbound_secret(
+        ctx, phone_number_id, "business_account_id", payload.business_account_id
+    )
+
+    return {"phone_number_id": phone_number_id, "status": "configured"}
+
+
+@router.delete("/tenants/{tenant_id}/connectors/whatsapp/{phone_number_id}")
+def api_delete_whatsapp_outbound_config(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Remove WhatsApp Cloud API secrets for a phone number."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    delete_whatsapp_outbound_secrets(ctx, phone_number_id)
+
+    return {"phone_number_id": phone_number_id, "status": "deleted"}
+
+
+@router.post("/tenants/{tenant_id}/whatsapp/{phone_number_id}/send")
+def api_send_whatsapp_message(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppSendRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """HITL-gated send of a WhatsApp text message.
+
+    If no confirmation_token is provided, the endpoint returns the required token
+    so the caller can preview before approving.
+    """
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    try:
+        config = load_whatsapp_outbound_config(ctx, phone_number_id)
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    if not _is_within_24h(payload.last_customer_message_at):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Outside 24h conversation window; use send_template instead",
+        )
+
+    try:
+        if payload.confirmation_token is None:
+            return send_whatsapp_message(
+                config,
+                payload.to,
+                payload.body,
+                confirmation_token_value=None,
+            )
+        return send_whatsapp_message(
+            config,
+            payload.to,
+            payload.body,
+            confirmation_token_value=payload.confirmation_token,
+        )
+    except WhatsAppOutboundError as exc:
+        detail = str(exc)
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if "24h" in detail or "Confirmation token" in detail
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        raise HTTPException(status_code, detail=detail) from exc
+
+
+@router.post("/tenants/{tenant_id}/whatsapp/{phone_number_id}/send-template")
+def api_send_whatsapp_template(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppTemplateRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """HITL-gated send of a WhatsApp template message (outside 24h window)."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    try:
+        config = load_whatsapp_outbound_config(ctx, phone_number_id)
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    try:
+        if payload.confirmation_token is None:
+            return send_template(
+                config,
+                payload.to,
+                payload.template_name,
+                payload.language_code,
+            )
+        return send_template(
+            config,
+            payload.to,
+            payload.template_name,
+            payload.language_code,
+            confirmation_token_value=payload.confirmation_token,
+        )
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+def _require_tenant_admin(tenant_id: str, user: dict[str, Any]) -> None:
+    """Fail unless the user is owner/admin of the tenant or platform_admin."""
+
+    user_tenant = user.get("tenant_id")
+    role = (user.get("role") or "").lower()
+    roles = {r.lower() for r in (user.get("roles") or [])}
+    is_platform_admin = role == "platform_admin" or "platform_admin" in roles
+    is_tenant_admin = user_tenant == tenant_id and (role in {"owner", "admin"} or {"owner", "admin"} & roles)
+    if not (is_platform_admin or is_tenant_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner/admin role required for this tenant",
+        )

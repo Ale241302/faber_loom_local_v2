@@ -76,13 +76,13 @@ cd app && python -m uvicorn src.main:app --reload
 <claude-mem-context>
 # Memory Context
 
-# [faber_loom_local_vv2] recent context, 2026-07-10 10:37am GMT-5
+# [faber_loom_local_vv2] recent context, 2026-07-11 11:27am GMT-5
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (18,194t read) | 791,678t work | 98% savings
+Stats: 50 obs (26,061t read) | 1,208,248t work | 98% savings
 
 ### Jul 5, 2026
 S366 Cleanup of dead localStorage token code in app.jsx and related files after P0 HttpOnly cookie migration (Jul 5, 11:44 PM)
@@ -90,50 +90,9 @@ S367 FaberLoom auth cleanup — complete HttpOnly-cookie migration in web UI (ap
 S415 Audit of 5 claimed P0 blockers in FaberLoom codebase — verification against actual code (Jul 5, 11:47 PM)
 ### Jul 8, 2026
 S417 Resume session after context compaction — verify VPS deploy of P0 fixes #1, #3, #4 and confirm production health (Jul 8, 9:31 AM)
-1425 9:56a 🔴 P0 #1: Signup payload field mismatch fixed
-1426 " 🔴 P0 #3: faster-whisper and ffmpeg added to Docker runtime
-1430 10:07a 🔵 Full test suite passes: 509 passed, 12 skipped after all P0 fixes
-1431 10:08a ✅ Six P0 fix files staged for commit
-1432 10:09a ✅ P0 fixes committed to main — SHA 1c95879
-1433 " ✅ P0 fixes pushed to GitHub — faber_loom_local_v2 main
-1434 " 🔵 FaberLoom VPS stack: FastAPI + PostgreSQL + MinIO on shared mwt_default network
-1435 " 🔵 VPS SSH access: 187.77.218.102 port 2222, alias "faberloom"
-1436 " 🔵 VPS compose working directory is /opt/faber_loom, not /opt/faberloom
-1437 " 🔴 Signup Form Field Mismatch Fixed
-1438 " 🔴 faster-whisper and ffmpeg Added to Docker Runtime
-1439 " 🔴 Audit Trail Added for Identity Mutations and Key-Access Grants
-1440 " ✅ P0 Fixes Deployed to VPS at /opt/faber_loom
-1441 10:16a 🔵 VPS SSH Access Configuration
 S416 Fix P0 blockers #1, #3, #4 → push to GitHub → deploy to VPS (continued session after context compaction) (Jul 8, 10:16 AM)
 S418 Fix P0 blockers #1, #3, #4 → push to GitHub → deploy to VPS → verify in production (COMPLETE) (Jul 8, 10:16 AM)
-1442 10:19a ✅ VPS Docker Image faber_loom-api:latest Successfully Rebuilt
-1443 10:21a ✅ faberloom-api Container Recreated with P0 Fix Image
-1444 " 🔵 Production API Health Confirmed Post-Deploy — Schema v34, PostgreSQL Connection Rollbacks Observed
-1445 " 🔵 All Three P0 Fixes Verified Inside Running Production Container
-1446 " ⚖️ Memory Note Written: system-workspace-seed-for-audit Pattern
-1447 10:25a ✅ Project Memory Index Initialized at memory/MEMORY.md
 S421 User override to fix all deferred P0s and deploy to VPS — primary session now investigating key_broker.py and draft_engine._build_evidence_pack to implement P0-5 (Jul 8, 10:25 AM)
-1448 10:29a ⚖️ Full E3 Milestone Completion Tasked — All Hitos E3-0 Through E3-6
-1450 " 🔵 send_message in imap.py Is the Active SMTP Path — Explicitly No HITL, smtp.py Fully Orphaned
-1449 10:30a 🔵 SMTP Connector (smtp.py) Is Orphaned — Mail Send Endpoint Uses Different send_message Function
-1451 10:31a 🔄 api.py Import Changed to Wire connectors/smtp.py — Call Sites Not Yet Updated
-1452 10:32a ⚖️ E3 Full-Completion Sprint Initiated
-1454 10:33a 🔴 E3-0 P0-2: Mail Send Rewired Through Hardened smtp.send_email Connector
-1453 10:46a 🟣 E3-0 SMTP HITL Connector Tests All Green
-1455 10:48a 🔵 ObjectStore: Dual-Backend Architecture (MinIO + Memory Fallback)
-1456 " 🔵 E3-3 Key Broker Architecture: CLOSED Default + Content Read Seams Mapped
-1457 " ⚖️ E3 Full-Completion Mandate Issued — All Six Milestones Must Reach DoD
-1458 11:00a 🟣 check_canary_isolation_postgres.py — N-tenant generalized leak checker added (E3-1)
-1459 " 🟣 http_evidence_fetcher upgraded with real SSRF guard — _assert_public_url blocks private/loopback/link-local IPs
-1460 " 🔵 Primary session re-applied already-committed E3-4 edits — duplicate commit attempt produced same SHA 195d976
-1461 11:16a ⚖️ FaberLoom E3 Full-Completion Sprint Initiated
-1463 " 🟣 P0-4 Committed: RLS Canary Generalized to All Tenants + SSRF Hardening on C0-2 Fetcher
-1464 11:17a 🟣 Full Test Suite Green After E3 Sprint — 520 Passed, 0 Failures
-1465 11:21a 🔵 VPS Deployment Target Identified — SSH on Port 2222, Already at Latest main
-1462 11:22a 🟣 E3-2 Generalized N-Tenant RLS Canary Tests Created and Passing
-1466 " 🟣 E3 Sprint Commits Pushed to GitHub and Deployed to VPS
-1467 11:28a 🟣 API Container Rebuilt and Restarted on VPS with E3 Sprint Code
-1468 11:31a 🟣 Production API Health Verified — All E3 New Symbols Import Clean on VPS
 1469 11:33a ✅ E3 Audit Document Updated with Remediation Status — 7 P0s Closed, 3 Remain Architecture-Dependent
 1470 11:34a ✅ E3 Remediation Audit Doc Committed and Pushed — Sprint Paper Trail Complete
 1471 11:37a ✅ E3 P0 Remediation Status Saved to Claude Project Memory File
@@ -146,6 +105,49 @@ S420 User override: "no importa soluciona esos errores y vps" — implement P0-5
 1475 11:51a 🟣 P0-5: Key Broker Imports Wired into draft_engine.py
 1476 " 🟣 P0-5 Complete: Key Broker Gate Wired into _build_evidence_pack in draft_engine.py
 1477 11:52a ⚖️ P0 Security Items Deferred Due to Architecture Risk on Live Data
+### Jul 10, 2026
+1626 10:37a ⚖️ Faber Loom E3 Partial Milestones — 9-Block Closure Plan Commissioned
+1627 10:38a 🔵 E3 Audit Report Reveals Actual Code State vs. Plan — 10 P0 Blockers, Suite at 546 Passed
+1628 10:39a 🔵 app/src Module Map — All E3 Core Modules Confirmed Present at HEAD 457a3f8
+1629 " 🔵 Two-Audit Reconciliation: 546→552 Passed — Preliminary vs. Detailed Closure Report Are Different Snapshots
+1630 " ⚖️ E3 Plan Architectural Decisions — 12 Binding Choices That Constrain New Code
+1631 10:53a ⚖️ Fugu E3 Implementation Plan Approved — Six Open Decisions Resolved
+1632 10:54a 🔵 Fugu Project Root Structure and Shell Policy Constraint Identified
+1633 " ⚖️ Fugu E3 Implementation Plan Approved — 9-Block Execution Order with Strict Constraints
+1634 " ⚖️ D1: PDF Generation Uses fpdf2 (Pure Python), Marked as Non-Fiscal Beta
+1635 " ⚖️ D2: BYO API Key Precedence — Tenant Key Wins, Default Tenant Never Surcharges
+1636 " ⚖️ D3: Connector Config Uses tenant_settings (Namespaced Keys) + TenantSecretStore for Secrets
+1637 " ⚖️ D4: 13 Legacy Skills (Not 14) Classified via Three-Category Rule into ENT_FB_SKILL_CATALOG_v1.1.md
+1638 " ⚖️ D5: External Data (ATV/SAT/DIAN URLs, WhatsApp Secrets, Marluvas/Tecmater) Remains [PENDIENTE — NO INVENTAR]
+1639 " ⚖️ D6: Fetcher Injected as Explicit Dependency in execute_skill, Following Fail-Closed Pattern
+1640 " ⚖️ WhatsApp Webhook Router: Public Endpoint with HMAC Signature Auth, Feature-Flagged
+1641 " ⚖️ Database Migrations: v38→v43 Additive Only; v37 and Earlier Are Frozen
+1642 10:56a 🔵 Agent Execution Environment Has Blocked Shell and Write Access at Session Start
+### Jul 11, 2026
+1661 9:24a 🔵 FaberLoom Etapa 4 Plan v2 — "El Agente Vivo" Architecture
+1663 9:25a 🔵 FaberLoom E4 Ola 1 Readiness: All Target Artifacts Missing, Codebase Base Confirmed
+1664 " 🔵 E4-0 Refactor Target: auto_dispatcher Internal Structure and E3 Infrastructure APIs Verified
+1667 9:26a 🔵 E4 Ola 1 Readiness Gaps: Zero E4 Tests, SPEC_E2_5 at v1.0, Ambient Allowlist Not Hardcoded in Code
+1668 " 🔵 Git State: On e3-cierre-parciales Branch with 2 Commits Beyond Plan Baseline; E4 Branch Not Yet Created
+1669 9:27a 🔵 Frontend State: "Agentes" Rail Item Confirmed at app.jsx:366; Brief/Freshness Footer Absent
+1670 9:28a 🟣 Fugu Readiness Report Written: app/.tmp/fugu_o1_readiness.md
+1671 " 🔵 Graphify Knowledge Graph Current as of HEAD f5ba733; 28K Nodes Ready for Architecture Decisions
+1682 10:13a 🔵 FaberLoom E4-0 Audit Initiated on Branch e4-agente-vivo
+1683 10:14a 🔵 E4-0 Test Suite Inventory on Branch e4-agente-vivo
+1684 " 🔵 FaberLoom E2 Plan Architecture: Routing Modes and Wave Sequencing
+1685 10:15a 🔵 E4-0 Routing Mode Architecture: policy.py, config_cascade.py, and dispatcher_base.py
+1686 " 🔵 api.py _SETTING_REGISTRY Includes routing.mode with Validation
+1687 " 🔵 E4-0 Test Coverage: Mode Flag, Dispatcher Interface, Presigned Cross-Tenant, Backup Smoke
+1691 11:05a 🔵 E4-1 Workspace Briefs — Audit Scope and Architectural Constraints Established
+1692 11:06a 🔵 E4-1 Audit Environment: Git Blocked by Policy, All Key Files Confirmed Present
+1694 " 🔵 E4-1 briefs.py — Implementation Internals, Two Bugs Identified
+1695 " 🔵 key_broker.py — resolve_read_level Semantics Confirmed
+1696 11:07a 🔵 Ambient Cycle Brief Integration — Non-Blocking, Pre-Detector, with Implicit INDEX-Level Downgrade
+1699 11:08a 🔵 models.py Migration v42 — Schema R13 Fields Confirmed, RLS Applied, Two Indexes Present
+1700 " 🔵 E4-1 Test Suite — 8 Tests Cover Core Criteria, 4 Gaps Identified
+1703 11:09a 🔵 RLS Policy Uses Strict tenant+workspace Dual Check, WorkspaceBriefPanel is Pure Read-Only
+1704 " 🔵 Plan vs Implementation Discrepancy: 404 Instead of 200/pending on Missing Brief
+1706 " ⚖️ E4-1 Audit Verdict: BLOCK — Key Broker Does Not Mediate Reads, Invoice Data Exposed by Default
 
-Access 792k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 1208k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

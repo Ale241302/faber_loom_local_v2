@@ -40,6 +40,7 @@ register_schema(
 CREATE TABLE IF NOT EXISTS fnd_memory_blocks (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
+    user_id TEXT,
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL DEFAULT '',
@@ -53,6 +54,8 @@ CREATE TABLE IF NOT EXISTS fnd_memory_blocks (
 );
 CREATE INDEX IF NOT EXISTS idx_fnd_memory_ns
     ON fnd_memory_blocks(tenant_id, namespace, archived_at);
+CREATE INDEX IF NOT EXISTS idx_fnd_memory_user
+    ON fnd_memory_blocks(tenant_id, user_id, archived_at);
 
 CREATE TABLE IF NOT EXISTS fnd_memory_revisions (
     id TEXT PRIMARY KEY,

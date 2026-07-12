@@ -92,6 +92,7 @@ WORKSPACE_COLUMNS = """
     id,
     name,
     slug,
+    kind,
     seal_id,
     field_aliases_json,
     tenant_id,
@@ -605,6 +606,27 @@ def get_workspace_by_slug(
     return system_get_workspace_by_slug(ctx, conn, slug)
 
 
+def get_workspace_by_kind(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    kind: str,
+) -> dict[str, Any] | None:
+    """Return the first workspace of the given kind for the tenant, if any."""
+
+    ctx.require_system()
+    with transaction(conn, ctx=ctx):
+        row = conn.execute(
+            f"""
+            SELECT {WORKSPACE_COLUMNS}
+            FROM workspace
+            WHERE tenant_id = ? AND kind = ?
+            ORDER BY created_at ASC LIMIT 1
+            """,
+            (ctx.tenant_id, kind),
+        ).fetchone()
+    return row_to_dict(row) if row else None
+
+
 def create_workspace(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -628,6 +650,7 @@ def create_workspace(
         parent_id = payload.parent_id
         inherits_kb = payload.inherits_kb
         confidential = getattr(payload, "confidential", 0) or 0
+        kind = getattr(payload, "kind", "standard") or "standard"
         if parent_id:
             parent = conn.execute(
                 "SELECT id, tenant_id FROM workspace WHERE id = ?",
@@ -644,6 +667,7 @@ def create_workspace(
                 id,
                 name,
                 slug,
+                kind,
                 seal_id,
                 field_aliases_json,
                 tenant_id,
@@ -662,12 +686,13 @@ def create_workspace(
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 workspace_id,
                 name,
                 slug,
+                kind,
                 seal_id,
                 '{}',
                 ctx.tenant_id,
@@ -721,11 +746,12 @@ def get_routing_policy(
                 f"""
                 INSERT INTO workspace_routing_policy (
                     workspace_id, tenant_id, provider_allowlist_json, model_allowlist_json,
-                    budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only, updated_at
+                    budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only,
+                    mode, promoted_at, degraded_count, last_degraded_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (ws_id, ctx.require_tenant(), "[]", "{}", 5.0, 0, 3, 0, now),
+                (ws_id, ctx.require_tenant(), "[]", "{}", 5.0, 0, 3, 0, None, None, 0, None, now),
             )
             row = conn.execute(
                 f"""
@@ -745,6 +771,7 @@ def update_routing_policy(
     ctx: Context,
     conn: sqlite3.Connection,
     *,
+    workspace_id: str | None = None,
     provider_allowlist: list[str] | None = None,
     model_allowlist: dict[str, list[str]] | None = None,
     budget_cap_usd: float | None = None,
@@ -752,11 +779,16 @@ def update_routing_policy(
     auto_mode_enabled: bool | None = None,
     max_auto_steps: int | None = None,
     require_local_only: bool | None = None,
+    mode: str | None = None,
+    promoted_at: str | None = None,
+    clear_promoted_at: bool = False,
+    degraded_count: int | None = None,
+    last_degraded_at: str | None = None,
 ) -> dict[str, Any]:
-    """Update the routing policy for the current scoped workspace."""
+    """Update the routing policy for the given or current scoped workspace."""
 
     with transaction(conn, ctx=ctx):
-        workspace_id = ctx.require_scoped_workspace()
+        workspace_id = workspace_id or ctx.require_scoped_workspace()
         policy = get_routing_policy(ctx, conn, workspace_id)
         updates: dict[str, Any] = {"updated_at": utc_now()}
         if provider_allowlist is not None:
@@ -773,6 +805,16 @@ def update_routing_policy(
             updates["max_auto_steps"] = max_auto_steps
         if require_local_only is not None:
             updates["require_local_only"] = 1 if require_local_only else 0
+        if mode is not None:
+            updates["mode"] = mode
+        if promoted_at is not None:
+            updates["promoted_at"] = promoted_at
+        if clear_promoted_at:
+            updates["promoted_at"] = None
+        if degraded_count is not None:
+            updates["degraded_count"] = degraded_count
+        if last_degraded_at is not None:
+            updates["last_degraded_at"] = last_degraded_at
 
         if not updates:
             return policy
@@ -1263,6 +1305,10 @@ WORKSPACE_ROUTING_POLICY_COLUMNS = """
     auto_mode_enabled,
     max_auto_steps,
     require_local_only,
+    mode,
+    promoted_at,
+    degraded_count,
+    last_degraded_at,
     updated_at
 """
 
@@ -1620,6 +1666,7 @@ def insert_usage_record(
     step_index: int | None = None,
     chain_id: str | None = None,
     capability: str | None = None,
+    task_id: str | None = None,
     key_origin: str | None = None,
 ) -> dict[str, Any]:
     with transaction(conn, ctx=ctx):
@@ -1669,12 +1716,13 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                task_id,
                 platform_key_used,
                 platform_key_surcharge_usd,
                 byo_mode_at_run,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -1704,6 +1752,7 @@ def insert_usage_record(
                 step_index,
                 chain_id,
                 capability,
+                task_id,
                 platform_key_used,
                 platform_key_surcharge_usd,
                 byo_mode,

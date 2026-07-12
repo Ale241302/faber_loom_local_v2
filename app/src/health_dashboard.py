@@ -189,6 +189,91 @@ def _count_workspaces(app_conn: Any, tenant_id: str) -> int:
     return int(row["n"]) if row else 0
 
 
+def _count_agent_metrics(app_conn: Any, tenant_id: str) -> dict[str, Any]:
+    """Aggregate living-agent metrics for the tenant health dashboard."""
+
+    ctx = Context(workspace_id=SYSTEM_WORKSPACE_ID, tenant_id=tenant_id)
+    since_30d = _since_iso(30)
+
+    with transaction(app_conn, ctx=ctx):
+        # workspace_brief: total, fresh, stale (older than 24h or never computed).
+        brief_rows = app_conn.execute(
+            """
+            SELECT computed_at FROM workspace_brief
+            WHERE tenant_id = ?
+            """,
+            (tenant_id,),
+        ).fetchall()
+        stale_threshold = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        briefs_total = len(brief_rows)
+        briefs_fresh = sum(1 for row in brief_rows if row["computed_at"] and row["computed_at"] >= stale_threshold)
+        briefs_stale = briefs_total - briefs_fresh
+
+        # agent_task counts by status.
+        task_rows = app_conn.execute(
+            """
+            SELECT status, COUNT(*) AS n
+            FROM agent_task
+            WHERE tenant_id = ?
+            GROUP BY status
+            """,
+            (tenant_id,),
+        ).fetchall()
+        task_counts: dict[str, int] = {
+            "planned": 0,
+            "running": 0,
+            "paused_hitl": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+        for row in task_rows:
+            status = row["status"]
+            n = int(row["n"])
+            if status in task_counts:
+                task_counts[status] = n
+            elif status in ("failed", "killed", "degraded"):
+                task_counts["failed"] += n
+
+        # memory_block counts.
+        active_row = app_conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM memory_block
+            WHERE tenant_id = ? AND archived_at IS NULL
+            """,
+            (tenant_id,),
+        ).fetchone()
+        archived_row = app_conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM memory_block
+            WHERE tenant_id = ? AND archived_at IS NOT NULL
+            """,
+            (tenant_id,),
+        ).fetchone()
+
+        cost_row = app_conn.execute(
+            """
+            SELECT COALESCE(SUM(cost_usd), 0.0) AS total
+            FROM usage_record
+            WHERE tenant_id = ? AND provider_slug = 'living_agent' AND created_at >= ?
+            """,
+            (tenant_id, since_30d),
+        ).fetchone()
+
+    return {
+        "briefs_total": briefs_total,
+        "briefs_stale": briefs_stale,
+        "briefs_fresh": briefs_fresh,
+        "tasks_pending": task_counts["planned"],
+        "tasks_running": task_counts["running"],
+        "tasks_paused": task_counts["paused_hitl"],
+        "tasks_completed": task_counts["completed"],
+        "tasks_failed": task_counts["failed"],
+        "memory_blocks_active": int(active_row["n"]) if active_row else 0,
+        "memory_blocks_archived": int(archived_row["n"]) if archived_row else 0,
+        "cost_living_agent_30d": float(cost_row["total"] if cost_row else 0.0),
+    }
+
+
 def _compute_tenant_health(app_conn: Any, tenant_id: str) -> dict[str, Any]:
     """Aggregate tenant health from the app and Foundation databases."""
 
@@ -224,6 +309,8 @@ def _compute_tenant_health(app_conn: Any, tenant_id: str) -> dict[str, Any]:
     if runs_30d["total"] > 0:
         error_rate_30d = round((runs_30d["failed"] / runs_30d["total"]) * 100, 2)
 
+    agent_metrics = _count_agent_metrics(app_conn, tenant_id)
+
     return {
         "tenant_id": tenant_id,
         "plan": plan_name,
@@ -253,6 +340,7 @@ def _compute_tenant_health(app_conn: Any, tenant_id: str) -> dict[str, Any]:
             "drafts_pending_approval": pending_drafts,
             "invoices_overdue": invoices["overdue"],
         },
+        "agent": agent_metrics,
     }
 
 

@@ -18,6 +18,11 @@ from ..db import (
     list_model_catalog,
 )
 from ..db_adapter import transaction
+from ..living_agent.constants import (
+    TRACK_RECORD_ACCEPTANCE_BONUS_THRESHOLD,
+    TRACK_RECORD_FILTER_MIN_SAMPLES,
+    TRACK_RECORD_FILTER_THRESHOLD,
+)
 from ..router import cost as router_cost
 from ..router.registry import build_router
 
@@ -64,6 +69,32 @@ MODEL_QUALITY: dict[str, int] = {
     "llama3.1": 1,
 }
 DEFAULT_MODEL_QUALITY = 2
+
+
+def _score(entry: dict[str, Any], complexity: str, track_record: dict[str, Any] | None = None) -> tuple[float, float]:
+    """Lower tuple sorts first. La prioridad manual del admin NO participa:
+    el modo auto decide por calidad del modelo y costo según complejidad.
+
+    E4-2: strong track record (>=90% accepted) gives a bonus; poor record is
+    handled by filtering, not by the score tuple.
+    """
+    cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
+    quality = MODEL_QUALITY.get(entry["model"], DEFAULT_MODEL_QUALITY)
+
+    bonus = 0.0
+    if track_record and track_record.get("total_decisions", 0) > 0:
+        acceptance = track_record.get("accepted_count", 0) / track_record["total_decisions"]
+        if acceptance >= TRACK_RECORD_ACCEPTANCE_BONUS_THRESHOLD:
+            bonus = -0.05  # small cost discount to prefer proven models
+
+    if complexity == "low":
+        # CHEAPEST_FIRST: el más barato; a igual costo, el de más calidad.
+        return (cost_per_1k + bonus, -quality)
+    if complexity == "high":
+        # BEST_FIRST: el de más calidad; a igual calidad, el más barato.
+        return (-quality, cost_per_1k + bonus)
+    # medium: mejor valor — costo por unidad de calidad.
+    return (cost_per_1k / max(quality, 1) + bonus, cost_per_1k)
 
 # Ventana de contexto aproximada (tokens) por modelo, para descartar candidatos
 # que no aguantan el input estimado de un paso (tareas largas / PDFs).
@@ -265,21 +296,13 @@ def resolve_model_for_capability(
     if complexity not in {"low", "medium", "high"}:
         complexity = "medium"
 
-    def _score(entry: dict[str, Any]) -> tuple[float, float]:
-        """Lower tuple sorts first. La prioridad manual del admin NO participa:
-        el modo auto decide por calidad del modelo y costo según complejidad."""
-        cost_per_1k = entry["cost_input_1k"] + entry["cost_output_1k"]
-        quality = MODEL_QUALITY.get(entry["model"], DEFAULT_MODEL_QUALITY)
-        if capability == "cheap" or complexity == "low":
-            # CHEAPEST_FIRST: el más barato; a igual costo, el de más calidad.
-            return (cost_per_1k, -quality)
-        if complexity == "high":
-            # BEST_FIRST: el de más calidad; a igual calidad, el más barato.
-            return (-quality, cost_per_1k)
-        # medium: mejor valor — costo por unidad de calidad.
-        return (cost_per_1k / max(quality, 1), cost_per_1k)
+    # E4-2: load per-model track records for this capability/tenant.
+    from ..living_agent.planner import get_model_track_record
 
-    for entry in sorted(candidates, key=_score):
+    def _track_record(entry: dict[str, Any]) -> dict[str, Any] | None:
+        return get_model_track_record(conn, ctx, capability, entry["provider_slug"], entry["model"])
+
+    for entry in sorted(candidates, key=lambda e: _score(e, complexity, _track_record(e))):
         if provider_allowlist and entry["provider_slug"] not in provider_allowlist:
             continue
         allowed_models = model_allowlist.get(entry["provider_slug"])
@@ -287,6 +310,12 @@ def resolve_model_for_capability(
             continue
         if preferred_provider and entry["provider_slug"] != preferred_provider:
             continue
+        # E4-2: discard models with poor track record (>=N samples, <T% accepted).
+        tr = _track_record(entry)
+        if tr and tr.get("total_decisions", 0) >= TRACK_RECORD_FILTER_MIN_SAMPLES:
+            acceptance = tr.get("accepted_count", 0) / tr["total_decisions"]
+            if acceptance < TRACK_RECORD_FILTER_THRESHOLD:
+                continue
         # Context-window check: descarta modelos que no aguantan el input estimado
         # (margen 20% + espacio para el output).
         if estimated_input_tokens:

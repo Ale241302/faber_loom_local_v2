@@ -35,6 +35,7 @@ def record_step(
     chat_id: str | None = None,
     run_id: str | None = None,
     capability: str = "text",
+    task_id: str | None = None,
     request_json: dict[str, Any] | None = None,
     response_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -59,6 +60,7 @@ def record_step(
         step_index=step_index,
         chain_id=chain_id,
         capability=capability,
+        task_id=task_id,
     )
 
 

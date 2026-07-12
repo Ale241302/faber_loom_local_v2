@@ -193,6 +193,12 @@ CREATE TABLE IF NOT EXISTS fnd_rate_limits (
     window_until TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS fnd_platform_config (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT
+);
 """
 
 _MODULE_SCHEMAS: list[str] = []
@@ -315,6 +321,21 @@ def _migrate_fnd_tenants_admin_fields(conn: sqlite3.Connection) -> None:
 register_seed(_migrate_fnd_tenants_admin_fields)
 
 
+def _migrate_fnd_tenants_signup_mode(conn: sqlite3.Connection) -> None:
+    """Idempotently add signup mode latent column to fnd_tenants."""
+
+    column, dtype = "signup_mode", "TEXT"
+    exists = conn.execute(
+        "SELECT 1 FROM pragma_table_info('fnd_tenants') WHERE name = ?",
+        (column,),
+    ).fetchone()
+    if exists is None:
+        conn.execute(f"ALTER TABLE fnd_tenants ADD COLUMN {column} {dtype};")
+
+
+register_seed(_migrate_fnd_tenants_signup_mode)
+
+
 def _migrate_fnd_users_preferences(conn: sqlite3.Connection) -> None:
     """Idempotently add user preferences column to fnd_users."""
 
@@ -330,8 +351,33 @@ def _migrate_fnd_users_preferences(conn: sqlite3.Connection) -> None:
 register_seed(_migrate_fnd_users_preferences)
 
 
+def _ensure_foundation_schema_columns(conn: sqlite3.Connection) -> None:
+    """Back-fill columns added to CORE_SCHEMA after the first deploy."""
+
+    if _foundation_db_engine() == "postgres":
+        return
+
+    for table, column, dtype in (
+        ("fnd_email_verifications", "user_id", "TEXT REFERENCES fnd_users(id)"),
+        ("fnd_memory_blocks", "user_id", "TEXT REFERENCES fnd_users(id)"),
+    ):
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if table_exists is None:
+            continue
+        col_exists = conn.execute(
+            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            (table, column),
+        ).fetchone()
+        if col_exists is None:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype};")
+
+
 def init_foundation_db() -> None:
     with fnd_db() as conn:
+        _ensure_foundation_schema_columns(conn)
         if _foundation_db_engine() == "postgres":
             # Postgres foundation schema is idempotent raw DDL split into statements.
             for statement in _split_postgres_schema(CORE_SCHEMA):
@@ -375,6 +421,43 @@ def new_id(prefix: str) -> str:
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def get_platform_config(conn: sqlite3.Connection, key: str, default: Any = None) -> Any:
+    """Return a platform-scoped config value from fnd_platform_config."""
+
+    row = conn.execute(
+        "SELECT value_json FROM fnd_platform_config WHERE key = ?",
+        (key,),
+    ).fetchone()
+    if row is None or row["value_json"] is None:
+        return default
+    try:
+        return json.loads(row["value_json"])
+    except Exception:
+        return default
+
+
+def set_platform_config(
+    conn: sqlite3.Connection,
+    key: str,
+    value: Any,
+    timestamp: str | None = None,
+) -> None:
+    """Set a platform-scoped config value in fnd_platform_config."""
+
+    value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    updated_at = timestamp or utcnow()
+    conn.execute(
+        """
+        INSERT INTO fnd_platform_config (key, value_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value_json = excluded.value_json,
+            updated_at = excluded.updated_at
+        """,
+        (key, value_json, updated_at),
+    )
 
 
 def get_platform_smtp_config(conn: sqlite3.Connection) -> dict[str, Any] | None:

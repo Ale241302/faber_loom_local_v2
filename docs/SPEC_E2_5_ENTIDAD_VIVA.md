@@ -1,7 +1,7 @@
 # SPEC_E2_5_ENTIDAD_VIVA.md — Ciclo Ambiental Acotado (Entidad Viva)
 
 id: SPEC_E2_5_ENTIDAD_VIVA  
-version: 1.0  
+version: 1.1  
 status: DRAFT  
 visibility: [INTERNAL]  
 domain: FaberLoom (docs/faberloom/)  
@@ -385,6 +385,7 @@ Cada detector es una funcion pura `detect(ctx: Context, conn: sqlite3.Connection
 | Ventana activa | 06:00-22:00 America/Bogota | SI | Fuera: solo criticos |
 | Kill switch | global + por workspace | SI | Verificado antes de cada detector |
 | Tools allowlist | `read_workspace`, `read_kb`, `read_inbox`, `create_workloom_item` | NO | Cualquier otro tool = P0 |
+| Escritura derivada | `write_workspace_brief` | NO | Dato regenerable (R12), sin efecto externo; el *brief writer* escribe solo `workspace_brief` como cache derivada INDEX-only |
 
 ## 10. Dark-launch
 
@@ -619,4 +620,5 @@ Dispara un ciclo manual para un workspace o para todo el tenant. Requiere rol `a
 
 ## 19. Changelog
 
+- v1.1 (2026-07-11): E4-1 enmienda — se exceptúa explícitamente `write_workspace_brief` de la tool allowlist dura. Justificación: el brief es un dato derivado regenerable (R12), generado INDEX-only, sin efecto externo, sin modificar KB/rutinas/correo; su único output es la tabla `workspace_brief` bajo el ciclo ambiental con los mismos límites de ventana/budget/kill switch.
 - v1.0 (2026-07-06): Creacion. Especificacion tecnica del ciclo ambiental E2-5 con modelo de datos, detectores, limites duros, dark-launch, deduplicacion, backoff, metricas, auditoria, API y tests.
