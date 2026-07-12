@@ -31,25 +31,25 @@ def ensure_tenant_general_workspace(
 ) -> dict[str, Any]:
     """Ensure the tenant has a ws-general workspace; create it idempotently."""
 
-    from .context import system_context
+    from .context import DEFAULT_TENANT_ID, system_context
 
     system_ctx = system_context(tenant_id=ctx.tenant_id)
     with transaction(conn, ctx=system_ctx):
         existing = get_workspace_by_kind(system_ctx, conn, "tenant_general")
         if existing is not None:
             return existing
-        # Legacy workspaces may have kind='standard' or a NULL tenant_id.
-        row = conn.execute(
-            "SELECT id, name, slug, tenant_id, user_id, schema_version, created_at, updated_at, kind, is_canary "
-            "FROM workspace WHERE slug = ? AND (tenant_id = ? OR tenant_id IS NULL)",
-            ("general", ctx.tenant_id),
-        ).fetchone()
-        if row is not None:
-            return dict(row)
+
+    # Slug is globally unique. The default tenant keeps the legacy 'general'
+    # slug for backwards compatibility; other tenants use a scoped slug.
+    general_slug = "general" if ctx.tenant_id == DEFAULT_TENANT_ID else f"general-{ctx.tenant_id}"
+    with transaction(conn, ctx=system_ctx):
+        existing_legacy = get_workspace_by_slug(system_ctx, conn, general_slug)
+        if existing_legacy is not None:
+            return existing_legacy
         created = create_workspace(
             system_ctx,
             conn,
-            WorkspaceCreate(name="Chat general", slug="general", kind="tenant_general"),
+            WorkspaceCreate(name="Chat general", slug=general_slug, kind="tenant_general"),
         )
         return created
 
