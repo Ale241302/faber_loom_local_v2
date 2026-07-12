@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from .context import DEFAULT_TENANT_ID
 from .db import get_db
 from .rate_limit import rate_limit_dependency
+from .tenant_bootstrap import bootstrap_approved_tenant
 from .connectors.smtp import SMTPConfig, send_email as smtp_send_email, SMTPError
 
 auth_router = APIRouter()
@@ -394,6 +395,136 @@ _RESEND_RATE_LIMIT_MAX = int(os.getenv("FABERLOOM_RESEND_RATE_LIMIT_MAX", "3"))
 _RESEND_RATE_LIMIT_WINDOW = int(os.getenv("FABERLOOM_RESEND_RATE_LIMIT_WINDOW", "3600"))
 
 
+def _resolve_signup_config(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Resolve signup platform config with env overrides and platform defaults."""
+
+    from .foundation.core import get_platform_config
+
+    defaults = {
+        "approval": "manual",
+        "daily_limit": 100,
+        "disposable_domains": ["mailinator.com", "guerrillamail.com", "tempmail.com"],
+        "captcha_required": False,
+        "captcha_provider": None,
+    }
+
+    approval = (os.getenv("FABERLOOM_SIGNUP_APPROVAL") or "").strip().lower()
+    if approval not in {"manual", "auto"}:
+        raw = get_platform_config(conn, "signup.approval", defaults["approval"])
+        approval = str(raw).strip().lower() if raw is not None else defaults["approval"]
+
+    daily_limit_raw = os.getenv("FABERLOOM_SIGNUP_DAILY_LIMIT")
+    daily_limit = defaults["daily_limit"]
+    if daily_limit_raw is not None:
+        try:
+            daily_limit = int(daily_limit_raw)
+        except ValueError:
+            daily_limit = get_platform_config(conn, "signup.daily_limit", defaults["daily_limit"])
+    else:
+        daily_limit = get_platform_config(conn, "signup.daily_limit", defaults["daily_limit"])
+
+    disposable_env = os.getenv("FABERLOOM_SIGNUP_DISPOSABLE_DOMAINS")
+    if disposable_env:
+        disposable_domains = [d.strip().lower() for d in disposable_env.split(",") if d.strip()]
+    else:
+        disposable_domains = get_platform_config(
+            conn, "signup.disposable_domains", defaults["disposable_domains"]
+        )
+    if not isinstance(disposable_domains, list):
+        disposable_domains = defaults["disposable_domains"]
+
+    captcha_required_env = os.getenv("FABERLOOM_SIGNUP_CAPTCHA_REQUIRED")
+    if captcha_required_env is not None:
+        captcha_required = captcha_required_env.lower() in ("1", "true", "yes", "on")
+    else:
+        captcha_required = get_platform_config(conn, "signup.captcha.required", defaults["captcha_required"])
+        if isinstance(captcha_required, str):
+            captcha_required = captcha_required.lower() in ("1", "true", "yes", "on")
+
+    captcha_provider = os.getenv("FABERLOOM_SIGNUP_CAPTCHA_PROVIDER")
+    if not captcha_provider:
+        captcha_provider = get_platform_config(conn, "signup.captcha.provider", defaults["captcha_provider"])
+
+    return {
+        "approval": approval,
+        "daily_limit": daily_limit,
+        "disposable_domains": {d.strip().lower() for d in disposable_domains if isinstance(d, str)},
+        "captcha_required": bool(captcha_required),
+        "captcha_provider": captcha_provider,
+    }
+
+
+def _check_signup_defenses(
+    conn: sqlite3.Connection,
+    email: str,
+    config: dict[str, Any],
+    *,
+    check_captcha: bool = True,
+) -> None:
+    """Validate disposable-domain block and captcha readiness.
+
+    Raises HTTPException when a defense rejects the signup.
+    """
+
+    domain = email.split("@")[-1].strip().lower()
+    if domain in config["disposable_domains"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Disposable email domains are not allowed",
+        )
+
+    if check_captcha and config["approval"] == "auto" and config["captcha_required"] and not config["captcha_provider"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Captcha not configured",
+        )
+
+
+def _increment_global_signup_counter(conn: sqlite3.Connection, limit: int) -> int:
+    """Increment the daily global signup counter and return current attempts.
+
+    Raises HTTPException with 429 if the configured daily limit is exceeded.
+    """
+
+    from .foundation.core import utcnow
+
+    now = datetime.now(timezone.utc)
+    date_key = now.strftime("%Y-%m-%d")
+    key = f"signup:global:{date_key}"
+    window_until = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    row = conn.execute(
+        "SELECT attempts, window_until FROM fnd_rate_limits WHERE key = ?",
+        (key,),
+    ).fetchone()
+
+    if row is None or row["window_until"] < now.isoformat():
+        attempts = 1
+        conn.execute(
+            """
+            INSERT INTO fnd_rate_limits (key, window_until, attempts)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                window_until = excluded.window_until,
+                attempts = excluded.attempts
+            """,
+            (key, window_until, attempts),
+        )
+    else:
+        attempts = row["attempts"] + 1
+        conn.execute(
+            "UPDATE fnd_rate_limits SET attempts = ? WHERE key = ?",
+            (attempts, key),
+        )
+
+    if attempts > limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Global signup daily limit exceeded",
+        )
+    return attempts
+
+
 def _generate_verification_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -544,6 +675,10 @@ def public_signup(
     try:
         from .plans import enforce_user_creation
 
+        signup_config = _resolve_signup_config(conn)
+        _check_signup_defenses(conn, email, signup_config)
+        _increment_global_signup_counter(conn, signup_config["daily_limit"])
+
         # Slug uniqueness across tenants.
         existing = conn.execute(
             "SELECT id FROM fnd_tenants WHERE slug = ?", (slug,)
@@ -595,6 +730,12 @@ def public_signup(
         _store_verification_token(conn, tenant_id, user_id, token)
         smtp_result = _send_verification_email(conn, email, token, company)
 
+        # Persist signup mode latent field for auditability.
+        conn.execute(
+            "UPDATE fnd_tenants SET signup_mode = ? WHERE id = ?",
+            (signup_config["approval"], tenant_id),
+        )
+
         audit_log(
             conn,
             tenant_id,
@@ -603,7 +744,7 @@ def public_signup(
             actor_email=email,
             resource_type="tenant",
             resource_id=tenant_id,
-            payload={"plan": plan, "slug": slug, "email_sent": smtp_result.get("sent"), "dry_run": smtp_result.get("dry_run")},
+            payload={"plan": plan, "slug": slug, "email_sent": smtp_result.get("sent"), "dry_run": smtp_result.get("dry_run"), "approval_mode": signup_config["approval"]},
         )
         conn.commit()
     finally:
@@ -637,7 +778,9 @@ def verify_signup_token(
     try:
         verification = conn.execute(
             """
-            SELECT ev.*, u.tenant_id AS user_tenant_id, u.status AS user_status, t.status AS tenant_status
+            SELECT ev.*, u.tenant_id AS user_tenant_id, u.status AS user_status,
+                   u.email AS user_email, t.status AS tenant_status,
+                   t.name AS tenant_name, t.slug AS tenant_slug, t.plan AS tenant_plan
             FROM fnd_email_verifications ev
             JOIN fnd_users u ON u.id = ev.user_id
             JOIN fnd_tenants t ON t.id = ev.tenant_id
@@ -657,8 +800,33 @@ def verify_signup_token(
         tenant_id = verification["tenant_id"]
         tenant_status = verification["tenant_status"]
 
-        new_user_status = "active" if tenant_status == "active" else "pending_approval"
+        signup_config = _resolve_signup_config(conn)
         now = utcnow()
+
+        auto_approved = False
+        if tenant_status == "pending_approval" and signup_config["approval"] == "auto":
+            _check_signup_defenses(
+                conn,
+                verification["user_email"] or "",
+                signup_config,
+            )
+            conn.execute(
+                """
+                UPDATE fnd_tenants
+                SET status = 'active',
+                    activated_at = ?,
+                    approved_by = 'auto',
+                    signup_mode = 'auto',
+                    suspended_by = NULL,
+                    suspension_reason = NULL
+                WHERE id = ?
+                """,
+                (now, tenant_id),
+            )
+            tenant_status = "active"
+            auto_approved = True
+
+        new_user_status = "active" if tenant_status == "active" else "pending_approval"
         conn.execute(
             """
             UPDATE fnd_users
@@ -672,6 +840,27 @@ def verify_signup_token(
             (now, verification["id"]),
         )
 
+        if auto_approved:
+            bootstrap_approved_tenant(
+                tenant_id=tenant_id,
+                tenant_name=verification["tenant_name"],
+                tenant_slug=verification["tenant_slug"],
+                plan_name=verification["tenant_plan"],
+                owner_user_id=user_id,
+                foundation_conn=conn,
+                approved_by="auto",
+            )
+            audit_log(
+                conn,
+                tenant_id,
+                "tenant.auto_approved",
+                actor_id=user_id,
+                actor_email="",
+                resource_type="tenant",
+                resource_id=tenant_id,
+                payload={"email": verification["user_email"], "plan": verification["tenant_plan"]},
+            )
+
         audit_log(
             conn,
             tenant_id,
@@ -680,9 +869,17 @@ def verify_signup_token(
             actor_email="",
             resource_type="user",
             resource_id=user_id,
-            payload={"new_status": new_user_status, "tenant_status": tenant_status},
+            payload={"new_status": new_user_status, "tenant_status": tenant_status, "auto_approved": auto_approved},
         )
         conn.commit()
+
+        if auto_approved:
+            return {
+                "verified": True,
+                "user_status": new_user_status,
+                "tenant_status": tenant_status,
+                "message": "Email verified. Your tenant has been auto-approved and is now active.",
+            }
 
         return {
             "verified": True,

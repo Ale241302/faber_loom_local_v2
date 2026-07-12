@@ -123,6 +123,23 @@ function HealthDashboard({ user }) {
               {data.last_owner_login || "Sin sesiones owner registradas"}
             </div>
           </div>
+
+          {data.agent && (
+            <>
+              <h3 style={{ ...HS.title, fontSize: 18, marginTop: 18, marginBottom: 12 }}>Agente Vivo</h3>
+              <div style={HS.grid}>
+                <MetricCard label="Briefs" value={`${data.agent.briefs_total} (${data.agent.briefs_fresh} fresh)`} warn={data.agent.briefs_stale > 0} />
+                <MetricCard label="Tasks pendientes" value={data.agent.tasks_pending} />
+                <MetricCard label="Tasks corriendo" value={data.agent.tasks_running} />
+                <MetricCard label="Tasks pausadas" value={data.agent.tasks_paused} />
+                <MetricCard label="Tasks completadas" value={data.agent.tasks_completed} />
+                <MetricCard label="Tasks fallidas" value={data.agent.tasks_failed} warn={data.agent.tasks_failed > 0} />
+                <MetricCard label="Memoria activa" value={data.agent.memory_blocks_active} />
+                <MetricCard label="Memoria archivada" value={data.agent.memory_blocks_archived} />
+                <MetricCard label="Costo agente 30d" value={`$${data.agent.cost_living_agent_30d.toFixed(2)}`} />
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

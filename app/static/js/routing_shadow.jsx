@@ -89,6 +89,16 @@ function ShadowReportPanel({ tenantId }) {
           <div style={S.tileValue}>{formatUSD(naturalCost.actual_cost_usd)}</div>
           <div style={S.tileSub}>estimado {formatUSD(naturalCost.estimated_cost_usd)}</div>
         </div>
+        <div style={S.tile}>
+          <div style={S.tileLabel}>Alineación humana</div>
+          <div style={S.tileValue}>{(data.human_alignment_score || 0).toFixed(1)}%</div>
+          <div style={S.tileSub}>decisiones curadas aceptadas</div>
+        </div>
+        <div style={S.tile}>
+          <div style={S.tileLabel}>Oscilaciones</div>
+          <div style={S.tileValue}>{data.oscillation_count || 0}</div>
+          <div style={S.tileSub}>workspaces con cambios de modo</div>
+        </div>
       </div>
 
       <div style={S.card}>

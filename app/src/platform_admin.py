@@ -21,11 +21,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from .ambient import seed_ambient_config
 from .auth import get_current_user
-from .context import SYSTEM_WORKSPACE_ID, Context
-from .db import create_workspace, db_session, get_db, seed_routing_presets, transaction
-from .models import WorkspaceCreate
+from .db import get_db
 from .foundation.core import (
     audit_log,
     connect as connect_foundation,
@@ -35,6 +32,7 @@ from .foundation.core import (
     to_dict,
     utcnow,
 )
+from .tenant_bootstrap import bootstrap_approved_tenant
 
 platform_admin_router = APIRouter(
     prefix="/admin",
@@ -55,6 +53,10 @@ class ApproveRequest(BaseModel):
 
 class UpdatePlanRequest(BaseModel):
     plan: str = Field(min_length=1, max_length=50)
+
+
+class PlatformSettingsUpdate(BaseModel):
+    values: dict[str, Any]
 
 
 def _confirmation_token(resource_id: str) -> str:
@@ -228,11 +230,15 @@ def approve_tenant(
         conn.commit()
 
         # Bootstrap the approved tenant with a workspace and default settings.
-        _bootstrap_approved_tenant(
+        owner_id = _first_owner_id(conn, tenant_id)
+        bootstrap_approved_tenant(
             tenant_id=tenant_id,
             tenant_name=tenant["name"],
             tenant_slug=tenant["slug"],
             plan_name=tenant["plan"],
+            owner_user_id=owner_id,
+            foundation_conn=conn,
+            approved_by=admin_id,
         )
 
         tenant = conn.execute(
@@ -443,102 +449,72 @@ def update_tenant_plan(
         conn.close()
 
 
-def _bootstrap_approved_tenant(
-    tenant_id: str,
-    tenant_name: str,
-    tenant_slug: str,
-    plan_name: str,
+@platform_admin_router.get("/platform/settings")
+def get_platform_settings(
+    request: Request,
+    user: dict[str, Any] = Depends(_require_platform_admin),
 ) -> dict[str, Any]:
-    """Seed an approved tenant with its first workspace and default settings.
+    """Return platform-scoped signup configuration."""
 
-    This is the programatic equivalent of the MWT bootstrap seed
-    (SPEC_FB_TENANT_BOOTSTRAP_SEED_v1). It runs inside the app DB, which may be
-    SQLite or Postgres depending on the runtime engine.
-    """
+    from .foundation.core import get_platform_config
 
-    from .plans import PLANS
+    conn = _open_foundation()
+    try:
+        keys = [
+            "signup.approval",
+            "signup.daily_limit",
+            "signup.disposable_domains",
+            "signup.captcha.required",
+            "signup.captcha.provider",
+        ]
+        return {key: get_platform_config(conn, key) for key in keys}
+    finally:
+        conn.close()
 
-    plan = PLANS.get(plan_name) or PLANS["enterprise"]
-    monthly_budget = plan.max_monthly_budget_usd if plan.max_monthly_budget_usd is not None else 50.0
 
-    with db_session() as app_conn:
-        bootstrap_ctx = Context(
-            workspace_id=SYSTEM_WORKSPACE_ID,
-            tenant_id=tenant_id,
-            user_id="system",
-            actor_id="system",
-            actor_role_at_decision="platform_admin",
-        )
-        with transaction(app_conn, ctx=bootstrap_ctx):
-            workspace = create_workspace(
-                bootstrap_ctx,
-                app_conn,
-                WorkspaceCreate(
-                    name=f"{tenant_name} Workspace",
-                    slug=tenant_slug,
-                ),
-            )
-            workspace_id = workspace["id"]
+@platform_admin_router.put("/platform/settings")
+def update_platform_settings(
+    request: Request,
+    body: PlatformSettingsUpdate,
+    user: dict[str, Any] = Depends(_require_platform_admin),
+) -> dict[str, Any]:
+    """Update platform-scoped signup configuration."""
 
-            # E4-4: chat general del tenant as a system workspace.
-            general_ws = create_workspace(
-                bootstrap_ctx,
-                app_conn,
-                WorkspaceCreate(
-                    name="Chat general",
-                    slug="general",
-                    kind="tenant_general",
-                ),
-            )
-            general_workspace_id = general_ws["id"]
+    from .foundation.core import get_platform_config, set_platform_config
 
-            now = utcnow()
-            tenant_defaults: list[tuple[str, Any]] = [
-                ("ambient.enabled", False),
-                ("routing.auto_dispatch", False),
-                ("routing.max_budget_usd", 2.0),
-                ("routing.max_steps", 4),
-                ("tenant.plan.monthly_budget_usd", monthly_budget),
-            ]
-            for key, value in tenant_defaults:
-                app_conn.execute(
-                    """
-                    INSERT INTO tenant_settings (tenant_id, key, value_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(tenant_id, key) DO UPDATE SET
-                        value_json = excluded.value_json,
-                        updated_at = excluded.updated_at
-                    """,
-                    (tenant_id, key, json.dumps(value, ensure_ascii=False, sort_keys=True), now),
-                )
+    allowed = {
+        "signup.approval": lambda v: str(v).strip().lower() in {"manual", "auto"},
+        "signup.daily_limit": lambda v: isinstance(v, int) and v > 0,
+        "signup.disposable_domains": lambda v: isinstance(v, list) and all(isinstance(d, str) for d in v),
+        "signup.captcha.required": lambda v: isinstance(v, bool),
+        "signup.captcha.provider": lambda v: v is None or isinstance(v, str),
+    }
 
-            app_conn.execute(
-                """
-                INSERT INTO workspace_routing_policy
-                    (workspace_id, tenant_id, provider_allowlist_json, model_allowlist_json,
-                     budget_cap_usd, auto_mode_enabled, max_auto_steps, require_local_only, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(workspace_id) DO UPDATE SET
-                    provider_allowlist_json = excluded.provider_allowlist_json,
-                    model_allowlist_json = excluded.model_allowlist_json,
-                    budget_cap_usd = excluded.budget_cap_usd,
-                    auto_mode_enabled = excluded.auto_mode_enabled,
-                    max_auto_steps = excluded.max_auto_steps,
-                    require_local_only = excluded.require_local_only,
-                    updated_at = excluded.updated_at
-                """,
-                (workspace_id, tenant_id, "[]", "{}", 2.0, 0, 4, 0, now),
-            )
+    conn = _open_foundation()
+    try:
+        for key, value in body.values.items():
+            if key not in allowed:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown setting: {key}")
+            if not allowed[key](value):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid value for {key}")
+            set_platform_config(conn, key, value)
+        conn.commit()
+        return {key: get_platform_config(conn, key) for key in allowed.keys()}
+    finally:
+        conn.close()
 
-            seed_ambient_config(app_conn, tenant_id)
 
-            seed_ctx = Context(
-                workspace_id=SYSTEM_WORKSPACE_ID,
-                tenant_id=tenant_id,
-                user_id="system",
-                actor_id="system",
-                actor_role_at_decision="platform_admin",
-            )
-            seed_routing_presets(seed_ctx, app_conn, created_by="system")
+def _first_owner_id(conn: sqlite3.Connection, tenant_id: str) -> str | None:
+    """Return the first owner user_id for a tenant, regardless of status."""
 
-    return {"tenant_id": tenant_id, "workspace_id": workspace_id}
+    row = conn.execute(
+        """
+        SELECT u.id FROM fnd_users u
+        JOIN fnd_user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+        JOIN fnd_roles r ON r.id = ur.role_id
+        WHERE u.tenant_id = ? AND r.name = 'owner'
+        ORDER BY u.created_at ASC LIMIT 1
+        """,
+        (tenant_id,),
+    ).fetchone()
+    return row["id"] if row else None

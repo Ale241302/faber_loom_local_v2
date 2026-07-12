@@ -398,6 +398,49 @@ def get_shadow_report(
             "actual_cost_usd": float(row["actual_cost"] or 0.0),
         }
 
+    # ACE metrics.
+    with transaction(conn, ctx=ctx):
+        reviewed_rows = conn.execute(
+            """
+            SELECT approved_by, actual_outcome_json
+            FROM planner_decision_log
+            WHERE tenant_id = ? AND created_at > ? AND approved_by IS NOT NULL
+            """,
+            (tenant_id, since),
+        ).fetchall()
+
+        mode_change_rows = conn.execute(
+            """
+            SELECT workspace_id, mode
+            FROM planner_decision_log
+            WHERE tenant_id = ? AND created_at > ?
+            GROUP BY workspace_id, mode
+            """,
+            (tenant_id, since),
+        ).fetchall()
+
+    reviewed_total = len(reviewed_rows)
+    accepted_total = 0
+    for row in reviewed_rows:
+        try:
+            outcome = json.loads(row["actual_outcome_json"] or "{}")
+        except Exception:
+            outcome = {}
+        if isinstance(outcome, dict) and outcome.get("outcome") == "accepted":
+            accepted_total += 1
+        elif isinstance(outcome, dict) and outcome.get("review") == "accepted":
+            accepted_total += 1
+
+    human_alignment_score = 100.0
+    if reviewed_total > 0:
+        human_alignment_score = round((accepted_total / reviewed_total) * 100, 2)
+
+    modes_by_workspace: dict[str, set[str]] = {}
+    for row in mode_change_rows:
+        ws_id = row["workspace_id"]
+        modes_by_workspace.setdefault(ws_id, set()).add(row["mode"])
+    oscillation_count = sum(1 for modes in modes_by_workspace.values() if len(modes) > 1)
+
     return {
         "tenant_id": tenant_id,
         "days": days,
@@ -405,4 +448,6 @@ def get_shadow_report(
         "decisions_count": total_by_mode,
         "cost_by_mode": cost_by_mode,
         "model_records": [dict(row) for row in model_rows],
+        "human_alignment_score": human_alignment_score,
+        "oscillation_count": oscillation_count,
     }

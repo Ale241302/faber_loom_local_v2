@@ -302,6 +302,15 @@ from .connectors.whatsapp_inbound import (
     register_whatsapp_number,
     set_whatsapp_secret,
 )
+from .connectors.whatsapp_outbound import (
+    WhatsAppOutboundError,
+    _is_within_24h,
+    delete_whatsapp_outbound_secrets,
+    load_whatsapp_outbound_config,
+    send_message as send_whatsapp_message,
+    send_template,
+    set_whatsapp_outbound_secret,
+)
 from .ambient import (
     ambient_metrics,
     get_ambient_config,
@@ -6199,3 +6208,173 @@ def api_ambient_trigger(
         status=result["status"],
         proposals_created=result["proposals_created"],
     )
+
+
+# ---------------------------------------------------------------------------
+# E4-6: WhatsApp outbound Cloud API (draft-first / HITL)
+# ---------------------------------------------------------------------------
+
+
+class WhatsAppOutboundConfigRequest(BaseModel):
+    access_token: str
+    business_account_id: str | None = None
+
+
+class WhatsAppSendRequest(BaseModel):
+    to: str
+    body: str
+    confirmation_token: str | None = None
+    last_customer_message_at: str | None = None
+
+
+class WhatsAppTemplateRequest(BaseModel):
+    to: str
+    template_name: str
+    language_code: str = "en_US"
+    confirmation_token: str | None = None
+
+
+@router.put("/tenants/{tenant_id}/connectors/whatsapp/{phone_number_id}")
+def api_set_whatsapp_outbound_config(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppOutboundConfigRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Store WhatsApp Cloud API secrets for outbound messaging."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    set_whatsapp_outbound_secret(ctx, phone_number_id, "access_token", payload.access_token)
+    set_whatsapp_outbound_secret(
+        ctx, phone_number_id, "business_account_id", payload.business_account_id
+    )
+
+    return {"phone_number_id": phone_number_id, "status": "configured"}
+
+
+@router.delete("/tenants/{tenant_id}/connectors/whatsapp/{phone_number_id}")
+def api_delete_whatsapp_outbound_config(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Remove WhatsApp Cloud API secrets for a phone number."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    delete_whatsapp_outbound_secrets(ctx, phone_number_id)
+
+    return {"phone_number_id": phone_number_id, "status": "deleted"}
+
+
+@router.post("/tenants/{tenant_id}/whatsapp/{phone_number_id}/send")
+def api_send_whatsapp_message(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppSendRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """HITL-gated send of a WhatsApp text message.
+
+    If no confirmation_token is provided, the endpoint returns the required token
+    so the caller can preview before approving.
+    """
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    try:
+        config = load_whatsapp_outbound_config(ctx, phone_number_id)
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    if not _is_within_24h(payload.last_customer_message_at):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Outside 24h conversation window; use send_template instead",
+        )
+
+    try:
+        if payload.confirmation_token is None:
+            return send_whatsapp_message(
+                config,
+                payload.to,
+                payload.body,
+                confirmation_token_value=None,
+            )
+        return send_whatsapp_message(
+            config,
+            payload.to,
+            payload.body,
+            confirmation_token_value=payload.confirmation_token,
+        )
+    except WhatsAppOutboundError as exc:
+        detail = str(exc)
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if "24h" in detail or "Confirmation token" in detail
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        raise HTTPException(status_code, detail=detail) from exc
+
+
+@router.post("/tenants/{tenant_id}/whatsapp/{phone_number_id}/send-template")
+def api_send_whatsapp_template(
+    tenant_id: str,
+    phone_number_id: str,
+    request: Request,
+    payload: WhatsAppTemplateRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """HITL-gated send of a WhatsApp template message (outside 24h window)."""
+
+    _require_tenant_admin(tenant_id, user)
+    ctx = context_from_request(request)
+
+    try:
+        config = load_whatsapp_outbound_config(ctx, phone_number_id)
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    try:
+        if payload.confirmation_token is None:
+            return send_template(
+                config,
+                payload.to,
+                payload.template_name,
+                payload.language_code,
+            )
+        return send_template(
+            config,
+            payload.to,
+            payload.template_name,
+            payload.language_code,
+            confirmation_token_value=payload.confirmation_token,
+        )
+    except WhatsAppOutboundError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+def _require_tenant_admin(tenant_id: str, user: dict[str, Any]) -> None:
+    """Fail unless the user is owner/admin of the tenant or platform_admin."""
+
+    user_tenant = user.get("tenant_id")
+    role = (user.get("role") or "").lower()
+    roles = {r.lower() for r in (user.get("roles") or [])}
+    is_platform_admin = role == "platform_admin" or "platform_admin" in roles
+    is_tenant_admin = user_tenant == tenant_id and (role in {"owner", "admin"} or {"owner", "admin"} & roles)
+    if not (is_platform_admin or is_tenant_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner/admin role required for this tenant",
+        )

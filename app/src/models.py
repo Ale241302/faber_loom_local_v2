@@ -1819,6 +1819,20 @@ class TenantHealthFlagsRead(BaseModel):
     invoices_overdue: int
 
 
+class TenantHealthAgentRead(BaseModel):
+    briefs_total: int
+    briefs_stale: int
+    briefs_fresh: int
+    tasks_pending: int
+    tasks_running: int
+    tasks_paused: int
+    tasks_completed: int
+    tasks_failed: int
+    memory_blocks_active: int
+    memory_blocks_archived: int
+    cost_living_agent_30d: float
+
+
 class TenantHealthRead(BaseModel):
     tenant_id: str
     plan: str
@@ -1841,6 +1855,7 @@ class TenantHealthRead(BaseModel):
     users: int
     last_owner_login: str | None = None
     flags: TenantHealthFlagsRead
+    agent: TenantHealthAgentRead
 
 
 class WorkspaceCreate(BaseModel):
@@ -1957,6 +1972,8 @@ class ShadowReportRead(BaseModel):
     decisions_count: dict[str, int] = Field(default_factory=dict)
     cost_by_mode: dict[str, dict[str, float]] = Field(default_factory=dict)
     model_records: list[dict[str, Any]] = Field(default_factory=list)
+    human_alignment_score: float = 100.0
+    oscillation_count: int = 0
 
 
 class PromotionReadinessRead(BaseModel):

@@ -191,6 +191,17 @@ def gather_index_context(
     }
 
 
+def _tenant_context_is_empty(context: dict[str, Any]) -> bool:
+    """True when the tenant has no indexed sources and no personal memory yet."""
+
+    if context.get("memory_context"):
+        return False
+    workspaces = context.get("workspaces") or []
+    return not any(
+        sum((ws.get("source_counts") or {}).values()) > 0 for ws in workspaces
+    )
+
+
 def _format_index_answer(context: dict[str, Any]) -> str:
     """Genera una respuesta en lenguaje natural a partir del contexto INDEX."""
 
@@ -198,8 +209,11 @@ def _format_index_answer(context: dict[str, Any]) -> str:
     display_name = context.get("display_name") or DEFAULT_AGENT_DISPLAY_NAME
     workspaces = context.get("workspaces") or []
 
-    if not workspaces:
-        return f"{display_name}: no tengo workspaces visibles en este momento."
+    if not workspaces or _tenant_context_is_empty(context):
+        return (
+            f"Hola, soy {display_name}. Puedo ayudarte a conectar tu correo, "
+            "subir archivos a Knowledge, o invocar skills. ¿Qué querés hacer?"
+        )
 
     lines.append(f"Aquí está el panorama que veo ({len(workspaces)} workspace(s)):")
     for ws in workspaces:
@@ -410,11 +424,16 @@ def handle_presence_message(
         }
 
     if intent == "chat":
-        return {
-            "content": (
+        index_context = gather_index_context(ctx, conn, query=query)
+        if _tenant_context_is_empty(index_context):
+            content = _format_index_answer(index_context)
+        else:
+            content = (
                 f"Hola, soy {_display_name_for_agent(conn, ctx.require_tenant())}. "
                 "Pregúntame qué hay en tus workspaces o pídeme que profundice en alguno."
-            ),
+            )
+        return {
+            "content": content,
             "intent": intent,
             "level": None,
             "target_workspace_id": None,

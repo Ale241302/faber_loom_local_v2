@@ -33,6 +33,11 @@ DEFAULTS: dict[str, Any] = {
     "routing.byo_mode": "hibrido",
     "model.default": "openai/gpt-4o-mini",
     "whatsapp_inbound.enabled": False,
+    "signup.approval": "manual",
+    "signup.daily_limit": 100,
+    "signup.disposable_domains": ["mailinator.com", "guerrillamail.com", "tempmail.com"],
+    "signup.captcha.required": False,
+    "signup.captcha.provider": None,
 }
 
 
