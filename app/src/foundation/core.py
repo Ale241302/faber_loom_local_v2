@@ -351,8 +351,32 @@ def _migrate_fnd_users_preferences(conn: sqlite3.Connection) -> None:
 register_seed(_migrate_fnd_users_preferences)
 
 
+def _ensure_foundation_schema_columns(conn: sqlite3.Connection) -> None:
+    """Back-fill columns added to CORE_SCHEMA after the first deploy."""
+
+    if _foundation_db_engine() == "postgres":
+        return
+
+    for table, column, dtype in (
+        ("fnd_email_verifications", "user_id", "TEXT REFERENCES fnd_users(id)"),
+    ):
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if table_exists is None:
+            continue
+        col_exists = conn.execute(
+            "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+            (table, column),
+        ).fetchone()
+        if col_exists is None:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype};")
+
+
 def init_foundation_db() -> None:
     with fnd_db() as conn:
+        _ensure_foundation_schema_columns(conn)
         if _foundation_db_engine() == "postgres":
             # Postgres foundation schema is idempotent raw DDL split into statements.
             for statement in _split_postgres_schema(CORE_SCHEMA):
