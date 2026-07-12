@@ -38,6 +38,10 @@ def ensure_tenant_general_workspace(
         existing = get_workspace_by_kind(system_ctx, conn, "tenant_general")
         if existing is not None:
             return existing
+        # Legacy workspaces may have kind='standard' but slug='general'.
+        existing_legacy = get_workspace_by_slug(system_ctx, conn, "general")
+        if existing_legacy is not None:
+            return existing_legacy
         created = create_workspace(
             system_ctx,
             conn,
