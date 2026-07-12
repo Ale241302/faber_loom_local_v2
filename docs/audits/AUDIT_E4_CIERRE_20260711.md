@@ -25,8 +25,18 @@
 - Nuevos tests E4-8: 6 (contamination, injection, health, ACE).
 - Nuevos tests E4-6: 5 (HITL token, fail-closed, 24h window, template token, isolation).
 
+## Deploy
+
+- Rama `e4-agente-vivo` pushed a GitHub.
+- VPS actualizada en `/opt/faber_loom` (imagen `faber_loom-api:latest`, puerto host `8200`).
+- Health check: `GET http://187.77.218.102:8200/api/health` → 200 OK, schema_version 48.
+
+## Fixes de deploy
+
+- `seed.py`: ws-general usa slug scoped por tenant para evitar colisión de unique global.
+- `foundation/core.py`: backfill de columnas `user_id` en `fnd_email_verifications` y `fnd_memory_blocks` antes de aplicar `CORE_SCHEMA`/`_MODULE_SCHEMAS` en SQLite.
+
 ## Pendientes humanos
 
 1. Revisar gate comercial en `docs/faberloom/PLB_FB_E4_APERTURA_SIGNUP_v1.md`.
 2. Configurar proveedor captcha real antes de abrir signup auto.
-3. ~~Implementar E4-6 WhatsApp Cloud API~~ — completado.
