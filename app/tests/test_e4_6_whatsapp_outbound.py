@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from app.src.auth import create_access_token
@@ -66,7 +67,7 @@ def test_no_send_without_confirmation_token(client: TestClient) -> None:
     r = client.post(
         "/api/tenants/alpha/whatsapp/123456789/send",
         headers=_headers("alpha"),
-        json={"to": "5491112345678", "body": "Hola", "last_customer_message_at": "2026-07-11T08:00:00+00:00"},
+        json={"to": "5491112345678", "body": "Hola", "last_customer_message_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()},
     )
     assert r.status_code == 200, r.text
     data = r.json()
