@@ -493,6 +493,7 @@ function LearningThermometer({ workspaceId }) {
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(async () => {
+    if (!workspaceId) return;
     try {
       const data = await apiGet(`/api/workspaces/${workspaceId}/memory/learning-state`);
       setState(data);
