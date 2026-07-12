@@ -5,7 +5,7 @@
 
 var { useEffect, useState } = React;
 
-const S = {
+var S = {
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" },
   title: { margin: 0, font: "italic 500 22px/1.2 var(--font-title)" },
   meta: { color: "var(--text-muted)", fontSize: 12, fontFamily: "var(--font-mono)" },

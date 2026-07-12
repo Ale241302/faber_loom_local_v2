@@ -1,4 +1,4 @@
-const { useState, useEffect } = React;
+var { useState, useEffect } = React;
 
 function AgentTasksPanel({ workspaceId }) {
   const [tasks, setTasks] = useState([]);

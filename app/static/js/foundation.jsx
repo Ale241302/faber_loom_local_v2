@@ -8,7 +8,7 @@ var { useEffect, useMemo, useRef, useState } = React;
 
 function cx(...parts) { return parts.filter(Boolean).join(" "); }
 
-const THEMES = [
+var THEMES = [
   { id: "warm", label: "Warm", swatch: "#1B1A17" },
   { id: "slate", label: "Slate", swatch: "#16181B" },
   { id: "mono", label: "Mono", swatch: "#0E0D0C" },
@@ -113,7 +113,7 @@ function Toast({ toast, onDismiss }) {
   );
 }
 
-const THEME_ACCENTS = {
+var THEME_ACCENTS = {
   warm: "#CD6B4A",
   slate: "#CD6B4A",
   mono: "#D6724E",

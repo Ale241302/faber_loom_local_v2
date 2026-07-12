@@ -1,12 +1,12 @@
 var { useCallback, useEffect, useMemo, useRef, useState } = React;
 
-const MODES = [
+var MODES = [
   { id: "operar", label: "Operar" },
   { id: "aprender", label: "Aprender" },
   { id: "admin", label: "Admin" },
 ];
 
-const NAV = {
+var NAV = {
   operar: [
     { id: "space", label: "FaberLoom", sub: "Canvas y chat", badge: "SL0", icon: "loom" },
     { id: "workloom", label: "WorkLoom", sub: "Cola HITL", badge: "SL3", icon: "check" },
@@ -27,7 +27,7 @@ const NAV = {
   ],
 };
 
-const S = {
+var S = {
   view: { minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "auto" },
   grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, alignItems: "start" },
   grid3: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, alignItems: "start" },
@@ -118,7 +118,7 @@ function authHeaders() {
 // trabajo. Ante un 401 intentamos renovar con el refresh token (cookie de 7
 // días, rotativa) y reintentamos el request una vez. Si el refresh también
 // falla, recargamos la página para que AuthGate muestre el login.
-let _refreshingSession = null;
+var _refreshingSession = null;
 function _refreshSession() {
   if (!_refreshingSession) {
     _refreshingSession = fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin" })
@@ -241,7 +241,7 @@ function Topbar({ workspaceId, onOpenPalette, theme, setTheme, budget, onToggleL
     </div>
   </header>;
 }
-const DOTS = ["var(--coral)", "var(--amber)", "var(--sage)", "var(--slate)", "var(--vino)"];
+var DOTS = ["var(--coral)", "var(--amber)", "var(--sage)", "var(--slate)", "var(--vino)"];
 
 function RailItem({ label, icon, dot, badge, active, onClick }) {
   return <button type="button" className={cx("nav-item", active && "is-active")} onClick={onClick}>
@@ -423,7 +423,7 @@ function ContextStrip({ activeWorkspace }) {
   </div>;
 }
 
-const FEEDBACK_REASONS = [
+var FEEDBACK_REASONS = [
   { id: "helpful", label: "Útil" },
   { id: "too_long", label: "Muy largo" },
   { id: "too_short", label: "Muy corto" },
@@ -672,7 +672,7 @@ function EmptyMessages({ activeWorkspace }) {
   return <div className="empty-state"><div className="empty-loom" aria-hidden="true"><BrandMark/></div><h3>El telar está listo.</h3><p>Escribe abajo para crear un chat nuevo y conversar con el router SL1a en {activeWorkspace ? activeWorkspace.name : "tu workspace"}.</p></div>;
 }
 
-const THINKING_STEPS = [
+var THINKING_STEPS = [
   { key: "reason", label: "Razonando sobre tu consulta" },
   { key: "context", label: "Consultando el contexto del workspace" },
   { key: "route", label: "Seleccionando el modelo" },
@@ -2784,7 +2784,7 @@ function WorkloomView({ activeWorkspace }) {
   </div>;
 }
 
-const PROVIDER_LABELS = {
+var PROVIDER_LABELS = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google / Gemini",
@@ -3080,8 +3080,8 @@ function AuditHistoryPanel({ activeWorkspace }) {
   </section>;
 }
 
-const SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "", is_app_password: 1 };
-const IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0, is_app_password: 1 };
+var SMTP_DEFAULTS = { host: "", port: 465, use_ssl: true, username: "", password: "", from_email: "", is_app_password: 1 };
+var IMAP_DEFAULTS = { label: "", provider: "imap", host: "", port: 993, username: "", password: "", folders_json: '["INBOX"]', auth_type: "password", read_only: 1, is_default: 0, is_app_password: 1 };
 
 function IMAPConfigPanel({ activeWorkspace }) {
   const [accounts, setAccounts] = useState([]);

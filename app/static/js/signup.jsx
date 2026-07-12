@@ -6,7 +6,7 @@
 
 var { useEffect, useMemo, useState } = React;
 
-const SIGNUP_S = {
+var SIGNUP_S = {
   shell: { minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "var(--bg-canvas)", color: "var(--text-primary)", fontFamily: "var(--font-ui)" },
   card: { width: "min(520px, 100%)", padding: "28px 26px", border: "1px solid var(--border-default)", borderRadius: "var(--r-lg)", background: "var(--bg-raised)", boxShadow: "var(--shadow)" },
   mark: { color: "var(--coral)", marginBottom: 16 },
@@ -29,8 +29,8 @@ const SIGNUP_S = {
   footerLink: { color: "var(--coral)", textDecoration: "none" },
 };
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function slugify(name) {
   return name

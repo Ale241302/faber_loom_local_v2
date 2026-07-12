@@ -6,7 +6,7 @@
 
 var { useEffect, useState } = React;
 
-const HS = {
+var HS = {
   view: { padding: "18px 20px", overflow: "auto" },
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, gap: 12, flexWrap: "wrap" },
   title: { margin: 0, font: "italic 500 22px/1.2 var(--font-title)" },
