@@ -359,6 +359,7 @@ def _ensure_foundation_schema_columns(conn: sqlite3.Connection) -> None:
 
     for table, column, dtype in (
         ("fnd_email_verifications", "user_id", "TEXT REFERENCES fnd_users(id)"),
+        ("fnd_memory_blocks", "user_id", "TEXT REFERENCES fnd_users(id)"),
     ):
         table_exists = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
