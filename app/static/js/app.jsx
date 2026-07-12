@@ -1495,7 +1495,7 @@ function WorkspaceBriefPanel({ activeWorkspace }) {
     if (!activeWorkspace) return;
     setLoading(true);
     setError(null);
-    apiFetch(`/api/workspaces/${activeWorkspace.id}/brief`, { headers: authHeaders() })
+    apiFetch(`/api/workspaces/${activeWorkspace.id}/brief?missing_ok=1`, { headers: authHeaders() })
       .then(async (res) => {
         if (res.status === 404) {
           setError("not_ready");
@@ -1505,7 +1505,12 @@ function WorkspaceBriefPanel({ activeWorkspace }) {
           const text = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
         }
-        setBrief(await res.json());
+        const data = await res.json();
+        if (data && data.ready === false) {
+          setError("not_ready");
+          return;
+        }
+        setBrief(data);
       })
       .catch((err) => setError(err.message || "Error"))
       .finally(() => setLoading(false));

@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from starlette.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .audit import audit_writer
@@ -1162,6 +1163,8 @@ def api_get_workspace_brief(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     row = get_workspace_brief(conn, ctx, workspace_id)
     if row is None:
+        if request.query_params.get("missing_ok"):
+            return JSONResponse({"ready": False}, status_code=status.HTTP_200_OK)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brief not found")
 
     user_roles = {ctx.actor_role_at_decision} if ctx.actor_role_at_decision else set()
