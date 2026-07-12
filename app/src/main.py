@@ -64,6 +64,10 @@ def health_url(host: str = HOST, port: int = PORT) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_env_file()
+    # Foundation must be initialized before seeding workspaces because plan-limit
+    # checks read fnd_tenants. In fresh SQLite test/prod deployments the file may
+    # exist empty and queries would fail if seed runs first.
+    init_foundation_db()
     with db_session() as conn:
         initialize_database(conn)
         with transaction(conn, ctx=system_context()):
@@ -71,7 +75,6 @@ async def lifespan(app: FastAPI):
         seed_demo_workspace(conn)
         seed_canary_workspace(conn)
         seed_ambient_for_all_tenants(conn)
-    init_foundation_db()
     load_trusted_update_keys()
     try:
         get_object_store().ensure_buckets()
