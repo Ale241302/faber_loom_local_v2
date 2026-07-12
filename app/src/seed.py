@@ -38,10 +38,14 @@ def ensure_tenant_general_workspace(
         existing = get_workspace_by_kind(system_ctx, conn, "tenant_general")
         if existing is not None:
             return existing
-        # Legacy workspaces may have kind='standard' but slug='general'.
-        existing_legacy = get_workspace_by_slug(system_ctx, conn, "general")
-        if existing_legacy is not None:
-            return existing_legacy
+        # Legacy workspaces may have kind='standard' or a NULL tenant_id.
+        row = conn.execute(
+            "SELECT id, name, slug, tenant_id, user_id, schema_version, created_at, updated_at, kind, is_canary "
+            "FROM workspace WHERE slug = ? AND (tenant_id = ? OR tenant_id IS NULL)",
+            ("general", ctx.tenant_id),
+        ).fetchone()
+        if row is not None:
+            return dict(row)
         created = create_workspace(
             system_ctx,
             conn,
