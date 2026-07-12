@@ -31,6 +31,7 @@
 - VPS actualizada en `/opt/faber_loom` (imagen `faber_loom-api:latest`, puerto host `8200`).
 - Health check: `GET http://187.77.218.102:8200/api/health` → 200 OK, schema_version 48.
 - Fix frontend JSX: top-level `const`/`let` convertidos a `var` para evitar colisiones de redeclaración en el scope global tras transpilación de Babel standalone; cache bust `?v=20260712`.
+- Fix frontend null workspace: `LearningThermometer` ya no dispara `/api/workspaces/null/memory/learning-state` antes de cargar el workspace activo.
 
 ## Fixes de deploy
 
