@@ -2005,6 +2005,8 @@ def _handle_presence_completion(
         conn,
         user_message,
         correlation_id=correlation_id,
+        requested_provider=payload.provider_slug,
+        requested_model=payload.model,
     )
     llm_info = presence_result.get("llm") or {}
 

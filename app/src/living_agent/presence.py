@@ -377,6 +377,8 @@ def _chat_with_model(
     conn: Any,
     query: str,
     index_context: dict[str, Any],
+    requested_provider: str | None = None,
+    requested_model: str | None = None,
 ) -> dict[str, Any] | None:
     """E5-fix4: responde conversación con un modelo REAL (cheap-first).
 
@@ -404,12 +406,31 @@ def _chat_with_model(
         budget_cap = float(cascade_resolve(conn, ctx, "routing.max_budget_usd", default=2.0) or 2.0)
         spent = sum_workspace_usage_cost(ctx, conn)
         remaining = max(0.0, budget_cap - spent)
-        try:
-            entry = resolve_model_for_capability(ctx, conn, "cheap", budget_remaining=remaining)
-        except ValueError:
-            entry = resolve_model_for_capability(
-                ctx, conn, "text", budget_remaining=remaining, complexity="low"
-            )
+        # __E5FIX9__: en modo manual el usuario manda — si eligió provider/modelo
+        # en el composer, se respeta (si está configurado); cheap-first es solo
+        # el default cuando no eligió nada.
+        entry = None
+        if requested_provider:
+            try:
+                entry = resolve_model_for_capability(
+                    ctx,
+                    conn,
+                    "text",
+                    budget_remaining=remaining,
+                    complexity="low",
+                    preferred_provider=requested_provider,
+                )
+            except ValueError:
+                entry = None
+            if entry is not None and requested_model:
+                entry = {**entry, "model": requested_model}
+        if entry is None:
+            try:
+                entry = resolve_model_for_capability(ctx, conn, "cheap", budget_remaining=remaining)
+            except ValueError:
+                entry = resolve_model_for_capability(
+                    ctx, conn, "text", budget_remaining=remaining, complexity="low"
+                )
 
         byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
         router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
@@ -491,6 +512,8 @@ def handle_presence_message(
     query: str,
     *,
     correlation_id: str | None = None,
+    requested_provider: str | None = None,
+    requested_model: str | None = None,
 ) -> dict[str, Any]:
     """Punto de entrada de la presencia para una consulta en ws-general.
 
@@ -541,7 +564,11 @@ def handle_presence_message(
         # __E5FIX6__: el modelo real se intenta SIEMPRE primero — la ausencia de
         # briefs (tenant "vacío" a ojos del índice) no debe degradar a texto
         # enlatado si hay providers configurados.
-        llm = _chat_with_model(ctx, conn, query, index_context)
+        llm = _chat_with_model(
+            ctx, conn, query, index_context,
+            requested_provider=requested_provider,
+            requested_model=requested_model,
+        )
         if llm is not None:
             content = llm["content"]
         elif _tenant_context_is_empty(index_context):
