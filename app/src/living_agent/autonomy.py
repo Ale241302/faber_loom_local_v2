@@ -21,7 +21,17 @@ from typing import Any
 from ..audit import audit_writer
 from ..context import Context
 from ..db import get_routing_policy, update_routing_policy, utc_now
-from ..db_adapter import transaction
+from ..db_adapter import is_postgres_connection, transaction
+
+
+def _json_num(conn: Any, column: str, key: str) -> str:
+    """__E5FIX18__: expresion SQL numerica para leer una clave de una columna
+    JSON-texto, en el dialecto del motor. json_extract() solo existe en SQLite;
+    en Postgres se castea via jsonb (NULLIF cubre cadenas vacias)."""
+
+    if is_postgres_connection(conn):
+        return f"((NULLIF({column}, ''))::jsonb ->> '{key}')::float8"
+    return f"json_extract({column}, '$.{key}')"
 from .constants import (
     ACE_ABSURD_COST_RATIO,
     ACE_COOLDOWN_DAYS_AFTER_DOUBLE_DEGRADATION,
@@ -83,11 +93,13 @@ def evaluate_promotion_readiness(
         shadow_decisions = int(count_row["n"]) if count_row else 0
 
         # Estimated vs actual cost for shadow decisions in the window.
+        _est = _json_num(conn, "plan_json", "est_total_cost_usd")
+        _act = _json_num(conn, "actual_outcome_json", "cost_usd")
         cost_row = conn.execute(
-            """
+            f"""
             SELECT
-                COALESCE(SUM(json_extract(plan_json, '$.est_total_cost_usd')), 0.0) AS est,
-                COALESCE(SUM(json_extract(actual_outcome_json, '$.cost_usd')), 0.0) AS actual
+                COALESCE(SUM({_est}), 0.0) AS est,
+                COALESCE(SUM({_act}), 0.0) AS actual
             FROM planner_decision_log
             WHERE tenant_id = ? AND workspace_id = ? AND mode = 'shadow' AND created_at > ?
             """,
@@ -99,12 +111,11 @@ def evaluate_promotion_readiness(
 
         # Absurd decisions: planner estimated > 150% of what the real path cost.
         absurd_row = conn.execute(
-            """
+            f"""
             SELECT COUNT(*) AS n
             FROM planner_decision_log
             WHERE tenant_id = ? AND workspace_id = ? AND mode = 'shadow' AND created_at > ?
-              AND json_extract(plan_json, '$.est_total_cost_usd') >
-                  json_extract(actual_outcome_json, '$.cost_usd') * ?
+              AND {_est} > {_act} * ?
             """,
             (tenant_id, workspace_id, since, ACE_ABSURD_COST_RATIO),
         ).fetchone()
@@ -241,8 +252,8 @@ def degrade_workspace_if_needed(
         actual_cost = float(actual_row["total"] or 0.0)
 
         estimated_row = conn.execute(
-            """
-            SELECT COALESCE(SUM(json_extract(plan_json, '$.est_total_cost_usd')), 0.0) AS total
+            f"""
+            SELECT COALESCE(SUM({_json_num(conn, "plan_json", "est_total_cost_usd")}), 0.0) AS total
             FROM planner_decision_log
             WHERE tenant_id = ? AND workspace_id = ? AND mode = 'natural' AND created_at > ?
             """,
