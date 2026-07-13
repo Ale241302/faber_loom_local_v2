@@ -45,4 +45,4 @@ Changelog:
 
 | Fecha | Responsable | Resultado | Próxima revisión |
 |-------|-------------|-----------|------------------|
-| 2026-07-13 | [PENDIENTE] | [PENDIENTE] | 2026-10-11 |
+| 2026-07-13 | Kimi Code CLI / Ops | Parcial: cron backup Postgres configurado, smoke verde, detector `stale_backup_smoke` operativo. Pendiente revisión humana de rotación de credenciales y migración MinIO. | 2026-10-11 |
