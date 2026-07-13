@@ -19,7 +19,7 @@ Ejecutar rotación controlada de credenciales críticas según `docs/OPERACION_V
 | Ítem | Estado | Evidencia / comando | Responsable |
 |------|--------|---------------------|-------------|
 | Backup previo de `/opt/faber_loom` y DB | ✅ | `/opt/faber_loom/backups/faberloom_pre_minio_migrate_20260713_185823.sql.gz` | Ops |
-| Rotación par SSH | ✅ | Nuevo par en `/root/rotacion_e5/id_ed25519_e5`, fingerprint `SHA256:7WP/iiqLr12DXRc+RfRSscTUqC/jJ4Qd+8Hv1I2riAw`; llave antigua aún activa hasta que Alejandro confirme | Ops |
+| Rotación par SSH | ✅ | Nuevo par en `/root/rotacion_e5/id_ed25519_e5`, fingerprint `SHA256:7WP/iiqLr12DXRc+RfRSscTUqC/jJ4Qd+8Hv1I2riAw`; llave recogida y activada localmente; llave anterior (`sjoalfaro@gmail.com` / `SHA256:CZD4V25dS6c89cAgNbogpodAy/xopGULcd37Fl58jhg`) eliminada de `/root/.ssh/authorized_keys` | Ops |
 | Rotación password Postgres app role | ✅ | `ALTER USER faberloom_app WITH PASSWORD '<new>'`; `.env` actualizado; app reiniciada y conecta OK | Ops |
 | Rotación credenciales MinIO service user | ✅ | Nuevo usuario `faberloom-api-v2` con policy `faberloom-api`; R/W verificado; usuario viejo `faberloom-api` eliminado | Ops |
 | `.env` fuera de git y permisos 600 | ✅ | `/opt/faber_loom/.env` presente, no en git, permisos 600 | Ops |
@@ -36,6 +36,38 @@ ssh-keygen -t ed25519 -f /root/rotacion_e5/id_ed25519_e5 -N "" -C "faberloom-e5-
 cat /root/rotacion_e5/id_ed25519_e5.pub >> /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 ssh -p 2222 -i /root/rotacion_e5/id_ed25519_e5 -o PreferredAuthentications=publickey -o BatchMode=yes root@localhost echo OK
+```
+
+### SSH — recogida y retiro de llave anterior
+
+```bash
+# Desde estación de trabajo de Alejandro
+scp -P 2222 -i ~/.ssh/id_ed25519 root@187.77.218.102:/root/rotacion_e5/id_ed25519_e5 ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5
+scp -P 2222 -i ~/.ssh/id_ed25519 root@187.77.218.102:/root/rotacion_e5/id_ed25519_e5.pub ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5.pub
+chmod 600 ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5
+ssh-keygen -lf ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5.pub
+# Fingerprint nueva: SHA256:7WP/iiqLr12DXRc+RfRSscTUqC/jJ4Qd+8Hv1I2riAw
+
+# Activar localmente la nueva llave (backup de la anterior)
+cp ~/.ssh/id_ed25519 ~/.ssh/id_ed25519.pre-e5-rotacion-20260713
+cp ~/.ssh/id_ed25519.pub ~/.ssh/id_ed25519.pub.pre-e5-rotacion-20260713
+cp ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5 ~/.ssh/id_ed25519
+cp ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5.pub ~/.ssh/id_ed25519.pub
+
+# Verificar acceso con la nueva llave
+ssh -p 2222 -i ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5 root@187.77.218.102 echo OK_E5_KEY
+
+# Retirar llave anterior del servidor
+ssh -p 2222 -i ~/.ssh/faberloom_rotacion_e5/id_ed25519_e5 root@187.77.218.102 \
+  "sed -i '/sjoalfaro@gmail.com/d' /root/.ssh/authorized_keys"
+
+# Confirmar que la anterior ya no funciona
+ssh -p 2222 -o BatchMode=yes -i ~/.ssh/id_ed25519.pre-e5-rotacion-20260713 root@187.77.218.102 echo OLD_OK
+# -> Permission denied (publickey,password).
+
+# Confirmar acceso por defecto con la nueva llave
+ssh -p 2222 -o BatchMode=yes root@187.77.218.102 echo OK_DEFAULT_E5_KEY
+# -> OK_DEFAULT_E5_KEY
 ```
 
 ### Postgres app role
@@ -65,8 +97,9 @@ mc admin user remove mig faberloom-api
 
 - **Estado:** COMPLETADO PARCIAL (SSH/Postgres/MinIO rotados; password root VPS y correo no están en scope de este runbook).
 - **Observaciones:**
-  - La llave SSH privada debe ser recogida por Alejandro en `/root/rotacion_e5/id_ed25519_e5`.
-  - La llave SSH anterior sigue funcionando hasta recibir confirmación humana (old-key-until-verified).
+  - La llave SSH privada fue recogida desde `/root/rotacion_e5/id_ed25519_e5` e instalada como `~/.ssh/id_ed25519` (backup en `~/.ssh/id_ed25519.pre-e5-rotacion-20260713`).
+  - La llave SSH anterior (`sjoalfaro@gmail.com`) fue eliminada de `/root/.ssh/authorized_keys` y ya no permite acceso (`Permission denied (publickey,password)`).
+  - Smoke SSH con la nueva llave por defecto: `OK_DEFAULT_E5_KEY`.
 - **Próxima revisión:** 2026-10-13
 
 ---
