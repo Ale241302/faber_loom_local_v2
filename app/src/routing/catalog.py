@@ -261,7 +261,14 @@ def configured_provider_slugs(ctx: Context, conn: Any) -> set[str]:
     byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
     try:
         router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
-        return set(router.providers.keys())
+        # __E5FIX7__: el dict providers contiene TODOS los providers construidos
+        # (ollama incluido, que no requiere key); la disponibilidad real la da
+        # is_available() = habilitado + key cuando aplica.
+        return {
+            slug
+            for slug, provider in router.providers.items()
+            if getattr(provider, "is_available", lambda: True)()
+        }
     except Exception:
         return set()
 
