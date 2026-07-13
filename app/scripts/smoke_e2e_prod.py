@@ -69,7 +69,7 @@ class SmokeClient:
         self,
         method: str,
         path: str,
-        data: dict[str, Any] | None = None,
+        data: Any | None = None,
         headers: dict[str, str] | None = None,
         timeout: int = 30,
     ) -> tuple[int, dict[str, Any] | str]:
@@ -79,7 +79,9 @@ class SmokeClient:
         if headers:
             req_headers.update(headers)
         if data is not None:
-            if req_headers.get("Content-Type") == "application/x-www-form-urlencoded":
+            if isinstance(data, bytes):
+                body = data
+            elif req_headers.get("Content-Type") == "application/x-www-form-urlencoded":
                 body = urlencode(data).encode("utf-8")
             elif "multipart/form-data" not in req_headers.get("Content-Type", ""):
                 body = json.dumps(data).encode("utf-8")

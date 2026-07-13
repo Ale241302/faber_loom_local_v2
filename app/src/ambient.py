@@ -1352,6 +1352,8 @@ def update_ambient_workspace_config(
                 continue
             if k in ("detector_allowlist", "excluded_detector_slugs") and isinstance(v, list):
                 fields[f"{k}_json"] = json.dumps(v, ensure_ascii=False)
+            elif isinstance(v, bool):
+                fields[k] = 1 if v else 0
             else:
                 fields[k] = v
         if not fields:
