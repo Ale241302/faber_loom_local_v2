@@ -78,7 +78,13 @@ def test_tenant_settings_jsx_implements_cascade(static_dir: Path) -> None:
     assert "/api/users/me/settings" in text
     assert "/api/settings/resolved" in text
     assert "user &gt; workspace &gt; tenant &gt; default" in text
-    assert "Editar overrides" in text
+    # Post-E5-fix3 UI uses tabs and Save/Reset buttons instead of "Editar overrides".
+    assert "Guardar cambios" in text
+    assert "Restablecer" in text
+    assert "Resuelto" in text and "Tenant" in text and "Workspace" in text and "Usuario" in text
+    # routing.mode enum selector (E4-0 / E5-fix3).
+    assert '"routing.mode"' in text
+    assert '"manual"' in text and '"shadow"' in text and '"natural"' in text
 
 
 def test_app_jsx_integrates_new_views(static_dir: Path) -> None:

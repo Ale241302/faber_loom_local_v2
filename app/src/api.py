@@ -1174,16 +1174,17 @@ def api_delete_workspace(
         )
     audit_event = None
     with transaction(conn, ctx=ctx):
-        conn.execute(
-            "DELETE FROM workspace WHERE id = ? AND tenant_id = ?",
-            (workspace["id"], ctx.tenant_id),
-        )
+        # Audit must be written while the workspace still exists (FK constraint).
         audit_event = audit_writer.write(
             ctx,
             conn,
             action="workspace.deleted",
             payload={"workspace_id": workspace["id"], "name": workspace["name"], "slug": workspace["slug"]},
             mirror_jsonl=False,
+        )
+        conn.execute(
+            "DELETE FROM workspace WHERE id = ? AND tenant_id = ?",
+            (workspace["id"], ctx.tenant_id),
         )
     if audit_event is not None:
         _mirror_audit(audit_event)

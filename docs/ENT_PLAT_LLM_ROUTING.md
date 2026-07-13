@@ -399,35 +399,31 @@ En F2, estas tablas **renacen con `tenant_id` obligatorio** para evitar cross-te
 
 ---
 
-Stamp: DRAFT v2.0 desde 2026-04-21 — pendiente aprobación CEO (batch Q1-Q18 post Kimi Swarm #4).
+## F.6 Routing modes — `routing.mode` (E4-0, 2026-07-11)
+
+E4-0 introduce un flag tri-estado `routing.mode` que reemplaza la doble gate legacy del modo auto:
+
+| Modo | Comportamiento |
+| ---- | -------------- |
+| `manual` | Humano selecciona proveedor/modelo para cada mensaje (default). |
+| `shadow` | El planner corre en segundo plano, registra decisiones, produce output no visible para el usuario y no tiene side effects. |
+| `natural` | Planner + ejecución automática; equivalente al antiguo modo "auto". |
+
+La resolución sigue la cascada de configuración existente: preferencia de usuario > workspace > tenant > default. El valor explícito de `routing.mode` siempre gana.
+
+**Backwards compatibility:** la doble gate legacy `FABERLOOM_AUTO_MODE_ENABLED` (env var) + `workspace_routing_policy.auto_mode_enabled` se mapea a `routing.mode = "natural"` cuando ambas son true. La variable de entorno está **DEPRECATED** y emite warning; las nuevas configuraciones deben usar `routing.mode` a través de la cascada de settings.
+
+**Scope en E4:** `shadow` es solo observación (planner-level). `natural` puede ejecutar pasos internos, pero cualquier paso con efecto externo permanece draft-first y gateado por WorkLoom HITL (Regla Sagrada).
+
+**Implementación:** `app/src/routing/policy.py` (`resolve_routing_mode`), `app/src/config_cascade.py`, `app/src/api.py` (settings registry), `app/tests/test_e4_0_mode_flag.py`.
+
+---
+
+Stamp: AS-BUILT v2.2 desde 2026-07-13 — consolidado en `main` post-E4.
 
 Changelog:
 - v1.0 (2026-03-18): Creación inicial. Rankings arena.ai verificados 18 mar 2026. Pricing verificado contra docs oficiales. PLT-11 arquitectura con correcciones auditoría ChatGPT (8.2/10).
-- v2.1 (2026-06-24): +Fugu Standard como provider externo en tenant_model_allowlist (FG-02 sesion Fugu). Matriz N0/N1/N2/N3/N4 documentada.
-- - v2.0 (2026-04-21): Canoniza veredicto Kimi Swarm #4 (LOW confidence adaptive routing F1). Downgrade a tiered hardcoded F1 en YAML git (§F). Adaptive postpuesto F2 gated a 5K×3 meses (§G). +Tabla `tenant_model_allowlist` (data residency hard block). +HA LiteLLM 2 instancias (§E2). +tenant_id obligatorio en `llm_usage_log` + RLS. +Circuit breakers spec (§F.3). Cold start 30 días manual (§F.4). Arena Mode descartado F1 (DEC-007). Mejoras Kimi F2 archivadas (§G.2). Separación MWT vs FaberLoom (§H). Refs: docs/archivo/kimi_swarm_4_adaptive_routing.md, ENT_GOB_DECISIONES DEC-006/007/008, ENT_PLAT_MEMORY_STACK, SPEC_FABERLOOM_ARCHITECTURE, SPEC_FABERLOOM_WORKFLOW_ENGINE.
+- v2.0 (2026-04-21): Canoniza veredicto Kimi Swarm #4 (LOW confidence adaptive routing F1). Downgrade a tiered hardcoded F1 en YAML git (§F). Adaptive postpuesto F2 gated a 5K×3 meses (§G). +Tabla `tenant_model_allowlist` (data residency hard block). +HA LiteLLM 2 instancias (§E2). +tenant_id obligatorio en `llm_usage_log` + RLS. +Circuit breakers spec (§F.3). Cold start 30 días manual (§F.4). Arena Mode descartado F1 (DEC-007). Mejoras Kimi F2 archivadas (§G.2). Separación MWT vs FaberLoom (§H). Refs: docs/archivo/kimi_swarm_4_adaptive_routing.md, ENT_GOB_DECISIONES DEC-006/007/008, ENT_PLAT_MEMORY_STACK, SPEC_FABERLOOM_ARCHITECTURE, SPEC_FABERLOOM_WORKFLOW_ENGINE.
 - v2.0.1 (2026-06-23, FB-STD-CODEX-2026-06-23-01): fix mecánico de ref colgante `archivo/kimi_swarm_4_adaptive_routing.md` → `docs/archivo/kimi_swarm_4_adaptive_routing.md`.
-
-
-## F1-shadow / E4-0 Append — Routing modes (2026-07-11)
-
-E4-0 introduces a single tri-state flag ``routing.mode`` that replaces the
-legacy double gate for automatic routing:
-
-| Mode     | Behaviour |
-|----------|-----------|
-| ``manual``  | Human selects the model/preset for every message (default). |
-| ``shadow``  | Planner runs in the background, logs its decisions, produces no user-visible output and has no side effects. |
-| ``natural`` | Planner + automatic execution; equivalent to the former "auto" mode. |
-
-Resolution follows the existing configuration cascade: user preference >
-workspace > tenant > default. The explicit ``routing.mode`` value always wins.
-
-**Backwards compatibility:** the legacy double gate
-``FABERLOOM_AUTO_MODE_ENABLED`` env var + ``workspace_routing_policy.auto_mode_enabled``
-maps to ``routing.mode = "natural"`` when both are true. The env var is
-**DEPRECATED** and logs a warning; new configurations should set
-``routing.mode`` through the settings cascade.
-
-**Scope in E4:** ``shadow`` is observation-only (planner-level). ``natural`` may
-execute internal steps but any step with external effect remains draft-first
-and gated by WorkLoom HITL (Regla Sagrada).
+- v2.1 (2026-06-24): +Fugu Standard como provider externo en tenant_model_allowlist (FG-02 sesion Fugu). Matriz N0/N1/N2/N3/N4 documentada.
+- v2.2 (2026-07-13): Integración formal del apéndice E4-0 como §F.6; documenta `routing.mode` manual/shadow/natural y deprecación de `FABERLOOM_AUTO_MODE_ENABLED`. Estado pasa a AS-BUILT tras cierre técnico de E4.

@@ -137,40 +137,31 @@ def _setup_workspace(client: TestClient) -> str:
     return ws
 
 
-def test_auto_mode_disabled_globally(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FABERLOOM_AUTO_MODE_ENABLED", raising=False)
-    ws = _workspace_id(client)
-    client.put(
-        f"/api/workspaces/{ws}/routing-policy",
-        json={"auto_mode_enabled": True},
-        headers=_headers("owner"),
-    )
-    chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto"}, headers=_headers("owner")).json()
-    response = client.post(
-        f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
-        json={"message": "Hi", "mode": "auto"},
-        headers=_headers("owner"),
-    )
-    assert response.status_code == 403
-
-
-def test_auto_mode_disabled_in_workspace(client: TestClient) -> None:
-    ws = _workspace_id(client)
-    chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto"}, headers=_headers("owner")).json()
-    response = client.post(
-        f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
-        json={"message": "Hi", "mode": "auto"},
-        headers=_headers("owner"),
-    )
-    assert response.status_code == 403
-
-
-def test_auto_mode_runs_text_chain(client: TestClient) -> None:
+def test_auto_completion_returns_processing_ack(client: TestClient) -> None:
+    """__E5FIX10__: /completions with mode=auto returns a background-task ack."""
     ws = _setup_workspace(client)
-    chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto text"}, headers=_headers("owner")).json()
+    chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto ack"}, headers=_headers("owner")).json()
     response = client.post(
         f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
         json={"message": "Tell me about looms", "mode": "auto"},
+        headers=_headers("owner"),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider_slug"] == "auto"
+    assert data["model"] == "processing"
+    assert data["mode"] == "processing"
+    assert data["chain_id"] is None
+    assert data["steps"] is None
+
+
+def test_auto_endpoint_runs_text_chain(client: TestClient) -> None:
+    """Synchronous auto behaviour is exercised through /auto (user-requested)."""
+    ws = _setup_workspace(client)
+    chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto text"}, headers=_headers("owner")).json()
+    response = client.post(
+        f"/api/workspaces/{ws}/chats/{chat['id']}/auto",
+        json={"user_request": "Tell me about looms"},
         headers=_headers("owner"),
     )
     assert response.status_code == 200
@@ -180,7 +171,7 @@ def test_auto_mode_runs_text_chain(client: TestClient) -> None:
     assert len(data["steps"]) >= 1
 
 
-def test_auto_mode_respects_max_steps(client: TestClient) -> None:
+def test_auto_endpoint_respects_max_steps(client: TestClient) -> None:
     ws = _setup_workspace(client)
     client.put(
         f"/api/workspaces/{ws}/routing-policy",
@@ -189,8 +180,8 @@ def test_auto_mode_respects_max_steps(client: TestClient) -> None:
     )
     chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Max steps"}, headers=_headers("owner")).json()
     response = client.post(
-        f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
-        json={"message": "Plan something", "mode": "auto"},
+        f"/api/workspaces/{ws}/chats/{chat['id']}/auto",
+        json={"user_request": "Plan something"},
         headers=_headers("owner"),
     )
     assert response.status_code == 200
@@ -198,7 +189,7 @@ def test_auto_mode_respects_max_steps(client: TestClient) -> None:
     assert len(data["steps"]) <= 2
 
 
-def test_auto_mode_respects_budget_cap(client: TestClient) -> None:
+def test_auto_endpoint_respects_budget_cap(client: TestClient) -> None:
     ws = _setup_workspace(client)
     client.put(
         f"/api/workspaces/{ws}/routing-policy",
@@ -207,8 +198,8 @@ def test_auto_mode_respects_budget_cap(client: TestClient) -> None:
     )
     chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Budget"}, headers=_headers("owner")).json()
     response = client.post(
-        f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
-        json={"message": "Plan something", "mode": "auto"},
+        f"/api/workspaces/{ws}/chats/{chat['id']}/auto",
+        json={"user_request": "Plan something"},
         headers=_headers("owner"),
     )
     assert response.status_code == 422
@@ -261,12 +252,12 @@ def test_auto_pdf_image_fails_without_image_gen_model(client: TestClient) -> Non
     assert "image_gen" in response.json()["detail"]
 
 
-def test_auto_mode_records_step_ledger(client: TestClient) -> None:
+def test_auto_endpoint_records_step_ledger(client: TestClient) -> None:
     ws = _setup_workspace(client)
     chat = client.post(f"/api/workspaces/{ws}/chats", json={"title": "Auto ledger"}, headers=_headers("owner")).json()
     response = client.post(
-        f"/api/workspaces/{ws}/chats/{chat['id']}/completions",
-        json={"message": "Hello", "mode": "auto"},
+        f"/api/workspaces/{ws}/chats/{chat['id']}/auto",
+        json={"user_request": "Hello"},
         headers=_headers("owner"),
     )
     assert response.status_code == 200

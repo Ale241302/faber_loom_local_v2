@@ -50,9 +50,10 @@ nada:
 
 ## API
 
-- `GET /api/workspaces/{workspace_id}/brief`
+- `GET /api/workspaces/{workspace_id}/brief?missing_ok=1`
   - Devuelve el brief persistido, re-mediado por los roles del solicitante.
-  - **Nunca** lo genera inline; si no existe responde `404`.
+  - **Nunca** lo genera inline; si no existe responde `200 OK {"ready": false}` gracias al query param `missing_ok=1`.
+  - Sin `missing_ok` (compatibilidad interna) sigue devolviendo `404`.
   - `CLOSED` o `CEO-only` sin `ceo` devuelven el modelo `WorkspaceBriefRead` con
     `source_counts: {}` y el campo `brief` reducido a `sealed`, `level` y `object_count`.
   - `INDEX` devuelve el brief sin agregados de facturas.
@@ -79,7 +80,7 @@ Muestra:
 4. Degradación a `index` para no-approver.
 5. Persistencia tras `refresh_workspace_brief`.
 6. Detección de stale.
-7. Endpoint `GET /brief` 404 cuando no existe y 200 tras refresh.
+7. Endpoint `GET /brief?missing_ok=1` devuelve `{"ready": false}` cuando no existe y 200 con brief tras refresh.
 8. El ciclo ambiental genera el brief para el workspace procesado.
 
 ## Riesgos mitigados
