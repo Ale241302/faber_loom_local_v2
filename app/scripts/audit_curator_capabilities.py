@@ -85,7 +85,7 @@ def _open_db_connection(postgres_url: str | None = None) -> Any:
 
 def _schema_version(conn: Any) -> int | None:
     try:
-        row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
+        row = conn.execute("SELECT MAX(version) AS v FROM _schema_version").fetchone()
         return row["v"] if row and row.get("v") is not None else None
     except Exception:
         return None
@@ -184,10 +184,10 @@ def _check_permissions() -> dict[str, Any]:
     result["file_exists"] = True
     text = APP_JSX.read_text(encoding="utf-8")
     # Buscar definición de canManageSkills y presencia de "curator"
-    match = re.search(r"const\s+canManageSkills\s*=\s*\[[^\]]+\]", text, re.DOTALL)
+    match = re.search(r"const\s+canManageSkills\s*=.*?(?:\n|$)", text, re.DOTALL)
     if match:
         snippet = match.group(0)
-        result["snippet"] = snippet
+        result["snippet"] = snippet.strip()
         result["can_manage_skills_includes_curator"] = '"curator"' in snippet or "'curator'" in snippet
     return result
 
