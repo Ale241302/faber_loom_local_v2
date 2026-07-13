@@ -254,7 +254,9 @@ class _MinioStoreBackend:
 
     def copy_object(self, src_bucket: str, src_key: str, dst_bucket: str, dst_key: str) -> None:
         self._ensure_bucket(dst_bucket)
-        self._client.copy_object(dst_bucket, dst_key, f"{src_bucket}/{src_key}")
+        from minio.commonconfig import CopySource  # type: ignore[import-untyped]
+
+        self._client.copy_object(dst_bucket, dst_key, CopySource(src_bucket, src_key))
 
     def list_object_keys(self, bucket: str, prefix: str = "") -> list[str]:
         objects = self._client.list_objects(bucket, prefix=prefix, recursive=True)
