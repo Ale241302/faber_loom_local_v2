@@ -289,6 +289,29 @@ def test_unstructured_object_resolved_by_db(
     assert memory_store.object_exists("fl-uploads", "_quarantine/" + key)
 
 
+def test_structured_path_missing_object_id_is_orphan(
+    module: Any, db_conn: sqlite3.Connection, memory_store: Any
+) -> None:
+    """Un path estructurado cuyo object_id no existe en DB es huérfano, no failed."""
+    old_key = "t-t1/ws-ws1/upload/obj_missing/step-output.json"
+    data = b'{}'
+    memory_store.put_object("fl-generated", old_key, data, "application/json")
+
+    report = module.run_migration(
+        db_conn,
+        memory_store,
+        buckets=["fl-generated"],
+        dry_run=True,
+    )
+
+    assert report["total_objects"] == 1
+    assert report["orphans"] == 1
+    assert report["failed"] == 0
+    obj = report["objects"][0]
+    assert obj["status"] == "orphan"
+    assert "object_id not found" in obj["error"]
+
+
 def test_report_json_written_to_disk(
     module: Any, db_conn: sqlite3.Connection, memory_store: Any, tmp_path: Path
 ) -> None:

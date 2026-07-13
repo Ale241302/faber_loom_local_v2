@@ -232,6 +232,17 @@ def _find_object_row(
     return None
 
 
+def _object_id_exists(conn: Any, object_id: str | None) -> bool:
+    """Comprobar si un object_id existe en la tabla object."""
+    if not object_id:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM object WHERE id = ? LIMIT 1",
+        (object_id,),
+    ).fetchone()
+    return row is not None
+
+
 def _parse_object_key(
     old_key: str,
     bucket: str,
@@ -381,8 +392,21 @@ def _parse_object_key(
         # Si la DB tenía origen, preferirlo
         if row.get("origin"):
             origin = row["origin"]
-    # Si no hay fila DB para path estructurado, fallamos fail-closed
+    # Si no hay fila DB para path estructurado, verificamos si el object_id
+    # existe. Si no existe, es un huérfano de MinIO (orphan). Si existe pero
+    # no se pudo recuperar, mantenemos fail-closed como failed.
     elif parts[0].startswith("t-") or parts[0].startswith("ws-"):
+        exists = _object_id_exists(conn, object_id)
+        if not exists:
+            return MigrationItem(
+                old_key=old_key,
+                bucket=bucket,
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                object_id=object_id,
+                status="orphan",
+                error="no matching DB row for structured path (object_id not found)",
+            )
         return MigrationItem(
             old_key=old_key,
             bucket=bucket,
