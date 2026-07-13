@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -126,8 +127,8 @@ def main() -> int:
     audits_dir = args.audits_dir or (
         Path(__file__).resolve().parents[2] / "docs" / "audits"
     )
-    data_dir = args.data_dir or (
-        Path(__file__).resolve().parents[2] / "data"
+    data_dir = args.data_dir or Path(
+        os.environ.get("FABERLOOM_CONFIG_DIR", Path(__file__).resolve().parents[2] / "data")
     )
     result = check_freshness(audits_dir, max_age_hours=args.max_age_hours, data_dir=data_dir)
 

@@ -7,6 +7,7 @@ AmbientFinding objects. Detectors are read-only: they must not modify data.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -483,7 +484,9 @@ def detect_stale_backup_smoke(
 
     repo_root = Path(__file__).resolve().parents[2]
     audits_dir = repo_root / "docs" / "audits"
-    data_dir = repo_root / "data"
+    # In the VPS container data lives under FABERLOOM_CONFIG_DIR (/data);
+    # in local dev it is repo_root/data.
+    data_dir = Path(os.environ.get("FABERLOOM_CONFIG_DIR", repo_root / "data"))
     threshold_hours = 24
 
     result = find_latest_backup_artifact(audits_dir, data_dir)
