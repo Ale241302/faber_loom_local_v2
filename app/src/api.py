@@ -2092,6 +2092,7 @@ def _run_auto_chain_background(
     from .db import connect
 
     logger = logging.getLogger(__name__)
+    logger.info("auto background: START chat=%s ws=%s attachment=%s", chat_id, workspace_id, attachment_object_id)
     conn = connect()
     try:
         bg_ctx = Context(
@@ -2168,6 +2169,12 @@ def _run_auto_chain_background(
                     )
             except Exception:
                 logger.exception("auto background: no se pudo registrar el error en el chat")
+        else:
+            logger.info("auto background: DONE chat=%s", chat_id)
+    except Exception:
+        # __E5FIX13__: fallo fuera del bloque principal (Context/conexión) — al
+        # menos queda el traceback completo en los logs del contenedor.
+        logger.exception("auto background: fallo previo a la cadena (chat=%s)", chat_id)
     finally:
         try:
             conn.close()
