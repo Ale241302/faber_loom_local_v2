@@ -20,17 +20,21 @@ MODEL_PRICING_USD_PER_1K: dict[str, tuple[float, float]] = {
     # Hidden providers remain in the allowlist but are not surfaced in SL1a beta.
     "claude-3-5-sonnet": (0.003, 0.015),
     "gemini-1.5-pro": (0.0035, 0.0105),
-    "moonshot-v1-8k": (0.005, 0.005),
-    "moonshot-v1-32k": (0.005, 0.005),
-    "moonshot-v1-128k": (0.005, 0.005),
-    # Kimi Code / Coding Plan approximate pricing (fallback to gpt-4o if unset).
-    "kimi-for-coding": (0.003, 0.015),
-    "kimi-latest": (0.003, 0.015),
-    "kimi-k2.5": (0.003, 0.015),
-    "kimi-k2-thinking": (0.003, 0.015),
-    "kimi-k2-turbo-preview": (0.003, 0.015),
-    "kimi-k2-0905-preview": (0.003, 0.015),
-    "kimi-k2.6": (0.003, 0.015),
+    # __E5FIX16__ Moonshot/Kimi: precios oficiales cache-miss verificados
+    # 2026-07-13 (platform.kimi.ai/docs/pricing/*). USD por 1K tokens.
+    "moonshot-v1-8k": (0.0002, 0.002),
+    "moonshot-v1-32k": (0.001, 0.003),
+    "moonshot-v1-128k": (0.002, 0.005),
+    # kimi-for-coding: sin precio por token publicado (Coding Plan). Proxy
+    # conservador = kimi-k2.7-code oficial (0.95/4.00 por 1M).
+    "kimi-for-coding": (0.00095, 0.004),
+    # kimi-latest: sin pagina oficial de precio; conservador = moonshot-v1-128k.
+    "kimi-latest": (0.002, 0.005),
+    "kimi-k2.5": (0.0006, 0.003),
+    "kimi-k2-thinking": (0.0006, 0.0025),
+    "kimi-k2-turbo-preview": (0.00115, 0.008),
+    "kimi-k2-0905-preview": (0.0006, 0.0025),
+    "kimi-k2.6": (0.00095, 0.004),
     # Local models treated as zero provider cost.
     "llama3.1": (0.0, 0.0),
 }
@@ -45,7 +49,7 @@ DEFAULT_MODELS: dict[str, str] = {
 
 FALLBACK_PRICING_MODEL = "gpt-4o"
 
-PRICING_VERSION = "cost:sl1a-2026-06-27"
+PRICING_VERSION = "cost:sl1a-2026-07-13"
 
 # SL1a model allowlist per provider. Unknown models are rejected at the API layer
 # to avoid surprise costs / DoS through the local Ollama provider.
