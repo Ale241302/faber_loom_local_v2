@@ -249,9 +249,9 @@ Cerrar deudas operativas E3 con evidencia: rotación VPS, MinIO tenant-prefix, c
   - ejecución real.
   - verificar origen=destino.
   - smoke lectura 10 objetos.
-- [ ] Formalizar cron nocturno de backup smoke.
-- [ ] Alerta si smoke falla o último reporte >48h.
-- [ ] Añadir protocolo trimestral en `docs/ENT_GOB_PROTOCOLOS.md`.
+- [x] Formalizar cron nocturno de backup Postgres + freshness check.
+- [x] Alerta si smoke falla o último artifact >48h (detector `stale_backup_smoke`).
+- [x] Añadir protocolo trimestral en `docs/ENT_GOB_PROTOCOLOS.md`.
 
 ### Archivos a crear
 
@@ -312,12 +312,14 @@ En `check_backup_smoke_freshness.py`:
 
 ### DoD
 
-- [ ] Evidencia rotación commiteada.
-- [ ] Evidencia MinIO commiteada.
-- [ ] Cron backup smoke corriendo.
+- [ ] Evidencia rotación commiteada (plantilla creada, ejecución pendiente Ops).
+- [ ] Evidencia MinIO commiteada (plantilla creada, ejecución pendiente Ops).
+- [x] Cron backup Postgres + smoke corriendo.
 - [x] Detector verde.
 - [x] Test E5-2 verde.
 - [x] Script `check_backup_smoke_freshness.py` verde.
+- [x] Smoke deploy E5-2 documentado.
+- [x] Protocolo trimestral en `docs/ENT_GOB_PROTOCOLOS.md`.
 
 ---
 
