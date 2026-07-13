@@ -27,8 +27,8 @@ def _now() -> str:
 REPO_BLOB_URL = "https://github.com/Ale241302/faber_loom_local_v2/blob/main"
 REPO_RAW_URL = "https://raw.githubusercontent.com/Ale241302/faber_loom_local_v2/main"
 
-SKILL_DIR = Path(__file__).resolve().parents[2] / "faberloom"
-APP_JSX = Path(__file__).resolve().parents[2] / "app" / "static" / "js" / "app.jsx"
+SKILL_DIR = Path(__file__).resolve().parents[1] / "faberloom"
+APP_JSX = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "app.jsx"
 
 
 @dataclass
