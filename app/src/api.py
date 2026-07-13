@@ -2077,6 +2077,7 @@ def _run_auto_chain_background(
     chat_id: str,
     user_message: str,
     image_attachment: dict[str, Any] | None,
+    attachment_object_id: str | None = None,
 ) -> None:
     """__E5FIX10__: ejecuta la cadena auto fuera del request (BackgroundTasks).
 
@@ -2101,6 +2102,17 @@ def _run_auto_chain_background(
             actor_role_at_decision=actor_role or "owner",
         )
         try:
+            if attachment_object_id:
+                # __E5FIX11__: la extracción pesada (pdfplumber/imagen) vive aquí.
+                from types import SimpleNamespace
+
+                _shim = SimpleNamespace(
+                    message=user_message,
+                    attachment_object_id=attachment_object_id,
+                )
+                user_message, image_attachment = _build_user_message_with_attachment(
+                    bg_ctx, conn, _shim
+                )
             with transaction(conn, ctx=bg_ctx):
                 routing_catalog.seed_workspace_catalog(bg_ctx, conn, workspace_id)
                 auto_result = run_auto_chain(
@@ -2214,7 +2226,15 @@ def api_create_completion(
                 ),
             )
 
-    user_message, attachment_image = _build_user_message_with_attachment(ctx, conn, payload)
+    # __E5FIX11__: en modo auto la ingesta del adjunto (pdfplumber sobre el PDF
+    # completo) puede tardar más que el timeout del proxy — se difiere al
+    # background junto con la cadena. En manual sigue síncrona.
+    _defer_attachment_object_id: str | None = None
+    if payload.mode == "auto" and payload.attachment_object_id:
+        user_message, attachment_image = payload.message.strip(), None
+        _defer_attachment_object_id = payload.attachment_object_id
+    else:
+        user_message, attachment_image = _build_user_message_with_attachment(ctx, conn, payload)
 
     # Meta del adjunto para que la UI muestre thumbnail/tarjeta (se guarda en
     # el campo route del mensaje de usuario; no viaja al modelo).
@@ -2405,6 +2425,7 @@ def api_create_completion(
             chat_id=chat_id,
             user_message=user_message,
             image_attachment=attachment_image,
+            attachment_object_id=_defer_attachment_object_id,
         )
 
         return ChatCompletionResponse(
