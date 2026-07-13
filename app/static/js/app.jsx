@@ -251,8 +251,10 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
-// __E5FIX_WS_VIEW__ — administración de workspaces (crear / renombrar / eliminar vacío)
+// __E5FIX_WS_VIEW__ v2 — administración de workspaces con el design system Foundation
 function WorkspacesAdminView() {
+  const fnd = (window.Foundation && window.Foundation.ui) || {};
+  const { FndPanel, FndBadge, FndTable, FndError, inputStyle, buttonStyle, buttonPrimaryStyle, buttonDangerStyle } = fnd;
   const [items, setItems] = useState([]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -261,7 +263,7 @@ function WorkspacesAdminView() {
     fetch("/api/workspaces", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => setItems(d.workspaces || []))
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(e));
   };
   useEffect(() => { load(); }, []);
   const call = (path, opts) => {
@@ -274,7 +276,7 @@ function WorkspacesAdminView() {
         }
       })
       .then(() => load())
-      .catch((e) => setErr(String(e.message || e)))
+      .catch((e) => setErr(e))
       .finally(() => setBusy(false));
   };
   const createWs = () => {
@@ -292,29 +294,46 @@ function WorkspacesAdminView() {
     if (confirmSlug === null) return;
     call("/api/workspaces/" + ws.id + "?confirm_slug=" + encodeURIComponent(confirmSlug.trim()), { method: "DELETE" });
   };
-  return <div style={{ padding: 24, maxWidth: 900 }}>
-    <h2 style={{ marginBottom: 4 }}>Workspaces</h2>
-    <p style={{ opacity: 0.7, marginBottom: 16 }}>Crear, renombrar y eliminar. Solo los workspaces vacíos se pueden eliminar; el chat general y el canario están protegidos.</p>
-    {err && <div style={{ color: "#C96442", marginBottom: 12 }}>{err}</div>}
-    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-      <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre del nuevo workspace" style={{ flex: 1, padding: 8 }} onKeyDown={(e) => { if (e.key === "Enter") createWs(); }} />
-      <button className="toolset-invoke" disabled={busy || !newName.trim()} onClick={createWs}>Crear</button>
-    </div>
-    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-      <thead><tr style={{ textAlign: "left", opacity: 0.7 }}><th style={{ padding: 6 }}>Nombre</th><th>Slug</th><th>Tipo</th><th>Creado</th><th></th></tr></thead>
-      <tbody>
-        {items.map((ws) => <tr key={ws.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <td style={{ padding: 6 }}>{ws.name}</td>
-          <td><code>{ws.slug}</code></td>
-          <td>{ws.kind}{ws.is_canary ? " · canary" : ""}</td>
-          <td>{(ws.created_at || "").slice(0, 10)}</td>
-          <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
-            <button disabled={busy} onClick={() => renameWs(ws)}>Renombrar</button>{" "}
-            <button disabled={busy || ws.is_canary === 1} onClick={() => deleteWs(ws)}>Eliminar</button>
-          </td>
-        </tr>)}
-      </tbody>
-    </table>
+  if (!FndPanel) return <div style={{ padding: 24 }}>Cargando design system…</div>;
+  const monoStyle = { fontFamily: "var(--font-mono)", fontSize: 11.5 };
+  return <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 1040 }}>
+    <FndError error={err} />
+    <FndPanel
+      title="Workspaces"
+      meta={`Tenant actual · ${items.length} workspaces · solo los vacíos se eliminan; el chat general y el canario están protegidos`}
+      actions={<button type="button" style={buttonStyle} disabled={busy} onClick={load}>Refrescar</button>}
+    >
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input
+          style={Object.assign({}, inputStyle, { flex: 1 })}
+          value={newName}
+          placeholder="Nombre del nuevo workspace"
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") createWs(); }}
+        />
+        <button type="button" style={buttonPrimaryStyle} disabled={busy || !newName.trim()} onClick={createWs}>Crear workspace</button>
+      </div>
+      <FndTable
+        empty="Sin workspaces"
+        columns={[
+          { key: "name", label: "Nombre", render: (r) => <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{r.name}</span> },
+          { key: "slug", label: "Slug", render: (r) => <span style={monoStyle}>{r.slug}</span> },
+          { key: "kind", label: "Tipo", render: (r) => (
+            r.is_canary ? <FndBadge tone="warn">canary</FndBadge>
+              : r.kind === "tenant_general" ? <FndBadge tone="ok">general</FndBadge>
+              : <FndBadge tone="muted">{r.kind || "standard"}</FndBadge>
+          ) },
+          { key: "created_at", label: "Creado", render: (r) => <span style={monoStyle}>{(r.created_at || "").slice(0, 10)}</span> },
+          { key: "actions", label: "", render: (r) => (
+            <span style={{ display: "inline-flex", gap: 8, whiteSpace: "nowrap" }}>
+              <button type="button" style={buttonStyle} disabled={busy} onClick={() => renameWs(r)}>Renombrar</button>
+              <button type="button" style={buttonDangerStyle} disabled={busy || r.is_canary === 1} onClick={() => deleteWs(r)}>Eliminar</button>
+            </span>
+          ) },
+        ]}
+        rows={items}
+      />
+    </FndPanel>
   </div>;
 }
 
