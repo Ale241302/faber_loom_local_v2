@@ -341,7 +341,18 @@ function WorkspacesAdminView() {
 // (URL estable /objects/{id}/content y presignadas viejas de MinIO *.png?...).
 var MSG_IMG_RE = /(https?:\/\/\S+\.(?:png|jpe?g|webp|gif)(?:\?\S*)?|\/api\/workspaces\/[\w.-]+\/objects\/[\w.-]+\/content)/g;
 function renderMessageContent(raw) {
-  const text = raw == null ? "" : String(raw);
+  let text = raw == null ? "" : String(raw);
+  // __E5FIX20__: quita la etiqueta "Generated image:" y deduplica URLs de
+  // imagen repetidas en el mismo mensaje (mensajes guardados antes del fix19).
+  const seenImg = new Set();
+  text = text.replace(
+    new RegExp("(?:Generated image:\\s*)?(" + MSG_IMG_RE.source + ")", "g"),
+    (full, url) => {
+      if (seenImg.has(url)) return "";
+      seenImg.add(url);
+      return url;
+    }
+  ).replace(/\s+$/, "");
   const re = new RegExp(MSG_IMG_RE.source, "g");
   const parts = [];
   let last = 0, m, i = 0;
