@@ -372,6 +372,119 @@ def deepdive(
     }
 
 
+def _chat_with_model(
+    ctx: Context,
+    conn: Any,
+    query: str,
+    index_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    """E5-fix4: responde conversación con un modelo REAL (cheap-first).
+
+    System prompt = identidad del agente + contexto INDEX (sin contenido).
+    Registra el costo en usage_record. Fail-soft: None si no hay providers
+    configurados o algo falla — el caller cae al texto de cortesía.
+    """
+
+    try:
+        import time as _time
+
+        from ..config_cascade import resolve as cascade_resolve
+        from ..db import insert_usage_record, sum_workspace_usage_cost
+        from ..router.models import CompletionRequest
+        from ..router.registry import build_router
+        from ..routing.catalog import (
+            has_catalog_capability,
+            resolve_model_for_capability,
+            seed_workspace_catalog,
+        )
+
+        if ctx.workspace_id and not has_catalog_capability(ctx, conn, "text"):
+            seed_workspace_catalog(ctx, conn, ctx.workspace_id)
+
+        budget_cap = float(cascade_resolve(conn, ctx, "routing.max_budget_usd", default=2.0) or 2.0)
+        spent = sum_workspace_usage_cost(ctx, conn)
+        remaining = max(0.0, budget_cap - spent)
+        try:
+            entry = resolve_model_for_capability(ctx, conn, "cheap", budget_remaining=remaining)
+        except ValueError:
+            entry = resolve_model_for_capability(
+                ctx, conn, "text", budget_remaining=remaining, complexity="low"
+            )
+
+        byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+        router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+        provider = router.providers.get(entry["provider_slug"])
+        if provider is None:
+            return None
+
+        display_name = index_context.get("display_name") or DEFAULT_AGENT_DISPLAY_NAME
+        ws_lines = []
+        for ws in (index_context.get("workspaces") or [])[:8]:
+            counts = ws.get("source_counts") or {}
+            ws_lines.append(
+                f"- {ws.get('name')}: {sum(counts.values())} fuente(s), nivel {ws.get('level')}"
+            )
+        system_prompt = (
+            f"Eres {display_name}, el agente vivo de este tenant en FaberLoom. "
+            "Responde en el idioma del usuario, breve, cálido y útil. Regla dura: "
+            "no inventes datos de negocio; si preguntan por contenido concreto, "
+            "ofrece mirar el workspace correspondiente. Workspaces visibles "
+            "(solo índice):\n" + ("\n".join(ws_lines) if ws_lines else "(ninguno)")
+        )
+
+        started = _time.time()
+        result = provider.complete(
+            CompletionRequest(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query},
+                ],
+                model=entry["model"],
+                provider_slug=entry["provider_slug"],
+                temperature=0.4,
+                max_tokens=400,
+                spent_usd=spent,
+            )
+        )
+        duration_ms = int((_time.time() - started) * 1000)
+        content = (getattr(result, "content", "") or "").strip()
+        if not content:
+            return None
+        info = {
+            "content": content,
+            "provider_slug": entry["provider_slug"],
+            "model": entry["model"],
+            "input_tokens": int(getattr(result, "input_tokens", 0) or 0),
+            "output_tokens": int(getattr(result, "output_tokens", 0) or 0),
+            "cost_usd": float(getattr(result, "cost_usd", 0.0) or 0.0),
+            "duration_ms": duration_ms,
+        }
+        try:
+            insert_usage_record(
+                ctx,
+                conn,
+                chat_id=None,
+                provider_slug=info["provider_slug"],
+                model=info["model"],
+                input_tokens=info["input_tokens"],
+                output_tokens=info["output_tokens"],
+                cost_usd=info["cost_usd"],
+                duration_ms=duration_ms,
+                status="succeeded",
+                error=None,
+                attempts_json=[],
+                request_json={"origin": "living_agent.presence.chat"},
+                response_json={"chars": len(content)},
+                capability="text",
+                key_origin=getattr(result, "key_origin", None),
+            )
+        except Exception:
+            pass  # el registro de costo no debe tumbar la respuesta
+        return info
+    except Exception:
+        return None
+
+
 def handle_presence_message(
     ctx: Context,
     conn: Any,
@@ -425,14 +538,17 @@ def handle_presence_message(
 
     if intent == "chat":
         index_context = gather_index_context(ctx, conn, query=query)
+        llm = None
         if _tenant_context_is_empty(index_context):
             content = _format_index_answer(index_context)
         else:
-            content = (
+            # E5-fix4: la conversación la responde un modelo real (cheap-first).
+            llm = _chat_with_model(ctx, conn, query, index_context)
+            content = llm["content"] if llm else (
                 f"Hola, soy {_display_name_for_agent(conn, ctx.require_tenant())}. "
                 "Pregúntame qué hay en tus workspaces o pídeme que profundice en alguno."
             )
-        return {
+        out = {
             "content": content,
             "intent": intent,
             "level": None,
@@ -440,9 +556,14 @@ def handle_presence_message(
             "audit_payload": {
                 "action": "living_agent.read",
                 "intent": intent,
+                "model": (llm or {}).get("model"),
+                "provider_slug": (llm or {}).get("provider_slug"),
                 "correlation_id": correlation_id,
             },
         }
+        if llm is not None:
+            out["llm"] = llm
+        return out
 
     # general
     index_context = gather_index_context(ctx, conn, query=query)

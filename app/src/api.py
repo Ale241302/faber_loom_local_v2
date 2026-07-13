@@ -2006,6 +2006,7 @@ def _handle_presence_completion(
         user_message,
         correlation_id=correlation_id,
     )
+    llm_info = presence_result.get("llm") or {}
 
     audit_event: AuditEvent | None = None
     assistant_message: MessageRead | None = None
@@ -2026,8 +2027,12 @@ def _handle_presence_completion(
             content=presence_result["content"],
             route={
                 "presence": True,
-                "provider_slug": "faberloom",
-                "model": "agente-vivo",
+                "provider_slug": llm_info.get("provider_slug") or "faberloom",
+                "model": llm_info.get("model") or "agente-vivo",
+                "input_tokens": llm_info.get("input_tokens", 0),
+                "output_tokens": llm_info.get("output_tokens", 0),
+                "cost_usd": llm_info.get("cost_usd", 0.0),
+                "duration_ms": llm_info.get("duration_ms", 0),
                 "intent": presence_result.get("intent"),
                 "level": presence_result.get("level"),
                 "target_workspace_id": presence_result.get("target_workspace_id"),
@@ -2051,12 +2056,12 @@ def _handle_presence_completion(
 
     return ChatCompletionResponse(
         message=assistant_message,
-        provider_slug="presence",
-        model="presence",
-        input_tokens=0,
-        output_tokens=0,
-        cost_usd=0.0,
-        duration_ms=0,
+        provider_slug=llm_info.get("provider_slug") or "presence",
+        model=llm_info.get("model") or "presence",
+        input_tokens=llm_info.get("input_tokens", 0),
+        output_tokens=llm_info.get("output_tokens", 0),
+        cost_usd=llm_info.get("cost_usd", 0.0),
+        duration_ms=llm_info.get("duration_ms", 0),
     )
 
 

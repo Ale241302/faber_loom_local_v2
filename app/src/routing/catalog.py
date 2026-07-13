@@ -248,6 +248,24 @@ def seed_workspace_catalog(
     return list_model_catalog(ctx, conn, enabled_only=False)
 
 
+def configured_provider_slugs(ctx: Context, conn: Any) -> set[str]:
+    """E5-fix4: providers realmente configurados (con key) para este contexto.
+
+    El catálogo del workspace puede contener entradas seed de providers sin
+    key (p.ej. ollama/llama3.1); elegirlas produce 'provider is not configured'
+    en ejecución. Esta es la verdad de runtime, no la del seed.
+    """
+
+    from ..router.registry import build_router
+
+    byo_mode = cascade_resolve(conn, ctx, "routing.byo_mode", default="hibrido")
+    try:
+        router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+        return set(router.providers.keys())
+    except Exception:
+        return set()
+
+
 def resolve_model_for_capability(
     ctx: Context,
     conn: Any,
@@ -292,6 +310,10 @@ def resolve_model_for_capability(
         enabled_only=True,
     )
 
+    # E5-fix4: filtrar candidatos cuyos providers no están configurados. Con
+    # cero providers configurados no se filtra (entornos de test con stubs).
+    _available = configured_provider_slugs(ctx, conn)
+
     complexity = (complexity or "medium").lower()
     if complexity not in {"low", "medium", "high"}:
         complexity = "medium"
@@ -303,6 +325,8 @@ def resolve_model_for_capability(
         return get_model_track_record(conn, ctx, capability, entry["provider_slug"], entry["model"])
 
     for entry in sorted(candidates, key=lambda e: _score(e, complexity, _track_record(e))):
+        if _available and entry["provider_slug"] not in _available:
+            continue
         if provider_allowlist and entry["provider_slug"] not in provider_allowlist:
             continue
         allowed_models = model_allowlist.get(entry["provider_slug"])
