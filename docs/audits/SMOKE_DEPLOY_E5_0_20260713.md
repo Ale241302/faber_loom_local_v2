@@ -3,7 +3,8 @@
 **Fecha:** 2026-07-13  
 **VPS:** `root@187.77.218.102:2222`  
 **Directorio:** `/opt/faber_loom`  
-**Commit deployado:** `6d15f97` (`main`)  
+**Commit deployado:** `462d299` (`main`)  
+**Tag E4:** `e4-cierre-20260712` apunta a `6d15f97`.  
 **Tag:** `e4-cierre-20260712`  
 **Suite previa al deploy:** 728 passed / 12 skipped / 0 failed / 33 warnings  
 **Responsable:** Kimi Code CLI

@@ -5,7 +5,7 @@
 **Plan auditado:** `Plan/PLAN_DESARROLLO_FABERLOOM_ETAPA4_v2.md`  
 **Fecha de auditoría original:** 2026-07-11  
 **Fecha de actualización:** 2026-07-13 (post-merge a `main`, post-E5-fixes iniciales)  
-**Commit HEAD:** `ffdc913`  
+**Commit HEAD:** `6d15f97` (`e4-cierre-20260712`)  
 **SCHEMA_VERSION:** 48 (`app/src/models.py`)  
 **Auditor:** Fugu / Kimi Code CLI  
 **Restricción:** read-only inicial; actualizado tras consolidación en `main`.

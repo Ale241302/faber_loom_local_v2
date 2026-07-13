@@ -72,3 +72,9 @@ harness/delegated/
 
 # Agent/tmp reports
 **/.tmp/
+
+# Test artifacts
+/pytest_full.log
+
+# Local stale/delete buffers
+_to_delete/

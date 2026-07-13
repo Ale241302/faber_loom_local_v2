@@ -206,12 +206,12 @@ Producción corre desde `main`; documentación E4 queda al estándar E3; el cura
 
 ### DoD
 
-- [ ] Producción corre desde `main`.
-- [ ] Tag `e4-cierre-20260712`.
-- [ ] Suite 0 failed.
-- [ ] `/api/health` schema 48 verde.
-- [ ] Docs E4 al estándar E3.
-- [ ] Veredicto curador registrado.
+- [x] Producción corre desde `main` (commit `462d299`, VPS healthy).
+- [x] Tag `e4-cierre-20260712` apunta a `6d15f97`.
+- [x] Suite 0 failed (728 passed / 12 skipped / 0 failed / 33 warnings).
+- [x] `/api/health` schema 48 verde.
+- [x] Docs E4 al estándar E3 (`docs/audits/AUDIT_E4_CIERRE_20260711.md`).
+- [x] Veredicto curador registrado (`docs/audits/AUDIT_E5_0_CURATOR_CAPABILITY_REVIEW_20260713.md` — firma humana pendiente).
 
 ---
 
