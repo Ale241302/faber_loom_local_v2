@@ -1,0 +1,5 @@
+# Force LF line endings for scripts, tests and docs so they work on Linux VPS.
+app/scripts/*.py text eol=lf
+app/scripts/*.sh text eol=lf
+app/tests/*.py text eol=lf
+docs/**/*.md text eol=lf

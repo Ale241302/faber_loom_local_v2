@@ -10,6 +10,7 @@
 - Se añaden los skills de PACK 2 (comex, prefijo `SKILL_CX_`) con veredicto `POSPUESTO`.
 - **Razón del pospuesto:** KB H3 (Marluvas/Tecmater) aún no ha sido entregada por el CEO; sin esa fuente primaria no se pueden definir golden cases honestos ni validar el dominio aduanero.
 - **Fecha de revisión del pospuesto:** 2026-08-15 (o en cuanto llegue H3, lo que ocurra primero).
+- **Carril de carga validado:** `app/scripts/load_pack2_golden.py` demuestra el flujo H3 → KB → golden case con 3 casos `[SINTETICO]` (`SKILL_CX_PEDIMENTO_CROSSCHECK`, `SKILL_CX_HS_CLASSIFY`, `SKILL_CX_DUTY_CALC`). Cuando H3 real llegue, el mismo script ingestará las fuentes y generará candidates reales.
 
 ## Estado de los legacy skills
 
@@ -70,6 +71,7 @@ Todos ellos cumplen:
 
 - [x] Cada skill del catálogo tiene un veredicto terminal o `POSPUESTO` con razón + fecha.
 - [x] Cero skills en `DEFINITION_PENDING` sin veredicto.
-- [ ] KB H3 cargada y ≥3 golden candidates reales de PACK 2 (bloqueado por entrega de CEO).
+- [x] Carril H3/golden de PACK 2 validado con sintéticos; script `load_pack2_golden.py` + test verde.
+- [ ] KB H3 cargada y ≥3 golden candidates reales de PACK 2 (bloqueado por entrega de CEO; acción humana residual).
 - [ ] Skills `DEFINIDO-SHADOW` materializados en SHADOW (cuando H3 llegue).
 - [x] Test `test_e5_3_catalog_v12.py` verde.
