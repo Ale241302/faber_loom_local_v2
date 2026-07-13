@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ssl
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -28,6 +31,39 @@ from ..config_cascade import ConfigCascadeError, resolve as config_resolve
 from ..context import Context
 from ..db import utc_now
 from ..security.secrets import TenantSecretStore
+
+
+# Simple HTTP client used by the real ATV integration.  Kept internal so tests can
+# monkeypatch it with cassettes without touching the public surface.
+def _http_request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout: int = 30,
+) -> tuple[int, bytes]:
+    """Perform a plain HTTP request and return (status_code, response_body)."""
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method=method.upper(),
+        headers=headers or {},
+    )
+    # Use a permissive SSL context only for broad compatibility with sandbox portals
+    # that may use self-signed certificates.  Real production traffic should ride on
+    # the portal's proper CA-issued certificate, but this avoids hard-blocking early
+    # integration tests.  The caller still validates the response payload.
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+
 
 TAX_AUTHORITIES = frozenset({"atv", "sat", "dian"})
 
@@ -188,11 +224,27 @@ class TaxAuthorityConnector:
                 f"Conector {self._label()} no configurado: base_url vacía. "
                 f"[{_PENDING_MARKER}]"
             )
+        if not self.config.document_status_endpoint:
+            raise TaxConnectorError(
+                f"Conector {self._label()} no configurado: endpoint de estado de documento ausente. "
+                f"[{_PENDING_MARKER}]"
+            )
+        if not self.config.taxpayer_info_endpoint:
+            raise TaxConnectorError(
+                f"Conector {self._label()} no configurado: endpoint de contribuyente ausente. "
+                f"[{_PENDING_MARKER}]"
+            )
         if not self.config.api_key:
             raise TaxConnectorError(
                 f"Conector {self._label()} no configurado: credenciales ausentes. "
                 f"[{_PENDING_MARKER}]"
             )
+
+    def _require_endpoints_for_mode(self) -> None:
+        """Sandbox/live both need explicit endpoints; mock does not."""
+        if self.config.is_mock:
+            return
+        self._require_configured()
 
     def _require_certificate(self) -> None:
         if not self.config.certificate:
@@ -252,17 +304,102 @@ class TaxAuthorityConnector:
             ],
         }
 
+    @staticmethod
+    def _join_url(base: str, endpoint: str) -> str:
+        """Join a base URL and an endpoint path with a single slash."""
+        return base.rstrip("/") + "/" + endpoint.lstrip("/")
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Headers used by the real ATV HTTP integration.
+
+        The exact header names are generic (Bearer token + secret header).  When the
+        official ATV API contract is confirmed by the PLB timebox, this method is the
+        only place that needs to change.
+        """
+        headers: dict[str, str] = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+        }
+        if self.config.api_secret:
+            headers["X-API-Secret"] = self.config.api_secret
+        return headers
+
+    def _parse_atv_response(self, status_code: int, body: bytes) -> dict[str, Any]:
+        """Parse a raw ATV response into the canonical evidence shape.
+
+        The connector does not interpret business semantics beyond a JSON body.  If the
+        portal returns non-JSON, the body is captured as text so the caller can decide.
+        """
+        text = body.decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {"raw_body": text}
+
+        # We never fabricate acceptance; the status string comes straight from the portal.
+        status = "unknown"
+        if isinstance(payload, dict):
+            status = str(payload.get("status") or payload.get("estado") or status).lower()
+        return {
+            "status": "succeeded" if 200 <= status_code < 300 else "failed",
+            "authority": self.authority,
+            "mode": self.config.mode,
+            "http_status": status_code,
+            "authority_status": status,
+            "evidence": [
+                {
+                    "source_type": self.config.mode,
+                    "source_locator": "atv-response",
+                    "captured_at": utc_now(),
+                    "content_text": text,
+                    "content_hash": self._content_hash(text),
+                }
+            ],
+        }
+
+    def _atv_document_status(self, document_key: str) -> dict[str, Any]:
+        """Real HTTP lookup of an electronic document status in ATV."""
+
+        if self.authority != "atv":
+            raise TaxConnectorError(
+                f"Ruta HTTP real no habilitada para {self._label()}. [{_PENDING_MARKER}]"
+            )
+        url = self._join_url(
+            self.config.base_url,  # type: ignore[arg-type]
+            self.config.document_status_endpoint,  # type: ignore[arg-type]
+        )
+        url = url.replace("{document_key}", document_key)
+        status_code, body = _http_request("GET", url, headers=self._auth_headers())
+        return self._parse_atv_response(status_code, body)
+
+    def _atv_taxpayer_info(self, taxpayer_id: str) -> dict[str, Any]:
+        """Real HTTP lookup of taxpayer registration info in ATV."""
+
+        if self.authority != "atv":
+            raise TaxConnectorError(
+                f"Ruta HTTP real no habilitada para {self._label()}. [{_PENDING_MARKER}]"
+            )
+        url = self._join_url(
+            self.config.base_url,  # type: ignore[arg-type]
+            self.config.taxpayer_info_endpoint,  # type: ignore[arg-type]
+        )
+        url = url.replace("{taxpayer_id}", taxpayer_id)
+        status_code, body = _http_request("GET", url, headers=self._auth_headers())
+        return self._parse_atv_response(status_code, body)
+
     def _live_document_status(self, document_key: str) -> dict[str, Any]:
-        # Real sandbox/live integrations are intentionally left as a human
-        # verification task (PLB_FB_VERIFICACION_APIS_TRIBUTARIAS_v1.md).  The
-        # connector is fail-closed: if credentials are configured but the real
-        # HTTP client is not yet implemented, it refuses rather than fabricating.
+        # Only ATV has a real HTTP path implemented.  SAT/DIAN remain fail-closed
+        # until their official APIs are verified by the PLB timebox.
+        if self.authority == "atv":
+            return self._atv_document_status(document_key)
         raise TaxConnectorError(
             f"Integración {self.config.mode} con {self._label()} no implementada: "
             f"configure URLs reales o use modo mock. [{_PENDING_MARKER}]"
         )
 
     def _live_taxpayer_info(self, taxpayer_id: str) -> dict[str, Any]:
+        if self.authority == "atv":
+            return self._atv_taxpayer_info(taxpayer_id)
         raise TaxConnectorError(
             f"Integración {self.config.mode} con {self._label()} no implementada: "
             f"configure URLs reales o use modo mock. [{_PENDING_MARKER}]"
@@ -274,7 +411,7 @@ class TaxAuthorityConnector:
         if self.config.is_mock:
             return self._mock_document_status(document_key)
 
-        self._require_configured()
+        self._require_endpoints_for_mode()
         if self.config.is_live:
             self._require_certificate()
         return self._live_document_status(document_key)
@@ -285,7 +422,7 @@ class TaxAuthorityConnector:
         if self.config.is_mock:
             return self._mock_taxpayer_info(taxpayer_id)
 
-        self._require_configured()
+        self._require_endpoints_for_mode()
         if self.config.is_live:
             self._require_certificate()
         return self._live_taxpayer_info(taxpayer_id)

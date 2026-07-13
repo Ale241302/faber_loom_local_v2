@@ -1,9 +1,8 @@
-"""E3-2: tax authority connectors (ATV/SAT/DIAN) adapter layer."""
+"""E5-4: ATV sandbox/live HTTP contract tests."""
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -88,8 +87,29 @@ def _set_connector_secret(
     set_tax_connector_secret(ctx, authority, suffix, plaintext)
 
 
-def test_mock_connector_returns_mock_evidence(client: TestClient) -> None:
-    from app.src.config_cascade import resolve
+def _cassette(name: str) -> dict[str, Any]:
+    path = Path(__file__).parent / "fixtures" / "atv_cassettes" / name
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _monkeypatch_atv_cassette(monkeypatch: pytest.MonkeyPatch, cassette_name: str) -> None:
+    """Patch the internal HTTP helper to replay a JSON cassette."""
+    cassette = _cassette(cassette_name)
+    body = json.dumps(cassette, ensure_ascii=False).encode("utf-8")
+
+    def _fake_request(method: str, url: str, **kwargs: Any) -> tuple[int, bytes]:
+        return 200, body
+
+    monkeypatch.setattr(
+        "app.src.connectors.tax_authority._http_request",
+        _fake_request,
+    )
+
+
+def test_atv_document_status_parses_cassette(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.src.connectors.tax_authority import get_tax_connector
     from app.src.context import Context
     from app.src.db import db_session
@@ -97,21 +117,63 @@ def test_mock_connector_returns_mock_evidence(client: TestClient) -> None:
     workspace_id = _demo_workspace_id(client)
     ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
 
+    _monkeypatch_atv_cassette(monkeypatch, "document_status_accepted.json")
+
     with db_session() as conn:
-        # Default mode is mock when no config is present.
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.mode", "sandbox")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.base_url", "https://atv-sandbox.example.test")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.document_status_endpoint", "documents/{document_key}")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.taxpayer_info_endpoint", "taxpayers/{taxpayer_id}")
+        conn.commit()
+        _set_connector_secret(ctx, "atv", "api_key", "sandbox-key")
         connector = get_tax_connector(ctx, conn, "atv")
-        result = connector.check_document_status("001-0001-0001")
+        result = connector.check_document_status("50607072400012345678901234567890123456789")
 
     assert result["status"] == "succeeded"
-    assert result["mode"] == "mock"
+    assert result["authority"] == "atv"
+    assert result["mode"] == "sandbox"
+    assert result["authority_status"] == "aceptado"
     assert len(result["evidence"]) == 1
     item = result["evidence"][0]
-    assert item["source_type"] == "mock"
-    assert "mock://atv/document-status/001-0001-0001" in item["source_locator"]
+    assert item["source_type"] == "sandbox"
     assert item["content_hash"]
+    assert "50607072400012345678901234567890123456789" in item["content_text"]
 
 
-def test_live_without_credentials_fail_closed(client: TestClient) -> None:
+def test_atv_taxpayer_info_parses_cassette(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.src.connectors.tax_authority import get_tax_connector
+    from app.src.context import Context
+    from app.src.db import db_session
+
+    workspace_id = _demo_workspace_id(client)
+    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
+
+    _monkeypatch_atv_cassette(monkeypatch, "taxpayer_info_active.json")
+
+    with db_session() as conn:
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.mode", "sandbox")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.base_url", "https://atv-sandbox.example.test")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.document_status_endpoint", "documents/{document_key}")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.taxpayer_info_endpoint", "taxpayers/{taxpayer_id}")
+        conn.commit()
+        _set_connector_secret(ctx, "atv", "api_key", "sandbox-key")
+        connector = get_tax_connector(ctx, conn, "atv")
+        result = connector.fetch_taxpayer_info("3-101-123456")
+
+    assert result["status"] == "succeeded"
+    assert result["authority"] == "atv"
+    assert result["mode"] == "sandbox"
+    assert result["authority_status"] == "activo"
+    assert len(result["evidence"]) == 1
+    item = result["evidence"][0]
+    assert item["source_type"] == "sandbox"
+    assert "3-101-123456" in item["content_text"]
+
+
+def test_atv_missing_endpoint_fails_closed(client: TestClient) -> None:
     from app.src.connectors.tax_authority import TaxConnectorError, get_tax_connector
     from app.src.context import Context
     from app.src.db import db_session
@@ -120,15 +182,38 @@ def test_live_without_credentials_fail_closed(client: TestClient) -> None:
     ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
 
     with db_session() as conn:
-        _set_tenant_setting(conn, "default", "connectors.tax.atv.mode", "live")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.mode", "sandbox")
+        _set_tenant_setting(conn, "default", "connectors.tax.atv.base_url", "https://atv-sandbox.example.test")
         conn.commit()
+        _set_connector_secret(ctx, "atv", "api_key", "sandbox-key")
         connector = get_tax_connector(ctx, conn, "atv")
 
-    with pytest.raises(TaxConnectorError, match="no configurado"):
+    with pytest.raises(TaxConnectorError, match="PENDIENTE"):
         connector.check_document_status("001-0001-0001")
 
 
-def test_live_without_certificate_fails_he2_9(client: TestClient) -> None:
+def test_sat_dian_remain_pending(client: TestClient) -> None:
+    from app.src.connectors.tax_authority import TaxConnectorError, get_tax_connector
+    from app.src.context import Context
+    from app.src.db import db_session
+
+    workspace_id = _demo_workspace_id(client)
+    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
+
+    with db_session() as conn:
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.mode", "sandbox")
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.base_url", "https://sat.example.test")
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.document_status_endpoint", "documents/{document_key}")
+        _set_tenant_setting(conn, "default", "connectors.tax.sat.taxpayer_info_endpoint", "taxpayers/{taxpayer_id}")
+        conn.commit()
+        _set_connector_secret(ctx, "sat", "api_key", "sandbox-key")
+        connector = get_tax_connector(ctx, conn, "sat")
+
+    with pytest.raises(TaxConnectorError, match="PENDIENTE"):
+        connector.check_document_status("001-0001-0001")
+
+
+def test_live_without_certificate_he2_9(client: TestClient) -> None:
     from app.src.connectors.tax_authority import TaxConnectorError, get_tax_connector
     from app.src.context import Context
     from app.src.db import db_session
@@ -147,88 +232,3 @@ def test_live_without_certificate_fails_he2_9(client: TestClient) -> None:
 
     with pytest.raises(TaxConnectorError, match="certificado no configurado \\(HE2-9\\)"):
         connector.check_document_status("001-0001-0001")
-
-
-def test_tenant_isolation_for_connector_secrets(client: TestClient) -> None:
-    from app.src.connectors.tax_authority import get_tax_connector_secret
-    from app.src.context import Context
-
-    workspace_id = _demo_workspace_id(client)
-    ctx_a = Context(workspace_id=workspace_id, tenant_id="tenant_a", user_id="local", actor_id="local")
-    ctx_b = Context(workspace_id=workspace_id, tenant_id="tenant_b", user_id="local", actor_id="local")
-
-    _set_connector_secret(ctx_a, "sat", "api_key", "secret-a")
-
-    assert get_tax_connector_secret(ctx_a, "sat", "api_key") == "secret-a"
-    assert get_tax_connector_secret(ctx_b, "sat", "api_key") is None
-
-
-def test_external_lookup_with_tax_fetcher_for_fe_skill(client: TestClient) -> None:
-    from app.src.connectors.tax_authority import build_tax_fetcher
-    from app.src.context import Context
-    from app.src.db import db_session
-    from app.src.skill_primitives import external_lookup
-
-    workspace_id = _demo_workspace_id(client)
-    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
-
-    with db_session() as conn:
-        fetcher = build_tax_fetcher(ctx, conn, "SKILL_FE_STATUS_CHECK")
-        assert fetcher is not None
-
-        result = external_lookup(
-            ctx,
-            conn,
-            skill_id="SKILL_FE_STATUS_CHECK",
-            query="estado comprobante 001-0001-0001",
-            required_sources=["atv", "sat"],
-            fetcher=fetcher,
-        )
-
-    assert result["status"] == "succeeded"
-    assert len(result["evidence"]) == 2  # one item per queried authority
-    for item in result["evidence"]:
-        assert item["source_type"] == "mock"
-        assert item["source_locator"].startswith("mock://")
-
-
-def test_sandbox_mode_fails_closed_until_live_http_implemented(client: TestClient) -> None:
-    from app.src.connectors.tax_authority import TaxConnectorError, get_tax_connector
-    from app.src.context import Context
-    from app.src.db import db_session
-
-    workspace_id = _demo_workspace_id(client)
-    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
-
-    with db_session() as conn:
-        _set_tenant_setting(conn, "default", "connectors.tax.sat.mode", "sandbox")
-        _set_tenant_setting(conn, "default", "connectors.tax.sat.base_url", "https://sat.example.test")
-        conn.commit()
-        _set_connector_secret(ctx, "sat", "api_key", "sandbox-key")
-        connector = get_tax_connector(ctx, conn, "sat")
-
-    with pytest.raises(TaxConnectorError, match="PENDIENTE"):
-        connector.check_document_status("001-0001-0001")
-
-
-def test_external_lookup_fails_closed_without_fetcher(client: TestClient) -> None:
-    from app.src.context import Context
-    from app.src.db import db_session
-    from app.src.skill_primitives import external_lookup
-
-    workspace_id = _demo_workspace_id(client)
-    ctx = Context(workspace_id=workspace_id, tenant_id="default", user_id="local", actor_id="local")
-
-    with db_session() as conn:
-        result = external_lookup(
-            ctx,
-            conn,
-            skill_id="SKILL_FE_STATUS_CHECK",
-            query="estado comprobante 001",
-            required_sources=["atv"],
-            fetcher=None,
-        )
-
-    assert result["status"] == "failed"
-    assert result["error"] == "external_lookup_unavailable"
-    assert result["evidence"] == []

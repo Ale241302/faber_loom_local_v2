@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from .api import context_from_request
 from .audit import audit_writer
 from .auth import get_current_user
+from .connectors.tax_authority import get_tax_connector_secret
 from .context import SYSTEM_WORKSPACE_ID, Context
 from .db import (
     create_manual_invoice,
@@ -334,8 +335,19 @@ from pathlib import Path
 from fpdf import FPDF
 
 
-def _render_invoice_pdf(invoice: dict[str, Any]) -> bytes:
-    """Render a manual invoice as a simple non-fiscal PDF."""
+def _tenant_has_tax_certificate(ctx: Context) -> bool:
+    """Return True when the tenant has an ATV certificate configured (HE2-9 gate)."""
+
+    return bool(get_tax_connector_secret(ctx, "atv", "certificate"))
+
+
+def _render_invoice_pdf(invoice: dict[str, Any], *, has_tax_certificate: bool) -> bytes:
+    """Render a manual invoice as a PDF.
+
+    When ``has_tax_certificate`` is False the PDF carries the original non-fiscal
+    beta disclaimer (no regression).  When True the disclaimer is removed and the
+    fiscal authority data is printed instead.
+    """
 
     pdf = FPDF(unit="pt", format="A4")
     pdf.add_page()
@@ -349,9 +361,19 @@ def _render_invoice_pdf(invoice: dict[str, Any]) -> bytes:
     set_font("B", 16)
     pdf.cell(0, 22, "FaberLoom", ln=True)
     set_font("", 9)
-    pdf.cell(0, 12, "DOCUMENTO NO FISCAL - BETA", ln=True)
-    set_font("", 8)
-    pdf.cell(0, 10, "Este documento no tiene validez tributaria. Uso interno de Facturacion Beta.", ln=True)
+    if has_tax_certificate:
+        pdf.cell(0, 12, "DOCUMENTO FISCAL ELECTRONICO", ln=True)
+        set_font("", 8)
+        authority = invoice.get("tax_authority") or "ATV (Costa Rica)"
+        pdf.cell(0, 10, f"Autoridad tributaria: {authority}", ln=True)
+        if invoice.get("tax_document_key"):
+            pdf.cell(0, 10, f"Clave numerica: {invoice['tax_document_key']}", ln=True)
+        if invoice.get("tax_authority_status"):
+            pdf.cell(0, 10, f"Estado ante autoridad: {invoice['tax_authority_status']}", ln=True)
+    else:
+        pdf.cell(0, 12, "DOCUMENTO NO FISCAL - BETA", ln=True)
+        set_font("", 8)
+        pdf.cell(0, 10, "Este documento no tiene validez tributaria. Uso interno de Facturacion Beta.", ln=True)
     pdf.ln(8)
 
     set_font("B", 12)
@@ -433,8 +455,16 @@ def _render_invoice_pdf(invoice: dict[str, Any]) -> bytes:
     pdf.ln(16)
     set_font("", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.multi_cell(0, 10, "DOCUMENTO NO FISCAL - BETA. No emitido ante autoridad tributaria. "
-                           "Generado por FaberLoom para trazabilidad interna de facturacion manual.")
+    if has_tax_certificate:
+        pdf.multi_cell(
+            0,
+            10,
+            "Documento fiscal electronico generado por FaberLoom. "
+            "La validez tributaria esta sujeta a aceptacion por la autoridad correspondiente.",
+        )
+    else:
+        pdf.multi_cell(0, 10, "DOCUMENTO NO FISCAL - BETA. No emitido ante autoridad tributaria. "
+                               "Generado por FaberLoom para trazabilidad interna de facturacion manual.")
 
     return bytes(pdf.output())
 
@@ -455,7 +485,7 @@ def download_invoice_pdf(
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
-    pdf_bytes = _render_invoice_pdf(invoice)
+    pdf_bytes = _render_invoice_pdf(invoice, has_tax_certificate=_tenant_has_tax_certificate(ctx))
 
     with transaction(conn, ctx=ctx):
         _ensure_system_workspace(conn)
