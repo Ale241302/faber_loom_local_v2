@@ -379,6 +379,7 @@ def _chat_with_model(
     index_context: dict[str, Any],
     requested_provider: str | None = None,
     requested_model: str | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     """E5-fix4: responde conversación con un modelo REAL (cheap-first).
 
@@ -456,10 +457,16 @@ def _chat_with_model(
         started = _time.time()
         result = provider.complete(
             CompletionRequest(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query},
-                ],
+                # __E5FIX22__: historial del chat entre el system y la query.
+                messages=(
+                    [{"role": "system", "content": system_prompt}]
+                    + [
+                        {"role": m["role"], "content": str(m.get("content", ""))[:2500]}
+                        for m in (history or [])[-6:]
+                        if m.get("role") in ("user", "assistant") and m.get("content")
+                    ]
+                    + [{"role": "user", "content": query}]
+                ),
                 model=entry["model"],
                 provider_slug=entry["provider_slug"],
                 temperature=0.4,
@@ -514,6 +521,7 @@ def handle_presence_message(
     correlation_id: str | None = None,
     requested_provider: str | None = None,
     requested_model: str | None = None,
+    chat_id: str | None = None,
 ) -> dict[str, Any]:
     """Punto de entrada de la presencia para una consulta en ws-general.
 
@@ -564,10 +572,21 @@ def handle_presence_message(
         # __E5FIX6__: el modelo real se intenta SIEMPRE primero — la ausencia de
         # briefs (tenant "vacío" a ojos del índice) no debe degradar a texto
         # enlatado si hay providers configurados.
+        _history: list[dict[str, str]] = []
+        if chat_id:
+            try:
+                from ..db import get_message_history
+
+                _history = get_message_history(ctx, conn, chat_id)
+                if _history and _history[-1].get("role") == "user":
+                    _history = _history[:-1]
+            except Exception:
+                _history = []
         llm = _chat_with_model(
             ctx, conn, query, index_context,
             requested_provider=requested_provider,
             requested_model=requested_model,
+            history=_history,
         )
         if llm is not None:
             content = llm["content"]

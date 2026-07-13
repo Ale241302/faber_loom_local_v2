@@ -375,6 +375,32 @@ def run_auto_chain(
     if not has_catalog_capability(ctx, conn, "text", local_only=policy.get("require_local_only", False)):
         raise NoCapacityError("No text model available in workspace catalog")
 
+    # __E5FIX22__: el historial reciente del chat acompana la peticion para que
+    # referencias como "ese resumen que me diste" tengan significado en el
+    # planner y en cada paso. Fail-soft: sin historial, la peticion va sola.
+    user_request_ctx = user_request
+    try:
+        from ..db import get_message_history
+
+        _hist = get_message_history(ctx, conn, chat_id)
+        # El mensaje actual ya esta persistido (fix10) — se excluye del contexto.
+        if _hist and _hist[-1].get("role") == "user":
+            _hist = _hist[:-1]
+        _parts = []
+        for _m in _hist[-6:]:
+            _c = (_m.get("content") or "").strip()
+            if _c:
+                _parts.append(f"[{_m.get('role')}]: {_c[:2500]}")
+        _chat_context = "\n\n".join(_parts)[-8000:]
+        if _chat_context:
+            user_request_ctx = (
+                "Contexto de la conversacion (mensajes previos de este chat):\n"
+                f"{_chat_context}\n\n"
+                f"Peticion actual del usuario: {user_request}"
+            )
+    except Exception:
+        logger.exception("No se pudo construir el contexto del chat %s", chat_id)
+
     # Preserve legacy image-attachment deterministic plan for backwards compatibility.
     if image_attachment is not None:
         if not has_catalog_capability(ctx, conn, "vision", local_only=policy.get("require_local_only", False)):
@@ -412,7 +438,7 @@ def run_auto_chain(
         plan = planner.plan(
             ctx,
             conn,
-            user_request=user_request,
+            user_request=user_request_ctx,
             attachments=attachments or [],
             policy=policy,
         )
@@ -443,7 +469,7 @@ def run_auto_chain(
 
     task = TaskOrchestrator(ctx, conn, policy=policy).run_task_from_plan(
         chat_id=chat_id,
-        user_request=user_request,
+        user_request=user_request_ctx,
         plan=plan,
         plan_id=plan_id,
         attachments=attachments,
@@ -931,7 +957,11 @@ def _execute_step(
         model=model,
         provider_slug=provider_slug,
         temperature=0.7,
-        max_tokens=1024,
+        # __E5FIX23__: 1024 truncaba resumenes a mitad de frase y dejaba SIN
+        # respuesta a los modelos razonadores (kimi-k2-thinking gasta tokens de
+        # salida "pensando" antes de escribir; si el tope se agota en el
+        # razonamiento, content llega vacio). 4096 cubre razonamiento + texto.
+        max_tokens=4096,
         spent_usd=spent,
     )
 
