@@ -42,22 +42,36 @@ def _hours_ago(hours: int) -> str:
     return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def find_latest_backup_smoke_report(audits_dir: Path) -> tuple[Path, datetime] | None:
-    """Return the most recent BACKUP_SMOKE_*.md report in ``audits_dir``.
+def find_latest_backup_artifact(
+    audits_dir: Path,
+    data_dir: Path | None = None,
+) -> tuple[Path, datetime] | None:
+    """Return the most recent backup artifact.
+
+    Accepts any of the following as evidence of a recent backup:
+      - ``docs/audits/BACKUP_SMOKE_*.md`` (SQLite smoke reports)
+      - ``data/backups/faberloom_postgres_*.sql.gz`` (Postgres dumps)
+      - ``data/*.faberloom`` (SQLite archives)
 
     Used by the ``stale_backup_smoke`` detector and the ops freshness script.
     """
 
-    candidates = sorted(
-        audits_dir.glob("BACKUP_SMOKE_*.md"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
+    candidates: list[Path] = []
+    candidates.extend(audits_dir.glob("BACKUP_SMOKE_*.md"))
+    if data_dir is not None:
+        candidates.extend(data_dir.glob("*.faberloom"))
+        candidates.extend(data_dir.glob("backups/faberloom_postgres_*.sql.gz"))
+
+    candidates = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
     if not candidates:
         return None
     latest = candidates[0]
     mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
     return latest, mtime
+
+
+# Backwards-compatible alias used by earlier E5-2 commits.
+find_latest_backup_smoke_report = find_latest_backup_artifact
 
 
 def _fmt_delta(iso_dt: str) -> str:
@@ -459,18 +473,20 @@ def detect_unreviewed_gold(ctx: Context, conn: sqlite3.Connection) -> list[Ambie
 def detect_stale_backup_smoke(
     ctx: Context, conn: sqlite3.Connection
 ) -> list[AmbientFinding]:
-    """Detect if the latest backup/restore smoke report is older than 24 hours.
+    """Detect if the latest backup artifact is older than 24 hours.
 
-    The detector inspects ``docs/audits/BACKUP_SMOKE_*.md`` files written by
-    ``app/scripts/backup_restore_smoke.py``.  No finding is emitted when a
-    report exists and is within the freshness threshold.
+    Accepts ``BACKUP_SMOKE_*.md`` reports (SQLite), ``*.faberloom`` archives,
+    or Postgres dumps ``faberloom_postgres_*.sql.gz`` as evidence of a recent
+    backup.  No finding is emitted when an artifact exists and is within the
+    freshness threshold.
     """
 
     repo_root = Path(__file__).resolve().parents[2]
     audits_dir = repo_root / "docs" / "audits"
+    data_dir = repo_root / "data"
     threshold_hours = 24
 
-    result = find_latest_backup_smoke_report(audits_dir)
+    result = find_latest_backup_artifact(audits_dir, data_dir)
     if result is None:
         return [
             AmbientFinding(
@@ -478,19 +494,21 @@ def detect_stale_backup_smoke(
                 target_type="system",
                 target_id="backup_smoke",
                 severity="critical",
-                title="No existe reporte de backup smoke",
+                title="No existe evidencia de backup reciente",
                 description=(
-                    f"No se encontró ningún reporte BACKUP_SMOKE_*.md en {audits_dir}. "
-                    f"El smoke de backup debe ejecutarse al menos cada {threshold_hours} horas."
+                    f"No se encontró ningún artifact de backup en {audits_dir} "
+                    f"ni en {data_dir}. El backup debe ejecutarse al menos cada "
+                    f"{threshold_hours} horas."
                 ),
                 suggested_action=(
-                    "Ejecutar python app/scripts/backup_restore_smoke.py "
-                    "y verificar que genere reporte en docs/audits/."
+                    "Para SQLite: ejecutar python app/scripts/backup_restore_smoke.py. "
+                    "Para Postgres: ejecutar app/scripts/backup_postgres.sh."
                 ),
                 evidence_json={
                     "audits_dir": str(audits_dir),
+                    "data_dir": str(data_dir),
                     "threshold_hours": threshold_hours,
-                    "latest_report": None,
+                    "latest_artifact": None,
                     "latest_mtime": None,
                     "age_hours": None,
                 },
@@ -510,18 +528,18 @@ def detect_stale_backup_smoke(
             target_type="system",
             target_id="backup_smoke",
             severity="high",
-            title="Backup smoke desactualizado",
+            title="Backup desactualizado",
             description=(
-                f"El último reporte de backup smoke ({latest.name}) tiene "
+                f"El último artifact de backup ({latest.name}) tiene "
                 f"{age_hours:.1f} horas (umbral: {threshold_hours}h)."
             ),
             suggested_action=(
-                "Reejecutar python app/scripts/backup_restore_smoke.py "
-                "y revisar integridad del backup más reciente."
+                "Reejecutar el script de backup correspondiente y verificar "
+                "integridad del artifact más reciente."
             ),
             evidence_json={
-                "latest_report": latest.name,
-                "latest_report_path": str(latest),
+                "latest_artifact": latest.name,
+                "latest_artifact_path": str(latest),
                 "latest_mtime": mtime.isoformat(),
                 "age_hours": round(age_hours, 2),
                 "threshold_hours": threshold_hours,

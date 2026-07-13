@@ -266,7 +266,7 @@ def test_stale_backup_smoke_finding_when_report_missing(monkeypatch: pytest.Monk
     from app.src.ambient_detectors import detect_stale_backup_smoke
     from app.src.context import Context
 
-    monkeypatch.setattr(ad, "find_latest_backup_smoke_report", lambda _path: None)
+    monkeypatch.setattr(ad, "find_latest_backup_artifact", lambda _path, _data_dir=None: None)
 
     ctx = Context(workspace_id="ws", tenant_id="default")
     findings = detect_stale_backup_smoke(ctx, None)
@@ -275,7 +275,7 @@ def test_stale_backup_smoke_finding_when_report_missing(monkeypatch: pytest.Monk
     finding = findings[0]
     assert finding.detector_slug == "stale_backup_smoke"
     assert finding.severity == "critical"
-    assert "No existe reporte" in finding.title
+    assert "No existe evidencia" in finding.title
 
 
 def test_stale_backup_smoke_finding_when_report_stale(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,8 +286,8 @@ def test_stale_backup_smoke_finding_when_report_stale(monkeypatch: pytest.Monkey
     stale_mtime = datetime.now(timezone.utc) - timedelta(hours=48)
     monkeypatch.setattr(
         ad,
-        "find_latest_backup_smoke_report",
-        lambda _path: (Path("BACKUP_SMOKE_20260712T000000Z.md"), stale_mtime),
+        "find_latest_backup_artifact",
+        lambda _path, _data_dir=None: (Path("BACKUP_SMOKE_20260712T000000Z.md"), stale_mtime),
     )
 
     ctx = Context(workspace_id="ws", tenant_id="default")
@@ -308,8 +308,8 @@ def test_stale_backup_smoke_no_finding_when_report_fresh(monkeypatch: pytest.Mon
     fresh_mtime = datetime.now(timezone.utc) - timedelta(hours=1)
     monkeypatch.setattr(
         ad,
-        "find_latest_backup_smoke_report",
-        lambda _path: (Path("BACKUP_SMOKE_20260713T000000Z.md"), fresh_mtime),
+        "find_latest_backup_artifact",
+        lambda _path, _data_dir=None: (Path("BACKUP_SMOKE_20260713T000000Z.md"), fresh_mtime),
     )
 
     ctx = Context(workspace_id="ws", tenant_id="default")
@@ -324,7 +324,7 @@ def test_stale_backup_smoke_creates_proposal_when_missing(client: TestClient, mo
 
     from app.src import ambient_detectors as ad
 
-    monkeypatch.setattr(ad, "find_latest_backup_smoke_report", lambda _path: None)
+    monkeypatch.setattr(ad, "find_latest_backup_artifact", lambda _path, _data_dir=None: None)
 
     resp = client.post(
         "/api/admin/ambient/trigger",

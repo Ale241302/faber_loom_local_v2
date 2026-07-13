@@ -41,7 +41,7 @@ def test_check_freshness_no_report(audits_dir: Path) -> None:
 
     result = check_freshness(audits_dir, max_age_hours=24)
     assert result["fresh"] is False
-    assert result["latest_report"] is None
+    assert result["latest_artifact"] is None
     assert result["ok"] is False
 
 
@@ -55,7 +55,7 @@ def test_check_freshness_fresh(audits_dir: Path) -> None:
     )
     result = check_freshness(audits_dir, max_age_hours=24)
     assert result["fresh"] is True
-    assert result["latest_report"] is not None
+    assert result["latest_artifact"] is not None
     assert result["age_hours"] <= 24
     assert result["ok"] is True
 
@@ -85,8 +85,8 @@ def test_detector_is_read_only(audits_dir: Path, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(
         ad,
-        "find_latest_backup_smoke_report",
-        lambda _path: (Path("BACKUP_SMOKE_20260713T120000Z.md"), fresh_mtime),
+        "find_latest_backup_artifact",
+        lambda _path, _data_dir=None: (Path("BACKUP_SMOKE_20260713T120000Z.md"), fresh_mtime),
     )
 
     # Passing None as the DB connection proves the detector does not touch it

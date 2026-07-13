@@ -29,7 +29,7 @@ from typing import Any
 # Allow running from repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.ambient_detectors import find_latest_backup_smoke_report  # noqa: E402
+from src.ambient_detectors import find_latest_backup_artifact  # noqa: E402
 
 
 DEFAULT_MAX_AGE_HOURS = 48
@@ -38,27 +38,31 @@ DEFAULT_MAX_AGE_HOURS = 48
 def check_freshness(
     audits_dir: Path,
     max_age_hours: int = DEFAULT_MAX_AGE_HOURS,
+    data_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Return freshness metadata for the latest backup smoke report.
+    """Return freshness metadata for the latest backup artifact.
+
+    Accepts ``BACKUP_SMOKE_*.md`` reports, ``*.faberloom`` archives, or
+    Postgres dumps ``faberloom_postgres_*.sql.gz``.
 
     Returns a dict with keys:
         - fresh (bool)
         - last_smoke_at (str ISO8601 or None)
         - age_hours (float or None)
         - max_age_hours (int)
-        - latest_report (str or None)
-        - ok (bool): True when fresh or when a stale/missing report was
+        - latest_artifact (str or None)
+        - ok (bool): True when fresh or when a stale/missing artifact was
           re-generated successfully via ``--run-smoke``.
     """
 
-    result = find_latest_backup_smoke_report(audits_dir)
+    result = find_latest_backup_artifact(audits_dir, data_dir)
     if result is None:
         return {
             "fresh": False,
             "last_smoke_at": None,
             "age_hours": None,
             "max_age_hours": max_age_hours,
-            "latest_report": None,
+            "latest_artifact": None,
             "ok": False,
         }
 
@@ -69,7 +73,7 @@ def check_freshness(
         "last_smoke_at": mtime.isoformat(),
         "age_hours": round(age_hours, 2),
         "max_age_hours": max_age_hours,
-        "latest_report": latest.name,
+        "latest_artifact": latest.name,
         "ok": age_hours <= max_age_hours,
     }
 
@@ -106,6 +110,13 @@ def main() -> int:
              "(default: docs/audits relative to repo root)",
     )
     parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Directory containing *.faberloom or backups/ "
+             "(default: data relative to repo root)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output a JSON summary instead of human-readable text",
@@ -115,20 +126,23 @@ def main() -> int:
     audits_dir = args.audits_dir or (
         Path(__file__).resolve().parents[2] / "docs" / "audits"
     )
-    result = check_freshness(audits_dir, max_age_hours=args.max_age_hours)
+    data_dir = args.data_dir or (
+        Path(__file__).resolve().parents[2] / "data"
+    )
+    result = check_freshness(audits_dir, max_age_hours=args.max_age_hours, data_dir=data_dir)
 
-    if result["latest_report"] is None:
+    if result["latest_artifact"] is None:
         if not args.json:
             print(
-                f"CRITICAL: no BACKUP_SMOKE_*.md report found in {audits_dir}",
+                f"CRITICAL: no backup artifact found in {audits_dir} or {data_dir}",
                 file=sys.stderr,
             )
         if args.run_smoke:
             if not args.json:
                 print("Running backup_restore_smoke.py ...", file=sys.stderr)
             _run_backup_restore_smoke()
-            result = check_freshness(audits_dir, max_age_hours=args.max_age_hours)
-        if result["latest_report"] is None:
+            result = check_freshness(audits_dir, max_age_hours=args.max_age_hours, data_dir=data_dir)
+        if result["latest_artifact"] is None:
             if args.json:
                 print(json.dumps(result))
             return 2
@@ -136,7 +150,7 @@ def main() -> int:
     if not result["fresh"]:
         if not args.json:
             print(
-                f"WARNING: latest backup smoke report {result['latest_report']} is "
+                f"WARNING: latest backup artifact {result['latest_artifact']} is "
                 f"{result['age_hours']:.1f}h old (threshold {args.max_age_hours}h)",
                 file=sys.stderr,
             )
@@ -144,7 +158,7 @@ def main() -> int:
             if not args.json:
                 print("Running backup_restore_smoke.py ...", file=sys.stderr)
             _run_backup_restore_smoke()
-            result = check_freshness(audits_dir, max_age_hours=args.max_age_hours)
+            result = check_freshness(audits_dir, max_age_hours=args.max_age_hours, data_dir=data_dir)
         if not result["fresh"]:
             if args.json:
                 print(json.dumps(result))
@@ -154,7 +168,7 @@ def main() -> int:
         print(json.dumps(result))
     else:
         print(
-            f"OK: latest backup smoke report {result['latest_report']} is "
+            f"OK: latest backup artifact {result['latest_artifact']} is "
             f"{result['age_hours']:.1f}h old (threshold {args.max_age_hours}h)"
         )
     return 0
