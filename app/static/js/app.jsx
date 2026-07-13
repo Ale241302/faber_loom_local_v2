@@ -1177,7 +1177,15 @@ function SpaceView({ activeWorkspace }) {
     }
   };
 
-  useEffect(() => { loadChats(); loadRouter(); }, [activeWorkspace]);
+  // __E5FIX5__: al cambiar de workspace se limpia el estado del chat anterior
+  useEffect(() => {
+    setActiveChatId(null);
+    setMessages([]);
+    setChats([]);
+    setError(null);
+    loadChats();
+    loadRouter();
+  }, [activeWorkspace && activeWorkspace.id]);
   useEffect(() => { loadMessages(activeChatId); }, [activeChatId]);
 
   // Auto-scroll to the newest message / thinking indicator.
