@@ -2149,6 +2149,7 @@ def _run_auto_chain_background(
                     content=auto_content,
                     route=route,
                 )
+            conn.commit()  # __E5FIX14__: garantizar persistencia del resultado
         except Exception as exc:  # noqa: BLE001 — todo error debe llegar al chat
             detail = str(exc) or exc.__class__.__name__
             logger.warning("auto background chain failed: %s", detail)
@@ -2167,6 +2168,7 @@ def _run_auto_chain_background(
                             "model": "error",
                         },
                     )
+                conn.commit()  # __E5FIX14__
             except Exception:
                 logger.exception("auto background: no se pudo registrar el error en el chat")
         else:
@@ -2420,6 +2422,10 @@ def api_create_completion(
             user_row = insert_message(
                 ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route
             )
+        # __E5FIX14__: commit explícito — transaction() no commitea si la conexión
+        # ya estaba en transacción (p.ej. un SELECT previo sin wrapper), y el
+        # teardown de get_db() cierra SIN commit → el insert se perdía.
+        conn.commit()
         user_message_read = _serialize_message(user_row)
 
         background_tasks.add_task(
