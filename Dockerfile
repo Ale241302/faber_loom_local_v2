@@ -39,6 +39,7 @@ WORKDIR /app
 # Copy only the backend and static frontend assets.
 COPY app/src ./app/src
 COPY app/static ./app/static
+COPY app/scripts ./app/scripts
 COPY app/VERSION ./app/VERSION
 COPY app/pyproject.toml ./app/pyproject.toml
 COPY faberloom ./app/faberloom
