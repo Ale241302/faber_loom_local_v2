@@ -342,6 +342,12 @@ function WorkspacesAdminView() {
 var MSG_IMG_RE = /(https?:\/\/\S+\.(?:png|jpe?g|webp|gif)(?:\?\S*)?|\/api\/workspaces\/[\w.-]+\/objects\/[\w.-]+\/content)/g;
 function renderMessageContent(raw) {
   let text = raw == null ? "" : String(raw);
+  // __E5FIX21__: URLs presignadas de MinIO caducan en 1h (403). El path trae
+  // ws_... y obj_..., asi que se reescriben a la URL estable del API.
+  text = text.replace(
+    /https?:\/\/\S+\/ws-(ws_[A-Za-z0-9]+)\/generated\/(obj_[A-Za-z0-9]+)\/\S+/g,
+    (full, ws, obj) => "/api/workspaces/" + ws + "/objects/" + obj + "/content"
+  );
   // __E5FIX20__: quita la etiqueta "Generated image:" y deduplica URLs de
   // imagen repetidas en el mismo mensaje (mensajes guardados antes del fix19).
   const seenImg = new Set();
