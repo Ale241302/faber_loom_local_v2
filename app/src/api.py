@@ -2008,6 +2008,7 @@ def _handle_presence_completion(
         correlation_id=correlation_id,
         requested_provider=payload.provider_slug,
         requested_model=payload.model,
+        chat_id=chat_id,
     )
     llm_info = presence_result.get("llm") or {}
 
