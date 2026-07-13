@@ -337,6 +337,33 @@ function WorkspacesAdminView() {
   </div>;
 }
 
+// __E5FIX19__ — renderiza <img> para URLs de imagen dentro de mensajes del chat
+// (URL estable /objects/{id}/content y presignadas viejas de MinIO *.png?...).
+var MSG_IMG_RE = /(https?:\/\/\S+\.(?:png|jpe?g|webp|gif)(?:\?\S*)?|\/api\/workspaces\/[\w.-]+\/objects\/[\w.-]+\/content)/g;
+function renderMessageContent(raw) {
+  const text = raw == null ? "" : String(raw);
+  const re = new RegExp(MSG_IMG_RE.source, "g");
+  const parts = [];
+  let last = 0, m, i = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(<span key={"t" + i}>{text.slice(last, m.index)}</span>);
+    parts.push(
+      <a key={"a" + i} href={m[0]} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+        <img
+          src={m[0]}
+          alt="imagen generada"
+          loading="lazy"
+          style={{ display: "block", maxWidth: "100%", maxHeight: 420, borderRadius: 10, margin: "8px 0", border: "1px solid var(--border, rgba(255,255,255,0.1))" }}
+        />
+      </a>
+    );
+    last = m.index + m[0].length; i += 1;
+  }
+  if (!parts.length) return text;
+  if (last < text.length) parts.push(<span key="tfin">{text.slice(last)}</span>);
+  return parts;
+}
+
 function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, generalWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
@@ -1411,7 +1438,7 @@ function SpaceView({ activeWorkspace }) {
             {msg.route && msg.route.attachment && <MessageAttachment workspaceId={activeWorkspace.id} attachment={msg.route.attachment}/>}
             <div className="message-content">{(() => {
               const raw = msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content;
-              return msg.route && msg.route.attachment ? stripAttachmentMarkers(raw) : raw;
+              return renderMessageContent(msg.route && msg.route.attachment ? stripAttachmentMarkers(raw) : raw);
             })()}</div>
             {msg.role === "assistant" && msg.route && (() => {
               const r = msg.route;

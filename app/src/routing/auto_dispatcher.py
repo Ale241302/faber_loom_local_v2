@@ -828,8 +828,10 @@ def _execute_openai_image_step(
             ctx, conn, image_bytes, file_name=file_name, mime_type="image/png"
         )
         object_id = object_row["id"]
-        content_url = get_object_store().presigned_download_url(
-            object_row["bucket"], object_row["object_key"], expires=3600
+        # __E5FIX19__: URL estable del API (autenticada, descifra al vuelo y no
+        # expira); la presignada de MinIO caduca en 1h -> links muertos en chats.
+        content_url = (
+            f"/api/workspaces/{ctx.require_scoped_workspace()}/objects/{object_id}/content"
         )
     elif remote_url:
         content_url = str(remote_url)
@@ -987,10 +989,8 @@ def _build_final_content(
     content = str(last_result.get("content", ""))
 
     if last_capability == "image_gen":
-        # Find the summary from the previous text step if available.
-        summary = ""
-        if len(plan) >= 2 and plan[-2]["capability"] == "text":
-            summary = content
-        return f"{summary}\n\nGenerated image: {content}".strip()
+        # __E5FIX19__: antes duplicaba la URL (summary tomaba el content del
+        # propio paso de imagen). El mensaje final es solo la imagen.
+        return f"Imagen generada:\n\n{content}".strip()
 
     return content
