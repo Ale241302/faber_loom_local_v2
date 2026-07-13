@@ -283,6 +283,24 @@ def _extract_video(blob: bytes, require_local: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _extract_pdf(blob: bytes) -> str:
+    """__E5FIX8__: extraer texto de un PDF adjunto (pdfplumber vía kb_extractors)."""
+
+    from .routing.pdf_images import extract_pdf_text_and_images
+
+    try:
+        extracted = extract_pdf_text_and_images(blob)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise IngestError(f"PDF parse error: {exc}") from exc
+    text = (extracted.get("text") or "").strip()
+    if not text:
+        raise IngestError(
+            "El PDF no contiene texto extraíble (¿escaneado sin OCR?). "
+            "Convierte a texto o sube las páginas como imágenes."
+        )
+    return text
+
+
 def extract_text_from_blob(
     *,
     blob: bytes,
@@ -295,6 +313,8 @@ def extract_text_from_blob(
     not installed; raises ``IngestError`` for malformed or unsupported content.
     """
 
+    if ingest_type == "pdf":
+        return _extract_pdf(blob)
     if ingest_type == "docx":
         return _extract_docx(blob)
     if ingest_type == "json":
