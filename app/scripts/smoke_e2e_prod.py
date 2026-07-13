@@ -218,31 +218,57 @@ class SmokeClient:
     ) -> SmokeStep:
         step = SmokeStep(name="upload_attachment")
         path = Path(file_path)
-        boundary = "----SmokeBoundary"
         mime_type, _ = mimetypes.guess_type(str(path))
         mime_type = mime_type or "application/octet-stream"
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="title"\r\n\r\n{title}\r\n'
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="source_version"\r\n\r\nv1\r\n'
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="level"\r\n\r\n0\r\n'
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
-            f"Content-Type: {mime_type}\r\n\r\n"
-        ).encode("utf-8")
-        body += path.read_bytes()
-        body += f"\r\n--{boundary}--\r\n".encode("utf-8")
+        data_bytes = path.read_bytes()
 
-        headers = {
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        }
         status, resp = self._request(
             "POST",
-            f"/api/workspaces/{workspace_id}/kb/upload",
-            data=body,  # type: ignore[arg-type]
-            headers=headers,
+            f"/api/workspaces/{workspace_id}/objects/presigned-upload",
+            {
+                "origin": "upload",
+                "file_name": path.name,
+                "mime_type": mime_type,
+                "size_bytes": len(data_bytes),
+            },
+            timeout=60,
+        )
+        if status not in (200, 201) or not isinstance(resp, dict):
+            step.status = "failed"
+            step.status_code = status
+            step.detail = str(resp)[:500]
+            return step
+
+        upload_url = resp.get("upload_url")
+        object_id = resp.get("object_id")
+        if not upload_url or not object_id:
+            step.status = "failed"
+            step.detail = "missing upload_url or object_id"
+            return step
+
+        try:
+            put_req = urllib.request.Request(
+                upload_url,
+                data=data_bytes,
+                method="PUT",
+                headers={"Content-Type": mime_type},
+            )
+            with urllib.request.urlopen(put_req, timeout=60) as put_resp:
+                _ = put_resp.status
+        except urllib.error.HTTPError as exc:
+            step.status = "failed"
+            step.status_code = exc.code
+            step.detail = f"MinIO upload failed: {exc.read().decode('utf-8', errors='replace')[:500]}"
+            return step
+        except Exception as exc:
+            step.status = "failed"
+            step.detail = f"MinIO upload error: {exc}"
+            return step
+
+        status, resp = self._request(
+            "POST",
+            f"/api/workspaces/{workspace_id}/objects/confirm",
+            {"object_id": object_id, "size_bytes": len(data_bytes)},
             timeout=60,
         )
         step.status_code = status
