@@ -58,6 +58,17 @@ def seed_demo_workspace(conn: sqlite3.Connection) -> dict:
     bootstrap_ctx = system_context()
     with transaction(conn, ctx=bootstrap_ctx):
         existing = get_workspace_by_slug(bootstrap_ctx, conn, DEMO_WORKSPACE_SLUG)
+    if existing is None:
+        # __E5FIX_SEED_DEDUP__: cinturón anti-duplicados — si en el pasado el
+        # slug quedó con sufijo (mwt-demo-2, ...), busca por nombre antes de
+        # crear otro demo. Sin esto, cada arranque podía sumar un "MWT Demo".
+        from .db import system_list_workspaces
+
+        with transaction(conn, ctx=bootstrap_ctx):
+            for _row in system_list_workspaces(bootstrap_ctx, conn):
+                if _row.get("name") == DEMO_WORKSPACE_NAME:
+                    existing = _row
+                    break
     if existing is not None:
         ensure_tenant_general_workspace(conn, bootstrap_ctx)
         return existing

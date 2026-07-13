@@ -1097,6 +1097,99 @@ def api_create_workspace(
     return WorkspaceRead(**created)
 
 
+# __E5FIX_WS_ADMIN__ — administración de workspaces (renombrar / eliminar vacío)
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceRead)
+def api_rename_workspace(
+    workspace_id: str,
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> WorkspaceRead:
+    """Renombrar un workspace. Solo cambia el nombre; el slug es estable."""
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    workspace = get_workspace(ctx, conn)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    name = str(payload.get("name") or "").strip()
+    if not name or len(name) > 120:
+        raise HTTPException(status_code=422, detail="Nombre inválido (1-120 caracteres)")
+    from .db import utc_now as _ws_utc_now
+
+    audit_event = None
+    with transaction(conn, ctx=ctx):
+        conn.execute(
+            "UPDATE workspace SET name = ?, updated_at = ? WHERE id = ? AND tenant_id = ?",
+            (name, _ws_utc_now(), workspace["id"], ctx.tenant_id),
+        )
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="workspace.renamed",
+            payload={"workspace_id": workspace["id"], "old_name": workspace["name"], "new_name": name},
+            mirror_jsonl=False,
+        )
+    if audit_event is not None:
+        _mirror_audit(audit_event)
+    updated = get_workspace(ctx, conn)
+    return WorkspaceRead(**updated)
+
+
+@router.delete("/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_workspace(
+    workspace_id: str,
+    request: Request,
+    confirm_slug: str = Query(...),
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> Response:
+    """Eliminar un workspace VACÍO (sin chats, KB ni rutinas). Fail-closed.
+
+    Guardas: jamás el chat general (tenant_general) ni el canario; exige
+    confirm_slug igual al slug del workspace.
+    """
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    workspace = get_workspace(ctx, conn)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if workspace.get("kind") == "tenant_general":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El chat general no puede eliminarse")
+    if int(workspace.get("is_canary") or 0) == 1:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El workspace canario no puede eliminarse")
+    if confirm_slug != workspace["slug"]:
+        raise HTTPException(status_code=422, detail="confirm_slug no coincide con el slug del workspace")
+    counts: dict[str, int] = {}
+    with transaction(conn, ctx=ctx):
+        for table in ("chat", "kb_source", "routine"):
+            row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE workspace_id = ? AND tenant_id = ?",
+                (workspace["id"], ctx.tenant_id),
+            ).fetchone()
+            counts[table] = int(row["n"] if row is not None else 0)
+    non_empty = {k: v for k, v in counts.items() if v > 0}
+    if non_empty:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"El workspace tiene contenido y no se elimina: {non_empty}. Vacíalo o expórtalo primero.",
+        )
+    audit_event = None
+    with transaction(conn, ctx=ctx):
+        conn.execute(
+            "DELETE FROM workspace WHERE id = ? AND tenant_id = ?",
+            (workspace["id"], ctx.tenant_id),
+        )
+        audit_event = audit_writer.write(
+            ctx,
+            conn,
+            action="workspace.deleted",
+            payload={"workspace_id": workspace["id"], "name": workspace["name"], "slug": workspace["slug"]},
+            mirror_jsonl=False,
+        )
+    if audit_event is not None:
+        _mirror_audit(audit_event)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceRead)
 def api_get_workspace(
     workspace_id: str,
@@ -1901,11 +1994,6 @@ def _handle_presence_completion(
             status_code=status.HTTP_409_CONFLICT,
             detail="Skill selection is not supported in the general chat",
         )
-    if payload.mode == "auto":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Auto mode is not supported in the general chat",
-        )
 
     from uuid import uuid4
 
@@ -1938,6 +2026,8 @@ def _handle_presence_completion(
             content=presence_result["content"],
             route={
                 "presence": True,
+                "provider_slug": "faberloom",
+                "model": "agente-vivo",
                 "intent": presence_result.get("intent"),
                 "level": presence_result.get("level"),
                 "target_workspace_id": presence_result.get("target_workspace_id"),
@@ -1987,8 +2077,17 @@ def api_create_completion(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
     # E4-4: chat general del tenant (ws-general) enruta a la presencia única.
+    # __E5FIX_AUTO_GENERAL__: el modo auto SÍ está soportado en el chat general —
+    # se enruta por el flujo normal (planner/auto chain) sembrando el catálogo
+    # del workspace la primera vez. El resto de mensajes sigue en la presencia.
     if workspace.get("kind") == "tenant_general":
-        return _handle_presence_completion(ctx, conn, chat_id, payload, workspace, request)
+        if payload.mode == "auto":
+            from .routing.catalog import has_catalog_capability, seed_workspace_catalog
+
+            if not has_catalog_capability(ctx, conn, "text"):
+                seed_workspace_catalog(ctx, conn, workspace["id"])
+        else:
+            return _handle_presence_completion(ctx, conn, chat_id, payload, workspace, request)
 
     byo_mode = resolve(conn, ctx, "routing.byo_mode", default="hibrido")
 

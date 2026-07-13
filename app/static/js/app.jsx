@@ -251,6 +251,73 @@ function RailItem({ label, icon, dot, badge, active, onClick }) {
   </button>;
 }
 
+// __E5FIX_WS_VIEW__ — administración de workspaces (crear / renombrar / eliminar vacío)
+function WorkspacesAdminView() {
+  const [items, setItems] = useState([]);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState("");
+  const load = () => {
+    fetch("/api/workspaces", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setItems(d.workspaces || []))
+      .catch((e) => setErr(String(e)));
+  };
+  useEffect(() => { load(); }, []);
+  const call = (path, opts) => {
+    setBusy(true); setErr(null);
+    return fetch(path, { credentials: "include", headers: { "Content-Type": "application/json" }, ...opts })
+      .then(async (r) => {
+        if (!r.ok && r.status !== 204) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail || r.status));
+        }
+      })
+      .then(() => load())
+      .catch((e) => setErr(String(e.message || e)))
+      .finally(() => setBusy(false));
+  };
+  const createWs = () => {
+    const name = newName.trim();
+    if (!name) return;
+    call("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }).then(() => setNewName(""));
+  };
+  const renameWs = (ws) => {
+    const name = window.prompt("Nuevo nombre para \"" + ws.name + "\":", ws.name);
+    if (!name || name.trim() === ws.name) return;
+    call("/api/workspaces/" + ws.id, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+  };
+  const deleteWs = (ws) => {
+    const confirmSlug = window.prompt("Para eliminar \"" + ws.name + "\" escribe su slug exacto (" + ws.slug + "). Solo se eliminan workspaces vacíos:");
+    if (confirmSlug === null) return;
+    call("/api/workspaces/" + ws.id + "?confirm_slug=" + encodeURIComponent(confirmSlug.trim()), { method: "DELETE" });
+  };
+  return <div style={{ padding: 24, maxWidth: 900 }}>
+    <h2 style={{ marginBottom: 4 }}>Workspaces</h2>
+    <p style={{ opacity: 0.7, marginBottom: 16 }}>Crear, renombrar y eliminar. Solo los workspaces vacíos se pueden eliminar; el chat general y el canario están protegidos.</p>
+    {err && <div style={{ color: "#C96442", marginBottom: 12 }}>{err}</div>}
+    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre del nuevo workspace" style={{ flex: 1, padding: 8 }} onKeyDown={(e) => { if (e.key === "Enter") createWs(); }} />
+      <button className="toolset-invoke" disabled={busy || !newName.trim()} onClick={createWs}>Crear</button>
+    </div>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead><tr style={{ textAlign: "left", opacity: 0.7 }}><th style={{ padding: 6 }}>Nombre</th><th>Slug</th><th>Tipo</th><th>Creado</th><th></th></tr></thead>
+      <tbody>
+        {items.map((ws) => <tr key={ws.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <td style={{ padding: 6 }}>{ws.name}</td>
+          <td><code>{ws.slug}</code></td>
+          <td>{ws.kind}{ws.is_canary ? " · canary" : ""}</td>
+          <td>{(ws.created_at || "").slice(0, 10)}</td>
+          <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+            <button disabled={busy} onClick={() => renameWs(ws)}>Renombrar</button>{" "}
+            <button disabled={busy || ws.is_canary === 1} onClick={() => deleteWs(ws)}>Eliminar</button>
+          </td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
 function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, generalWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
@@ -316,18 +383,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
   const canManageSkills = ["owner", "curator", "admin"].includes(userRole) || isPlatformAdmin(user);
 
   return <aside className={cx("rail", hidden && "hidden")}>
-    {generalWorkspace && (
-      <div className="rail-section" style={{ paddingBottom: 8, borderBottom: "1px solid var(--border-subtle)" }}>
-        <button
-          type="button"
-          className={cx("rail-item", activeWorkspaceId === generalWorkspace.id && "is-active")}
-          onClick={() => setActiveWorkspaceId(generalWorkspace.id)}
-          title="Chat general del tenant"
-        >
-          <span style={{ fontStyle: "italic" }}>— {generalWorkspace.display_name || "Faber"}</span>
-        </button>
-      </div>
-    )}
+    {/* __E5FIX_RAIL__: el chat general vive en el selector de workspaces */}
     <div className="mode-group" aria-label="Modos de FaberLoom">
       {MODES.map((item) => <button key={item.id} type="button" className={cx("mode-button", mode === item.id && "is-active")} onClick={() => go(item.id, { operar: "space", aprender: "kb", admin: "settings" }[item.id])}>{item.label}</button>)}
     </div>
@@ -336,7 +392,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <section className="rail-section">
           <div className="rail-label"><span>Workspace</span><span>{status}</span></div>
           <div className="workspace-card">
-            <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => setActiveWorkspaceId(event.target.value || null)} disabled={!workspaces.length} aria-label="Workspace activo">
+            <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => setActiveWorkspaceId(event.target.value || null)} disabled={!workspaces.length && !generalWorkspace} aria-label="Workspace activo">
+              {generalWorkspace && <option value={generalWorkspace.id}>{"— " + (generalWorkspace.display_name || generalWorkspace.name || "Chat general")}</option>}
               {!workspaces.length && <option value="">Sin workspace</option>}
               {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
             </select>
@@ -391,6 +448,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
             <RailItem label="Salud" icon="activity" active={nav === "health"} onClick={() => setNav("health")} />
             <RailItem label="Audit" icon="audit" active={nav === "audit"} onClick={() => setNav("audit")} />
             <RailItem label="Config. en cascada" icon="settings" active={nav === "tenant-settings"} onClick={() => setNav("tenant-settings")} />
+            <RailItem label="Workspaces" icon="database" active={nav === "workspaces-admin"} onClick={() => setNav("workspaces-admin")} />
             <RailItem label="Promoción de packs" icon="spark" active={nav === "promotion"} onClick={() => setNav("promotion")} />
             {isPlatformAdmin(user) && <RailItem label="Admin de plataforma" icon="shield" active={nav === "tenant-admin"} onClick={() => setNav("tenant-admin")} />}
             <RailItem label="Tenant" icon="database" active={nav === "foundation"} onClick={() => { setNav("foundation"); setFoundationView("m16-tenant"); }} />
@@ -1317,9 +1375,12 @@ function SpaceView({ activeWorkspace }) {
               const requested = r.requested_provider_slug || r.requested_model
                 ? `${r.requested_provider_slug || "auto"}${r.requested_model ? "/" + r.requested_model : ""}`
                 : null;
+              const modelLabel = (r.provider_slug && r.model)
+                ? `${r.provider_slug}/${r.model}`
+                : (r.presence ? "faberloom/agente-vivo" : "modelo no registrado");
               const actual = r.mode === "auto" && r.chain_id
-                ? `auto · ${r.provider_slug}/${r.model} · ${(r.steps || []).length} pasos`
-                : `${r.provider_slug}/${r.model}`;
+                ? `auto · ${modelLabel} · ${(r.steps || []).length} pasos`
+                : modelLabel;
               const routeLabel = requested && requested !== actual && r.mode !== "auto"
                 ? `${requested} → ${actual}`
                 : actual;
@@ -3712,6 +3773,7 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "promotion" && window.PromotionReadinessPanel ? <window.PromotionReadinessPanel activeWorkspace={activeWorkspace} user={user}/>
      : nav === "routing-shadow" && window.ShadowReportPanel ? <window.ShadowReportPanel tenantId={user?.tenant_id || "default"} />
      : nav === "agent-tasks" && window.AgentTasksPanel ? <window.AgentTasksPanel workspaceId={activeWorkspace?.id} />
+     : nav === "workspaces-admin" ? <WorkspacesAdminView/>
      : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>
      : <PlaceholderView nav={nav}/>}
   </main>;
