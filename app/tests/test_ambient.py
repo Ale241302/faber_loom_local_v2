@@ -248,3 +248,89 @@ def test_scheduler_runs_a_cycle_per_tenant(client: TestClient, monkeypatch: pyte
     assert "default" in ran
     assert "tnt_second" in ran
     assert "tnt_disabled" not in ran
+
+
+# ---------------------------------------------------------------------------
+# E5-2: stale_backup_smoke detector
+# ---------------------------------------------------------------------------
+
+
+def test_stale_backup_smoke_detector_is_registered() -> None:
+    from app.src.ambient import DETECTOR_REGISTRY
+
+    assert "stale_backup_smoke" in DETECTOR_REGISTRY
+
+
+def test_stale_backup_smoke_finding_when_report_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.src import ambient_detectors as ad
+    from app.src.ambient_detectors import detect_stale_backup_smoke
+    from app.src.context import Context
+
+    monkeypatch.setattr(ad, "find_latest_backup_smoke_report", lambda _path: None)
+
+    ctx = Context(workspace_id="ws", tenant_id="default")
+    findings = detect_stale_backup_smoke(ctx, None)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.detector_slug == "stale_backup_smoke"
+    assert finding.severity == "critical"
+    assert "No existe reporte" in finding.title
+
+
+def test_stale_backup_smoke_finding_when_report_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.src import ambient_detectors as ad
+    from app.src.ambient_detectors import detect_stale_backup_smoke
+    from app.src.context import Context
+
+    stale_mtime = datetime.now(timezone.utc) - timedelta(hours=48)
+    monkeypatch.setattr(
+        ad,
+        "find_latest_backup_smoke_report",
+        lambda _path: (Path("BACKUP_SMOKE_20260712T000000Z.md"), stale_mtime),
+    )
+
+    ctx = Context(workspace_id="ws", tenant_id="default")
+    findings = detect_stale_backup_smoke(ctx, None)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.detector_slug == "stale_backup_smoke"
+    assert finding.severity == "high"
+    assert "desactualizado" in finding.title
+
+
+def test_stale_backup_smoke_no_finding_when_report_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.src import ambient_detectors as ad
+    from app.src.ambient_detectors import detect_stale_backup_smoke
+    from app.src.context import Context
+
+    fresh_mtime = datetime.now(timezone.utc) - timedelta(hours=1)
+    monkeypatch.setattr(
+        ad,
+        "find_latest_backup_smoke_report",
+        lambda _path: (Path("BACKUP_SMOKE_20260713T000000Z.md"), fresh_mtime),
+    )
+
+    ctx = Context(workspace_id="ws", tenant_id="default")
+    findings = detect_stale_backup_smoke(ctx, None)
+
+    assert findings == []
+
+
+def test_stale_backup_smoke_creates_proposal_when_missing(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    ws = _create_workspace(client, "Ambient Backup Smoke")
+    _enable_ambient(client)
+
+    from app.src import ambient_detectors as ad
+
+    monkeypatch.setattr(ad, "find_latest_backup_smoke_report", lambda _path: None)
+
+    resp = client.post(
+        "/api/admin/ambient/trigger",
+        json={"workspace_id": ws["id"]},
+        headers=_auth_headers(),
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["proposals_created"] >= 1

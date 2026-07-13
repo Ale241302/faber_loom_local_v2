@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import sqlite3
@@ -39,6 +40,24 @@ class AmbientFinding:
 def _hours_ago(hours: int) -> str:
     dt = datetime.now(timezone.utc) - timedelta(hours=hours)
     return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def find_latest_backup_smoke_report(audits_dir: Path) -> tuple[Path, datetime] | None:
+    """Return the most recent BACKUP_SMOKE_*.md report in ``audits_dir``.
+
+    Used by the ``stale_backup_smoke`` detector and the ops freshness script.
+    """
+
+    candidates = sorted(
+        audits_dir.glob("BACKUP_SMOKE_*.md"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    latest = candidates[0]
+    mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
+    return latest, mtime
 
 
 def _fmt_delta(iso_dt: str) -> str:
@@ -437,6 +456,80 @@ def detect_unreviewed_gold(ctx: Context, conn: sqlite3.Connection) -> list[Ambie
     return findings
 
 
+def detect_stale_backup_smoke(
+    ctx: Context, conn: sqlite3.Connection
+) -> list[AmbientFinding]:
+    """Detect if the latest backup/restore smoke report is older than 24 hours.
+
+    The detector inspects ``docs/audits/BACKUP_SMOKE_*.md`` files written by
+    ``app/scripts/backup_restore_smoke.py``.  No finding is emitted when a
+    report exists and is within the freshness threshold.
+    """
+
+    repo_root = Path(__file__).resolve().parents[2]
+    audits_dir = repo_root / "docs" / "audits"
+    threshold_hours = 24
+
+    result = find_latest_backup_smoke_report(audits_dir)
+    if result is None:
+        return [
+            AmbientFinding(
+                detector_slug="stale_backup_smoke",
+                target_type="system",
+                target_id="backup_smoke",
+                severity="critical",
+                title="No existe reporte de backup smoke",
+                description=(
+                    f"No se encontró ningún reporte BACKUP_SMOKE_*.md en {audits_dir}. "
+                    f"El smoke de backup debe ejecutarse al menos cada {threshold_hours} horas."
+                ),
+                suggested_action=(
+                    "Ejecutar python app/scripts/backup_restore_smoke.py "
+                    "y verificar que genere reporte en docs/audits/."
+                ),
+                evidence_json={
+                    "audits_dir": str(audits_dir),
+                    "threshold_hours": threshold_hours,
+                    "latest_report": None,
+                    "latest_mtime": None,
+                    "age_hours": None,
+                },
+            )
+        ]
+
+    latest, mtime = result
+    age = datetime.now(timezone.utc) - mtime
+    age_hours = age.total_seconds() / 3600
+
+    if age_hours <= threshold_hours:
+        return []
+
+    return [
+        AmbientFinding(
+            detector_slug="stale_backup_smoke",
+            target_type="system",
+            target_id="backup_smoke",
+            severity="high",
+            title="Backup smoke desactualizado",
+            description=(
+                f"El último reporte de backup smoke ({latest.name}) tiene "
+                f"{age_hours:.1f} horas (umbral: {threshold_hours}h)."
+            ),
+            suggested_action=(
+                "Reejecutar python app/scripts/backup_restore_smoke.py "
+                "y revisar integridad del backup más reciente."
+            ),
+            evidence_json={
+                "latest_report": latest.name,
+                "latest_report_path": str(latest),
+                "latest_mtime": mtime.isoformat(),
+                "age_hours": round(age_hours, 2),
+                "threshold_hours": threshold_hours,
+            },
+        )
+    ]
+
+
 DETECTOR_REGISTRY: dict[str, Any] = {
     "failed_routine": detect_failed_routine,
     "stuck_hitl": detect_stuck_hitl,
@@ -444,6 +537,7 @@ DETECTOR_REGISTRY: dict[str, Any] = {
     "mail_without_draft": detect_mail_without_draft,
     "stale_source": detect_stale_sources,
     "unreviewed_gold": detect_unreviewed_gold,
+    "stale_backup_smoke": detect_stale_backup_smoke,
 }
 
 # E4-5: personal-memory detector is registered lazily to avoid a circular import
