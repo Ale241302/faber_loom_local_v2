@@ -47,27 +47,54 @@ async function apiPut(path, body) {
   return json;
 }
 
-function SettingField({ setting, edit, editedValue, onChange }) {
+// __E5FIX3__ — campos siempre editables, selects para enums, Guardar/Restablecer
+var SETTING_ENUMS = {
+  "routing.mode": [
+    { value: "manual", label: "manual — el humano elige modelo/preset" },
+    { value: "shadow", label: "shadow — el planner observa sin ejecutar" },
+    { value: "natural", label: "natural — el planner decide por tarea" },
+  ],
+  "routing.byo_mode": [
+    { value: "hibrido", label: "híbrido — fallback a claves de plataforma" },
+    { value: "estricto", label: "estricto — solo claves propias" },
+  ],
+  "smtp.use_ssl": [
+    { value: "true", label: "true — usar SSL/TLS" },
+    { value: "false", label: "false — sin SSL" },
+  ],
+  "routing.auto_dispatch": [
+    { value: "true", label: "true — despacho automático" },
+    { value: "false", label: "false — requiere confirmación" },
+  ],
+};
+var SETTING_NUMBERS = { "smtp.port": 1, "routing.max_steps": 1, "routing.max_budget_usd": 0.01 };
+
+function SettingField({ setting, editedValue, dirty, onChange }) {
   const source = setting.source || "default";
-  const sourceLabel = { default: "default", tenant: "tenant", workspace: "workspace", user: "user" }[source] || source;
-  const currentValue = editedValue != null ? editedValue : setting.value;
-  const isSelect = setting.key === "routing.byo_mode";
+  const original = setting.value == null ? "" : String(setting.value);
+  const current = editedValue !== undefined ? editedValue : original;
+  const enumOpts = SETTING_ENUMS[setting.key];
+  const numStep = SETTING_NUMBERS[setting.key];
   return (
     <div style={SET_S.field}>
       <label style={SET_S.label}>{setting.label || setting.key}
-        {source !== "default" && <span style={SET_S.inheritChip}>heredado de {sourceLabel}</span>}
+        {source !== "default" && <span style={SET_S.inheritChip}>heredado de {source}</span>}
+        {dirty && <span style={{ ...SET_S.inheritChip, borderColor: "var(--coral)", color: "var(--coral)" }}>sin guardar</span>}
       </label>
-      {edit ? (
-        isSelect ? (
-          <select style={SET_S.input} value={currentValue} onChange={(e) => onChange(setting.key, e.target.value)}>
-            <option value="hibrido">híbrido (fallback a plataforma)</option>
-            <option value="estricto">estricto (solo claves propias)</option>
-          </select>
-        ) : (
-          <input style={SET_S.input} value={currentValue} onChange={(e) => onChange(setting.key, e.target.value)} placeholder={setting.value} />
-        )
+      {enumOpts ? (
+        <select style={SET_S.input} value={current} onChange={(e) => onChange(setting.key, e.target.value)}>
+          {original === "" && <option value="">(sin valor — hereda)</option>}
+          {enumOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       ) : (
-        <div style={SET_S.value}>{String(setting.value)}</div>
+        <input
+          style={SET_S.input}
+          type={numStep ? "number" : "text"}
+          step={numStep || undefined}
+          value={current}
+          placeholder="(sin valor — hereda del nivel superior)"
+          onChange={(e) => onChange(setting.key, e.target.value)}
+        />
       )}
       {setting.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{setting.description}</div>}
     </div>
@@ -75,51 +102,54 @@ function SettingField({ setting, edit, editedValue, onChange }) {
 }
 
 function SettingsCard({ title, meta, scope, settings, editable, onSave }) {
-  const [edit, setEdit] = useState(false);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const originalOf = (s) => (s.value == null ? "" : String(s.value));
+  const dirtyKeys = settings.filter((s) => draft[s.key] !== undefined && draft[s.key] !== originalOf(s)).map((s) => s.key);
 
   const save = async () => {
-    setBusy(true);
-    setError(null);
+    if (!dirtyKeys.length) return;
+    setBusy(true); setError(null); setNotice(null);
     try {
-      await onSave(draft);
-      setEdit(false);
+      const changes = {};
+      dirtyKeys.forEach((k) => { changes[k] = draft[k]; });
+      await onSave(changes);
       setDraft({});
+      setNotice(dirtyKeys.length + " setting(s) guardado(s)");
     } catch (e) {
       setError(e.message);
     } finally {
       setBusy(false);
     }
   };
+  const reset = () => { setDraft({}); setError(null); setNotice(null); };
 
   return (
     <div style={SET_S.card}>
       <div style={SET_S.cardTitle}><Icon name="settings" size={16} /> {title}</div>
       <div style={SET_S.cardMeta}>{meta}</div>
       {error && <div style={SET_S.error} role="alert">{error}</div>}
+      {notice && <div style={{ ...SET_S.resolved, marginBottom: 12 }}>{notice}</div>}
       {settings.length === 0 ? <div style={SET_S.empty}>No hay settings disponibles.</div> : (
         <>
           {settings.map((s) => (
             <SettingField
               key={s.key}
               setting={s}
-              edit={edit}
               editedValue={draft[s.key]}
-              onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
+              dirty={dirtyKeys.indexOf(s.key) !== -1}
+              onChange={(key, value) => { setNotice(null); setDraft((d) => ({ ...d, [key]: value })); }}
             />
           ))}
           {editable && (
             <div style={SET_S.actions}>
-              {edit ? (
-                <>
-                  <button type="button" style={SET_S.buttonPrimary} onClick={save} disabled={busy}>{busy ? "Guardando…" : "Guardar overrides"}</button>
-                  <button type="button" style={SET_S.button} onClick={() => { setEdit(false); setDraft({}); }} disabled={busy}>Cancelar</button>
-                </>
-              ) : (
-                <button type="button" style={SET_S.button} onClick={() => setEdit(true)}>Editar overrides</button>
-              )}
+              <button type="button" style={{ ...SET_S.buttonPrimary, opacity: dirtyKeys.length ? 1 : 0.5 }} onClick={save} disabled={busy || !dirtyKeys.length}>
+                {busy ? "Guardando…" : "Guardar cambios" + (dirtyKeys.length ? " (" + dirtyKeys.length + ")" : "")}
+              </button>
+              <button type="button" style={SET_S.button} onClick={reset} disabled={busy || !dirtyKeys.length}>Restablecer</button>
             </div>
           )}
         </>
@@ -171,9 +201,9 @@ function TenantSettings({ activeWorkspace, user }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadUsage(); }, [loadUsage]);
 
-  const saveTenant = async (draft) => apiPut("/api/tenant/settings", { overrides: draft });
-  const saveWorkspace = async (draft) => apiPut(`/api/workspaces/${activeWorkspace.id}/settings`, { overrides: draft });
-  const saveUser = async (draft) => apiPut("/api/users/me/settings", { overrides: draft });
+  const saveTenant = async (draft) => apiPut("/api/tenant/settings", { overrides: draft }).then(load);
+  const saveWorkspace = async (draft) => apiPut(`/api/workspaces/${activeWorkspace.id}/settings`, { overrides: draft }).then(load);
+  const saveUser = async (draft) => apiPut("/api/users/me/settings", { overrides: draft }).then(load);
 
   const resolvedSettings = data.resolved.map((s) => ({ ...s, source: s.source || "default" }));
 

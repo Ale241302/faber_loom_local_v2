@@ -341,6 +341,7 @@ def run_auto_chain(
     attachments: list[dict[str, Any]] | None = None,
     policy: dict[str, Any] | None = None,
     image_attachment: dict[str, Any] | None = None,
+    user_requested: bool = False,
 ) -> dict[str, Any]:
     """Run an auto-routed chain for a chat request.
 
@@ -360,7 +361,10 @@ def run_auto_chain(
 
     from ..routing.policy import is_auto_mode_allowed
 
-    if not is_auto_mode_allowed(ctx, conn):
+    # E5-fix3: un pedido EXPLÍCITO del usuario (clic en "Auto") es en sí la
+    # decisión humana — no lo bloquea routing.mode. El flag sigue gobernando
+    # lo que el agente hace por iniciativa propia (ambient/planner/default).
+    if not user_requested and not is_auto_mode_allowed(ctx, conn):
         raise AutoDispatcherError("Auto mode is not enabled for this workspace")
 
     if policy is None:

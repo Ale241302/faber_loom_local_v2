@@ -2293,6 +2293,7 @@ def api_create_completion(
                     chat_id=chat_id,
                     user_request=user_message,
                     image_attachment=attachment_image,
+                    user_requested=True,
                 )
                 insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
                 route = {
@@ -2671,6 +2672,7 @@ def api_run_auto_chain(
                 chat_id=chat_id,
                 user_request=payload.user_request,
                 attachments=payload.attachments,
+                user_requested=True,
             )
             insert_message(ctx, conn, chat_id=chat_id, role="user", content=payload.user_request)
             route = {
