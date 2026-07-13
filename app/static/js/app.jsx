@@ -296,7 +296,7 @@ function WorkspacesAdminView() {
   };
   if (!FndPanel) return <div style={{ padding: 24 }}>Cargando design system…</div>;
   const monoStyle = { fontFamily: "var(--font-mono)", fontSize: 11.5 };
-  return <div style={{ padding: 24, display: "grid", gap: 16, maxWidth: 1040 }}>
+  return <div style={{ padding: "18px 20px", overflow: "auto", height: "100%", boxSizing: "border-box", display: "grid", gap: 16, alignContent: "start" }}>{/* __E5FIX12__ full-width + scroll, espejo de TenantSettings */}
     <FndError error={err} />
     <FndPanel
       title="Workspaces"
