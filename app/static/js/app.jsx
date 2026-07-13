@@ -1344,7 +1344,23 @@ function SpaceView({ activeWorkspace }) {
         body.skill_ids = options.skill_ids;
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
-      if (completion && completion.message) {
+      if (completion && completion.mode === "processing") {
+        // __E5FIX10__: auto en background — polling hasta que responda el agente.
+        await loadMessages(chatId);
+        const sentAt = (completion.message && completion.message.created_at) || new Date().toISOString();
+        const deadline = Date.now() + 300000; // 5 min máx
+        let answered = false;
+        while (!answered && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/messages`).catch(() => null);
+          if (Array.isArray(list)) {
+            setMessages(list);
+            const last = list[list.length - 1];
+            if (last && last.role === "assistant" && last.created_at >= sentAt) answered = true;
+          }
+        }
+        if (!answered) setError("La ejecución automática sigue en curso; revisa el chat en unos minutos.");
+      } else if (completion && completion.message) {
         if (!completion.message.content) {
           setError("El modelo no generó respuesta. Intenta sin skills o con otro modelo.");
         } else {

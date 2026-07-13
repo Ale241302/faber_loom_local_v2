@@ -2067,6 +2067,102 @@ def _handle_presence_completion(
     )
 
 
+def _run_auto_chain_background(
+    *,
+    workspace_id: str,
+    tenant_id: str | None,
+    user_id: str | None,
+    actor_id: str | None,
+    actor_role: str | None,
+    chat_id: str,
+    user_message: str,
+    image_attachment: dict[str, Any] | None,
+) -> None:
+    """__E5FIX10__: ejecuta la cadena auto fuera del request (BackgroundTasks).
+
+    Una petición síncrona larga (resumen + generación de imagen) supera el
+    timeout del proxy (504). Patrón de conexión propio tomado de
+    run_shadow_plan_background. Los errores se registran como mensaje del
+    asistente para que el usuario los vea en el chat.
+    """
+
+    import logging
+
+    from .db import connect
+
+    logger = logging.getLogger(__name__)
+    conn = connect()
+    try:
+        bg_ctx = Context(
+            workspace_id=workspace_id,
+            tenant_id=tenant_id,
+            user_id=user_id or "local",
+            actor_id=actor_id or user_id or "local",
+            actor_role_at_decision=actor_role or "owner",
+        )
+        try:
+            with transaction(conn, ctx=bg_ctx):
+                routing_catalog.seed_workspace_catalog(bg_ctx, conn, workspace_id)
+                auto_result = run_auto_chain(
+                    bg_ctx,
+                    conn,
+                    chat_id=chat_id,
+                    user_request=user_message,
+                    image_attachment=image_attachment,
+                    user_requested=True,
+                )
+                route = {
+                    "chain_id": auto_result["chain_id"],
+                    "steps": auto_result["steps"],
+                    "provider_slug": auto_result["provider_slug"],
+                    "model": auto_result["model"],
+                    "cost_usd": auto_result["cost_usd"],
+                    "input_tokens": auto_result["input_tokens"],
+                    "output_tokens": auto_result["output_tokens"],
+                    "duration_ms": auto_result["duration_ms"],
+                    "mode": "auto",
+                }
+                auto_content = (auto_result.get("content") or "").strip()
+                if not auto_content:
+                    auto_content = (
+                        "El modelo no generó una respuesta de texto. "
+                        "Revisa el prompt o intenta con otro modelo / proveedor."
+                    )
+                insert_message(
+                    bg_ctx,
+                    conn,
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=auto_content,
+                    route=route,
+                )
+        except Exception as exc:  # noqa: BLE001 — todo error debe llegar al chat
+            detail = str(exc) or exc.__class__.__name__
+            logger.warning("auto background chain failed: %s", detail)
+            try:
+                with transaction(conn, ctx=bg_ctx):
+                    insert_message(
+                        bg_ctx,
+                        conn,
+                        chat_id=chat_id,
+                        role="assistant",
+                        content=f"⚠️ La ejecución automática falló: {detail}",
+                        route={
+                            "mode": "auto",
+                            "error": detail,
+                            "provider_slug": "auto",
+                            "model": "error",
+                        },
+                    )
+            except Exception:
+                logger.exception("auto background: no se pudo registrar el error en el chat")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @router.post("/workspaces/{workspace_id}/chats/{chat_id}/completions", response_model=ChatCompletionResponse)
 def api_create_completion(
     workspace_id: str,
@@ -2291,67 +2387,37 @@ def api_create_completion(
         routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
 
     if payload.mode == "auto":
-        try:
-            with transaction(conn, ctx=ctx):
-                routing_catalog.seed_workspace_catalog(ctx, conn, workspace_id)
-                auto_result = run_auto_chain(
-                    ctx,
-                    conn,
-                    chat_id=chat_id,
-                    user_request=user_message,
-                    image_attachment=attachment_image,
-                    user_requested=True,
-                )
-                insert_message(ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route)
-                route = {
-                    "chain_id": auto_result["chain_id"],
-                    "steps": auto_result["steps"],
-                    "provider_slug": auto_result["provider_slug"],
-                    "model": auto_result["model"],
-                    "cost_usd": auto_result["cost_usd"],
-                    "input_tokens": auto_result["input_tokens"],
-                    "output_tokens": auto_result["output_tokens"],
-                    "duration_ms": auto_result["duration_ms"],
-                    "mode": "auto",
-                }
-                auto_content = (auto_result.get("content") or "").strip()
-                if not auto_content:
-                    auto_content = (
-                        "El modelo no generó una respuesta de texto. "
-                        "Revisa el prompt o intenta con otro modelo / proveedor."
-                    )
-                assistant_message = _serialize_message(
-                    insert_message(
-                        ctx,
-                        conn,
-                        chat_id=chat_id,
-                        role="assistant",
-                        content=auto_content,
-                        route=route,
-                    )
-                )
-        except NoCapacityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=str(exc),
-            ) from exc
-        except AutoDispatcherError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=str(exc),
-            ) from exc
+        # __E5FIX10__: el auto corre en background — se persiste el mensaje del
+        # usuario, se agenda la cadena y el cliente hace polling de mensajes.
+        with transaction(conn, ctx=ctx):
+            user_row = insert_message(
+                ctx, conn, chat_id=chat_id, role="user", content=user_message, route=attachment_route
+            )
+        user_message_read = _serialize_message(user_row)
+
+        background_tasks.add_task(
+            _run_auto_chain_background,
+            workspace_id=workspace_id,
+            tenant_id=ctx.tenant_id,
+            user_id=ctx.user_id,
+            actor_id=getattr(ctx, "actor_id", None) or ctx.user_id,
+            actor_role=ctx.actor_role_at_decision,
+            chat_id=chat_id,
+            user_message=user_message,
+            image_attachment=attachment_image,
+        )
 
         return ChatCompletionResponse(
-            message=assistant_message,
-            provider_slug=auto_result["provider_slug"],
-            model=auto_result["model"],
-            input_tokens=auto_result["input_tokens"],
-            output_tokens=auto_result["output_tokens"],
-            cost_usd=auto_result["cost_usd"],
-            duration_ms=auto_result["duration_ms"],
-            chain_id=auto_result.get("chain_id"),
-            steps=auto_result.get("steps"),
-            mode="auto",
+            message=user_message_read,
+            provider_slug="auto",
+            model="processing",
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=0.0,
+            duration_ms=0,
+            chain_id=None,
+            steps=None,
+            mode="processing",
         )
 
     # Manual mode
