@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import os
 import sys
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
-
-import requests
+from urllib.parse import urlencode
 
 
 def _now() -> str:
@@ -53,101 +56,132 @@ class SmokeReport:
 class SmokeClient:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
-        self.session = requests.Session()
-        self.session.headers["Accept"] = "application/json"
+        self._cookie_jar = CookieJar()
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self._cookie_jar)
+        )
+        self._opener.addheaders = [("Accept", "application/json")]
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
+    def _request(
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: int = 30,
+    ) -> tuple[int, dict[str, Any] | str]:
+        url = self._url(path)
+        body: bytes | None = None
+        req_headers = {"Accept": "application/json"}
+        if headers:
+            req_headers.update(headers)
+        if data is not None:
+            if req_headers.get("Content-Type") == "application/x-www-form-urlencoded":
+                body = urlencode(data).encode("utf-8")
+            elif "multipart/form-data" not in req_headers.get("Content-Type", ""):
+                body = json.dumps(data).encode("utf-8")
+                req_headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=body, headers=req_headers, method=method)
+        try:
+            with self._opener.open(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+                try:
+                    return resp.status, json.loads(text) if text else {}
+                except json.JSONDecodeError:
+                    return resp.status, text
+        except urllib.error.HTTPError as exc:
+            text = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            try:
+                return exc.code, json.loads(text) if text else {}
+            except json.JSONDecodeError:
+                return exc.code, text
+        except Exception as exc:
+            return 0, str(exc)
+
     def login(self, email: str, password: str) -> SmokeStep:
         step = SmokeStep(name="login")
-        r = self.session.post(
-            self._url("/api/auth/login"),
-            json={"email": email, "password": password},
-            timeout=30,
-        )
-        step.status_code = r.status_code
-        if r.status_code == 200:
+        status, resp = self._request("POST", "/api/auth/login", {"email": email, "password": password})
+        step.status_code = status
+        if status == 200 and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def me(self) -> SmokeStep:
         step = SmokeStep(name="me")
-        r = self.session.get(self._url("/api/me"), timeout=30)
-        step.status_code = r.status_code
-        if r.status_code == 200:
+        status, resp = self._request("GET", "/api/me")
+        step.status_code = status
+        if status == 200 and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def list_workspaces(self) -> SmokeStep:
         step = SmokeStep(name="list_workspaces")
-        r = self.session.get(self._url("/api/workspaces"), timeout=30)
-        step.status_code = r.status_code
-        if r.status_code == 200:
+        status, resp = self._request("GET", "/api/workspaces")
+        step.status_code = status
+        if status == 200 and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def create_workspace(self, name: str, slug: str) -> SmokeStep:
         step = SmokeStep(name="create_workspace")
-        r = self.session.post(
-            self._url("/api/workspaces"),
-            json={"name": name, "slug": slug},
-            timeout=30,
+        status, resp = self._request(
+            "POST", "/api/workspaces", {"name": name, "slug": slug}
         )
-        step.status_code = r.status_code
-        if r.status_code in (200, 201):
+        step.status_code = status
+        if status in (200, 201) and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
-        elif r.status_code == 409:
+            step.response = resp
+        elif status == 409:
             step.status = "skipped"
             step.detail = "workspace already exists"
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def enable_ambient_workspace(self, workspace_id: str) -> SmokeStep:
         step = SmokeStep(name="enable_ambient_workspace")
-        r = self.session.patch(
-            self._url(f"/api/admin/ambient/workspaces/{workspace_id}/config"),
-            json={"enabled": True},
-            timeout=30,
+        status, resp = self._request(
+            "PATCH",
+            f"/api/admin/ambient/workspaces/{workspace_id}/config",
+            {"enabled": True},
         )
-        step.status_code = r.status_code
-        if r.status_code in (200, 201):
+        step.status_code = status
+        if status in (200, 201) and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def create_chat(self, workspace_id: str, title: str = "general") -> SmokeStep:
         step = SmokeStep(name="create_chat")
-        r = self.session.post(
-            self._url(f"/api/workspaces/{workspace_id}/chats"),
-            json={"title": title},
-            timeout=30,
+        status, resp = self._request(
+            "POST", f"/api/workspaces/{workspace_id}/chats", {"title": title}
         )
-        step.status_code = r.status_code
-        if r.status_code in (200, 201):
+        step.status_code = status
+        if status in (200, 201) and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def auto_chain(
@@ -161,19 +195,20 @@ class SmokeClient:
         payload: dict[str, Any] = {"user_request": user_request}
         if attachment_object_id:
             payload["attachments"] = [{"object_id": attachment_object_id}]
-        r = self.session.post(
-            self._url(f"/api/workspaces/{workspace_id}/chats/{chat_id}/auto"),
-            json=payload,
+        status, resp = self._request(
+            "POST",
+            f"/api/workspaces/{workspace_id}/chats/{chat_id}/auto",
+            payload,
             timeout=120,
         )
-        step.status_code = r.status_code
+        step.status_code = status
         step.payload = payload
-        if r.status_code in (200, 201):
+        if status in (200, 201) and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def upload_attachment(
@@ -181,51 +216,71 @@ class SmokeClient:
     ) -> SmokeStep:
         step = SmokeStep(name="upload_attachment")
         path = Path(file_path)
-        r = self.session.post(
-            self._url(f"/api/workspaces/{workspace_id}/kb/upload"),
-            data={"title": title, "source_version": "v1", "level": "0"},
-            files={"file": (path.name, path.open("rb"), "text/plain")},
+        boundary = "----SmokeBoundary"
+        mime_type, _ = mimetypes.guess_type(str(path))
+        mime_type = mime_type or "application/octet-stream"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="title"\r\n\r\n{title}\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="source_version"\r\n\r\nv1\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="level"\r\n\r\n0\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode("utf-8")
+        body += path.read_bytes()
+        body += f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        }
+        status, resp = self._request(
+            "POST",
+            f"/api/workspaces/{workspace_id}/kb/upload",
+            data=body,  # type: ignore[arg-type]
+            headers=headers,
             timeout=60,
         )
-        step.status_code = r.status_code
-        if r.status_code in (200, 201):
+        step.status_code = status
+        if status in (200, 201) and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def brief(self, workspace_id: str) -> SmokeStep:
         step = SmokeStep(name="brief")
-        r = self.session.get(
-            self._url(f"/api/workspaces/{workspace_id}/brief"), timeout=30
-        )
-        step.status_code = r.status_code
-        if r.status_code == 200:
+        status, resp = self._request("GET", f"/api/workspaces/{workspace_id}/brief")
+        step.status_code = status
+        if status == 200 and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
-        elif r.status_code == 404:
+            step.response = resp
+        elif status == 404:
             step.status = "ok"
             step.detail = "brief not found (expected for new workspace)"
-            step.response = r.json() if r.text else {}
+            if isinstance(resp, dict):
+                step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
     def shadow_report(self, tenant_id: str) -> SmokeStep:
         step = SmokeStep(name="shadow_report")
-        r = self.session.get(
-            self._url(f"/api/tenants/{tenant_id}/routing/shadow-report"), timeout=30
+        status, resp = self._request(
+            "GET", f"/api/tenants/{tenant_id}/routing/shadow-report"
         )
-        step.status_code = r.status_code
-        if r.status_code == 200:
+        step.status_code = status
+        if status == 200 and isinstance(resp, dict):
             step.status = "ok"
-            step.response = r.json()
+            step.response = resp
         else:
             step.status = "failed"
-            step.detail = r.text[:500]
+            step.detail = str(resp)[:500]
         return step
 
 
@@ -273,14 +328,13 @@ def run_smoke(
     if ws is None:
         step = client.create_workspace(workspace_name, workspace_slug)
         report.steps.append(step)
-        if step.status in ("ok", "skipped"):
-            ws = step.response if step.status == "ok" else None
-            # If skipped, reload list
-            if step.status == "skipped":
-                step2 = client.list_workspaces()
-                report.steps.append(step2)
-                if step2.status == "ok":
-                    ws = _find_workspace(step2.response.get("workspaces", []), workspace_slug)
+        if step.status == "ok":
+            ws = step.response
+        elif step.status == "skipped":
+            step2 = client.list_workspaces()
+            report.steps.append(step2)
+            if step2.status == "ok":
+                ws = _find_workspace(step2.response.get("workspaces", []), workspace_slug)
         else:
             report.all_ok = False
     if ws:
@@ -305,9 +359,6 @@ def run_smoke(
             report.steps.append(step)
             if step.status == "ok":
                 attachment_object_id = step.response.get("object_id")
-            else:
-                # attachment is best-effort for this smoke
-                pass
 
         if report.chat_id:
             step = client.auto_chain(
