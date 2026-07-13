@@ -229,10 +229,11 @@ Cerrar deudas operativas E3 con evidencia: rotación VPS, MinIO tenant-prefix, c
 
 #### Código
 
-- [ ] Crear `app/scripts/check_backup_smoke_freshness.py`.
-- [ ] Añadir detector `stale_backup_smoke` en `app/src/ambient_detectors.py`.
-- [ ] Registrar detector en `DETECTOR_REGISTRY`.
-- [ ] Crear tests `test_e5_2_backup_freshness_detector.py`.
+- [x] Crear `app/scripts/check_backup_smoke_freshness.py`.
+- [x] Añadir detector `stale_backup_smoke` en `app/src/ambient_detectors.py`.
+- [x] Registrar detector en `DETECTOR_REGISTRY`.
+- [x] Crear tests `test_e5_2_backup_freshness_detector.py`.
+- [x] Ignorar reportes `BACKUP_SMOKE_*.md` generados en `.gitignore`.
 
 #### Operación
 
@@ -314,8 +315,9 @@ En `check_backup_smoke_freshness.py`:
 - [ ] Evidencia rotación commiteada.
 - [ ] Evidencia MinIO commiteada.
 - [ ] Cron backup smoke corriendo.
-- [ ] Detector verde.
-- [ ] Test E5-2 verde.
+- [x] Detector verde.
+- [x] Test E5-2 verde.
+- [x] Script `check_backup_smoke_freshness.py` verde.
 
 ---
 
