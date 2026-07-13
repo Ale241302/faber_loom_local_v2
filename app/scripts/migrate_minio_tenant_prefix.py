@@ -493,7 +493,6 @@ def _execute_item(
 
     # 2. Actualizar DB con commit explícito y WHERE fail-closed
     from app.src.context import Context
-    from app.src.db_adapter import transaction
 
     ctx = Context(
         workspace_id=item.workspace_id,
@@ -503,31 +502,46 @@ def _execute_item(
         actor_role_at_decision="system",
     )
     try:
-        with transaction(conn, ctx=ctx):
-            cur = conn.execute(
-                """
-                UPDATE object
-                SET object_key = ?, tenant_id = ?, updated_at = ?
-                WHERE id = ?
-                  AND workspace_id = ?
-                  AND bucket = ?
-                  AND object_key = ?
-                  AND (tenant_id = ? OR tenant_id IS NULL)
-                """,
-                (
-                    new_key,
-                    item.tenant_id,
-                    _now(),
-                    item.object_id,
-                    item.workspace_id,
-                    bucket,
-                    old_key,
-                    item.tenant_id,
-                ),
-            )
-            if cur.rowcount != 1:
-                raise RuntimeError(f"expected 1 row updated, got {cur.rowcount}")
+        # Cerrar cualquier transacción abierta por queries previas (por ejemplo
+        # _find_object_row) para que este UPDATE tenga su propio commit.
+        if conn.in_transaction:
+            conn.commit()
+
+        if getattr(conn, "engine", None) == "postgres":
+            conn._set_config_var("app.current_tenant", ctx.tenant_id or "")
+            conn._set_config_var("app.current_workspace", ctx.workspace_id or "")
+            conn._set_config_var("app.tenant_id", ctx.tenant_id or "")
+
+        cur = conn.execute(
+            """
+            UPDATE object
+            SET object_key = ?, tenant_id = ?, updated_at = ?
+            WHERE id = ?
+              AND workspace_id = ?
+              AND bucket = ?
+              AND object_key = ?
+              AND (tenant_id = ? OR tenant_id IS NULL)
+            """,
+            (
+                new_key,
+                item.tenant_id,
+                _now(),
+                item.object_id,
+                item.workspace_id,
+                bucket,
+                old_key,
+                item.tenant_id,
+            ),
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            raise RuntimeError(f"expected 1 row updated, got {cur.rowcount}")
+        conn.commit()
     except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         # Limpiar copia nueva
         try:
             store.delete_object(bucket, new_key)
