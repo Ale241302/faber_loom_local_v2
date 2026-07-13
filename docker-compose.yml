@@ -59,6 +59,7 @@ services:
       FL_MINIO_SECURE: "false"
     volumes:
       - ./data:/data
+      - ./docs/audits:/app/docs/audits
       - ./.env:/data/.env:ro
     ports:
       - "8200:8000"
