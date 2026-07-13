@@ -284,19 +284,48 @@ def _extract_video(blob: bytes, require_local: bool) -> str:
 
 
 def _extract_pdf(blob: bytes) -> str:
-    """__E5FIX8__: extraer texto de un PDF adjunto (pdfplumber vía kb_extractors)."""
+    """__E5FIX15__: texto de un PDF adjunto — SOLO texto, con tope de páginas
+    y caracteres. La versión anterior usaba el extractor de KB completo
+    (texto + detección de tablas página a página), que en PDFs largos consume
+    minutos de CPU y dejaba la cadena auto "moliendo" sin responder.
+    """
 
-    from .routing.pdf_images import extract_pdf_text_and_images
+    import io as _io
 
     try:
-        extracted = extract_pdf_text_and_images(blob)
-    except Exception as exc:  # pragma: no cover - defensive
+        import pdfplumber
+    except Exception as exc:  # pragma: no cover
+        raise IngestError(f"pdfplumber no disponible: {exc}") from exc
+
+    max_pages = 60
+    max_chars = 60000
+    parts: list[str] = []
+    total_pages = 0
+    truncated = False
+    try:
+        with pdfplumber.open(_io.BytesIO(blob)) as pdf:
+            total_pages = len(pdf.pages)
+            acc = 0
+            for index, page in enumerate(pdf.pages):
+                if index >= max_pages or acc >= max_chars:
+                    truncated = True
+                    break
+                page_text = page.extract_text() or ""
+                parts.append(page_text)
+                acc += len(page_text)
+    except Exception as exc:
         raise IngestError(f"PDF parse error: {exc}") from exc
-    text = (extracted.get("text") or "").strip()
+
+    text = "\n\n".join(p for p in parts if p.strip()).strip()[:max_chars]
     if not text:
         raise IngestError(
             "El PDF no contiene texto extraíble (¿escaneado sin OCR?). "
             "Convierte a texto o sube las páginas como imágenes."
+        )
+    if truncated:
+        text += (
+            f"\n\n[NOTA: PDF truncado para el análisis — se leyeron "
+            f"{min(max_pages, total_pages)} de {total_pages} páginas]"
         )
     return text
 
