@@ -798,7 +798,11 @@ def _execute_openai_image_step(
         )
 
     try:
-        client = provider._build_client()
+        # __E5FIX17__: gpt-image-1 tarda 40-120s; el timeout global de 30s del
+        # SDK lo mata siempre. 180s y sin reintentos (un retry tras timeout
+        # puede facturar dos imagenes). El auto ya corre en background (fix10),
+        # asi que esperar aqui no bloquea ningun request HTTP.
+        client = provider._build_client().with_options(timeout=180.0, max_retries=0)
         response = client.images.generate(
             model=entry["model"],
             prompt=prompt[:3800],
