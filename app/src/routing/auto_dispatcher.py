@@ -609,8 +609,14 @@ def _list_candidates(
         DEFAULT_MODEL_QUALITY,
         MODEL_CONTEXT_TOKENS,
         MODEL_QUALITY,
+        configured_provider_slugs,
         list_model_catalog,
     )
+
+    # __E5FIX6__: jamás proponer un provider sin key configurada (p.ej. ollama
+    # sembrado en el catálogo). Con cero providers configurados no se filtra
+    # (entornos de test con stubs).
+    _available = configured_provider_slugs(ctx, conn)
 
     candidates = list_model_catalog(
         ctx,
@@ -626,6 +632,8 @@ def _list_candidates(
 
     result: list[dict[str, Any]] = []
     for entry in candidates:
+        if _available and entry["provider_slug"] not in _available:
+            continue
         est_input = max(estimated_input_tokens, 1000)
         est_output = 1024
         if estimated_input_tokens:

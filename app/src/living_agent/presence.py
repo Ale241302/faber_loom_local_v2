@@ -538,13 +538,16 @@ def handle_presence_message(
 
     if intent == "chat":
         index_context = gather_index_context(ctx, conn, query=query)
-        llm = None
-        if _tenant_context_is_empty(index_context):
+        # __E5FIX6__: el modelo real se intenta SIEMPRE primero — la ausencia de
+        # briefs (tenant "vacío" a ojos del índice) no debe degradar a texto
+        # enlatado si hay providers configurados.
+        llm = _chat_with_model(ctx, conn, query, index_context)
+        if llm is not None:
+            content = llm["content"]
+        elif _tenant_context_is_empty(index_context):
             content = _format_index_answer(index_context)
         else:
-            # E5-fix4: la conversación la responde un modelo real (cheap-first).
-            llm = _chat_with_model(ctx, conn, query, index_context)
-            content = llm["content"] if llm else (
+            content = (
                 f"Hola, soy {_display_name_for_agent(conn, ctx.require_tenant())}. "
                 "Pregúntame qué hay en tus workspaces o pídeme que profundice en alguno."
             )
