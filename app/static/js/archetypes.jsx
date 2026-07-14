@@ -83,6 +83,20 @@ const ARQ_S = {
   panelBody: {
     padding: "14px 16px",
   },
+  scrollBody: {
+    padding: "14px 16px",
+    overflow: "auto",
+    flex: 1,
+    minHeight: 0,
+  },
+  factoryPanel: {
+    maxHeight: "min(720px, 60vh)",
+    overflow: "hidden",
+  },
+  catalogPanel: {
+    flex: 1,
+    minHeight: 0,
+  },
 };
 
 const ARQ_PLACEHOLDERS = {
@@ -307,7 +321,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
     {error && <div style={S.error}>{error}</div>}
     {success && <div style={S.success}>{success}</div>}
 
-    <section className="panel" aria-label="Editor de arquetipo">
+    <section className="panel" aria-label="Editor de arquetipo" style={ARQ_S.factoryPanel}>
       <div className="panel-header">
         <div>
           <div className="panel-kicker">Fábrica</div>
@@ -315,7 +329,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
         </div>
         {editing && <span style={S.badge}>{editing}</span>}
       </div>
-      <div style={ARQ_S.panelBody}>
+      <div style={ARQ_S.scrollBody}>
         {loading && <div style={S.loading}>Cargando arquetipos…</div>}
         <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
           <label style={S.label}>
@@ -423,14 +437,14 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       </div>
     </section>
 
-    <section className="panel" aria-label="Catálogo de arquetipos">
+    <section className="panel" aria-label="Catálogo de arquetipos" style={ARQ_S.catalogPanel}>
       <div className="panel-header">
         <div>
           <div className="panel-kicker">Catálogo</div>
           <div className="panel-title">Arquetipos ({archetypes.length})</div>
         </div>
       </div>
-      <div style={ARQ_S.panelBody}>
+      <div style={ARQ_S.scrollBody}>
         {archetypes.length === 0 && !loading && (
           <div style={ARQ_S.empty}>
             Todavía no hay arquetipos.<br/>
