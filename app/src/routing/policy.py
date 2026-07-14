@@ -17,12 +17,26 @@ import logging
 import os
 from typing import Any
 
+from pydantic import BaseModel
+
 from ..config_cascade import resolve as cascade_resolve
 from ..context import Context
 from ..db import get_routing_policy
 
 
 logger = logging.getLogger(__name__)
+
+
+class RoutingConstraints(BaseModel):
+    """Restricciones efectivas de routing para una llamada.
+
+    ``None`` significa "sin restriccion". Una lista vacia en
+    ``provider_allowlist`` significa lo contrario: ningun proveedor es legal.
+    """
+
+    provider_allowlist: list[str] | None = None
+    provider_denylist: list[str] | None = None
+    jurisdiction_allowlist: list[str] | None = None
 
 
 def resolve_routing_mode(ctx: Context, conn: Any) -> str:
@@ -119,3 +133,84 @@ def get_effective_allowlists(
     model_allowlist: dict[str, list[str]] = policy.get("model_allowlist") or {}
 
     return provider_allowlist, model_allowlist
+
+
+def compose_routing_constraints(
+    env_providers: list[str] | None,
+    policy_providers: list[str] | None,
+    envelope: dict[str, Any],
+) -> RoutingConstraints:
+    """Componer las restricciones de las tres fuentes de gobierno.
+
+    Antes habia tres fuentes de verdad para "puedo usar este proveedor?" y solo
+    dos tenian dientes: la env var global y ``workspace_routing_policy``. El
+    envelope de ``routing_preset`` --el unico que dice "compliance"-- no se
+    enforceaba. Esta funcion las colapsa en una sola respuesta.
+
+    Una fuente que no restringe (``None`` o lista vacia) se saltea. El deny no
+    se resta del allowlist: viaja aparte para que el guard lo aplique al final
+    y gane incluso sobre un ``provider_slug`` pedido por el caller.
+    """
+
+    sources = [
+        source
+        for source in (env_providers, policy_providers, envelope.get("providers_allow"))
+        if source
+    ]
+
+    provider_allowlist: list[str] | None
+    if not sources:
+        provider_allowlist = None
+    else:
+        # Interseccion preservando el orden de la primera fuente que restringe.
+        # Una interseccion vacia es [] y no None: ningun proveedor es legal.
+        provider_allowlist = list(sources[0])
+        for source in sources[1:]:
+            allowed = set(source)
+            provider_allowlist = [slug for slug in provider_allowlist if slug in allowed]
+
+    return RoutingConstraints(
+        provider_allowlist=provider_allowlist,
+        provider_denylist=list(envelope.get("providers_deny") or []) or None,
+        jurisdiction_allowlist=list(envelope.get("jurisdictions") or []) or None,
+    )
+
+
+def resolve_effective_routing_constraints(
+    ctx: Context,
+    conn: Any,
+    preset_ref: str | None = None,
+    policy: dict[str, Any] | None = None,
+) -> RoutingConstraints:
+    """Resolver las restricciones efectivas para el preset de esta llamada.
+
+    Lee las tres fuentes y delega la composicion. ``preset_ref`` acepta lo mismo
+    que ``resolve_routing_preset``: '@preset/<slug>', un slug pelado, o el
+    legacy 'provider:model' (que no tiene envelope).
+    """
+
+    from ..db import get_routing_preset
+
+    if policy is None:
+        policy = get_routing_policy(ctx, conn)
+
+    env_provider_csv = os.getenv("FABERLOOM_PROVIDER_ALLOWLIST")
+    env_providers = (
+        [item.strip() for item in env_provider_csv.split(",") if item.strip()]
+        if env_provider_csv
+        else None
+    )
+
+    envelope: dict[str, Any] = {}
+    ref = (preset_ref or "").strip()
+    if ref and ":" not in ref:
+        slug = ref.split("@preset/", 1)[-1].strip()
+        preset = get_routing_preset(ctx, conn, slug)
+        if preset is not None:
+            envelope = preset.get("envelope") or {}
+
+    return compose_routing_constraints(
+        env_providers,
+        policy.get("provider_allowlist") or None,
+        envelope,
+    )

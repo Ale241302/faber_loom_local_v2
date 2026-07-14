@@ -4206,6 +4206,20 @@ def delete_routing_preset(
         return cursor.rowcount > 0
 
 
+def _provider_for_model(providers_allow: list[str], model: str) -> str | None:
+    """Devolver el primer proveedor permitido que realmente puede servir `model`.
+
+    Antes esto era un `next(...)` con fallback a `providers_allow[0]`, que
+    fabricaba pares invalidos como kimi/gpt-4o. Si ninguno lo sirve devolvemos
+    None y dejamos que el router --ya gobernado por el envelope-- elija.
+    """
+
+    for provider in providers_allow:
+        if model in router_cost.MODEL_ALLOWLIST.get(provider, set()):
+            return provider
+    return None
+
+
 def resolve_routing_preset(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -4244,46 +4258,37 @@ def resolve_routing_preset(
     providers_allow = envelope.get("providers_allow") or ["anthropic", "openai"]
     mode = curve.get("mode") or "balanceado"
     borderline_policy = curve.get("borderline_policy") or "premium"
+    params = {"mode": mode, "borderline_policy": borderline_policy}
     override = task_overrides.get(task_class) if task_class else None
     if override and override.get("default"):
         default_model = override["default"]
-        provider_guess = next((p for p in providers_allow if default_model in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+        provider = _provider_for_model(providers_allow, default_model)
+        if provider is None:
+            return None
         return {
             "preset_id": slug,
-            "provider_slug": provider_guess,
+            "provider_slug": provider,
             "model": default_model,
-            "params": {"mode": mode, "borderline_policy": borderline_policy},
+            "params": params,
             "reason": "task_override",
         }
     # Mode-based fallback using the catalog.
     if mode in {"eco", "cheap"}:
-        preferred = "gpt-4o-mini"
-        provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
-        return {
-            "preset_id": slug,
-            "provider_slug": provider_guess,
-            "model": preferred,
-            "params": {"mode": mode, "borderline_policy": borderline_policy},
-            "reason": "mode_fallback_cheap",
-        }
-    if mode in {"sport_plus", "sport"}:
-        preferred = "claude-3-5-sonnet"
-        provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
-        return {
-            "preset_id": slug,
-            "provider_slug": provider_guess,
-            "model": preferred,
-            "params": {"mode": mode, "borderline_policy": borderline_policy},
-            "reason": "mode_fallback_premium",
-        }
-    preferred = "gpt-4o"
-    provider_guess = next((p for p in providers_allow if preferred in router_cost.MODEL_ALLOWLIST.get(p, set())), providers_allow[0])
+        preferred, reason = "gpt-4o-mini", "mode_fallback_cheap"
+    elif mode in {"sport_plus", "sport"}:
+        preferred, reason = "claude-3-5-sonnet", "mode_fallback_premium"
+    else:
+        preferred, reason = "gpt-4o", "mode_fallback_balanced"
+
+    provider = _provider_for_model(providers_allow, preferred)
+    if provider is None:
+        return None
     return {
         "preset_id": slug,
-        "provider_slug": provider_guess,
+        "provider_slug": provider,
         "model": preferred,
-        "params": {"mode": mode, "borderline_policy": borderline_policy},
-        "reason": "mode_fallback_balanced",
+        "params": params,
+        "reason": reason,
     }
 
 

@@ -58,10 +58,17 @@ class ProviderConfig(BaseModel):
 
 
 class RouterSettings(BaseModel):
-    """SL1a default preset: Balanceado = provider priority order + fallback."""
+    """SL1a default preset: Balanceado = provider priority order + fallback.
+
+    Las restricciones de compliance del tenant (``routing_preset.envelope_json``)
+    llegan aca via ``build_router``. ``None`` significa "sin restriccion" en
+    allowlist/jurisdiccion y "sin denegados" en denylist.
+    """
 
     budget_cap_usd: float = Field(default=5.0, ge=0.0)
     provider_allowlist: list[str] | None = None
+    provider_denylist: list[str] | None = None
+    jurisdiction_allowlist: list[str] | None = None
 
 
 class UsageRecord(BaseModel):

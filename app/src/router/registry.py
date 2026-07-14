@@ -193,6 +193,8 @@ def build_router(
     tenant_id: str | None = None,
     budget_cap_usd: float | None = None,
     provider_allowlist: list[str] | None = None,
+    provider_denylist: list[str] | None = None,
+    jurisdiction_allowlist: list[str] | None = None,
     byo_mode: str | None = None,
 ) -> Router:
     """Build the default SL1a "Balanceado" router from env vars and local store.
@@ -206,6 +208,12 @@ def build_router(
 
     Optional ``budget_cap_usd`` and ``provider_allowlist`` override the
     environment defaults for workspace-aware routing.
+
+    ``provider_denylist`` y ``jurisdiction_allowlist`` transportan las
+    restricciones de compliance del envelope del tenant
+    (``routing_preset.envelope_json``) hasta el guard del engine. Se resuelven
+    con ``resolve_effective_routing_constraints``; sin ellas el router queda en
+    allow-all, que es el agujero que cierra SPEC_FB_ENVELOPE_ENFORCEMENT_v1.
     """
 
     settings = RouterSettings(
@@ -215,6 +223,8 @@ def build_router(
         provider_allowlist=provider_allowlist
         if provider_allowlist is not None
         else _env_csv("FABERLOOM_PROVIDER_ALLOWLIST"),
+        provider_denylist=provider_denylist,
+        jurisdiction_allowlist=jurisdiction_allowlist,
     )
 
     store = ProviderConfigStore()

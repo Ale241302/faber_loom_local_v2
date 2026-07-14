@@ -203,10 +203,22 @@ class Router:
         return preferred + rest
 
     def _provider_allowed(self, provider: Provider) -> bool:
+        slug = provider.provider_slug
+
+        # El blocklist gana sobre todo, incluso sobre un provider_slug pedido
+        # explicitamente por el caller (SPEC_FB_ROUTING_PRESETS_v1).
+        if self.settings.provider_denylist and slug in self.settings.provider_denylist:
+            return False
+
+        if self.settings.jurisdiction_allowlist is not None:
+            jurisdiction = router_cost.PROVIDER_JURISDICTION.get(slug)
+            if jurisdiction not in self.settings.jurisdiction_allowlist:
+                return False
+
         allowlist = self.settings.provider_allowlist
         if allowlist is None:
             return True
-        return provider.provider_slug in allowlist
+        return slug in allowlist
 
     def _resolve_model_for_provider(
         self, provider: Provider, request: CompletionRequest

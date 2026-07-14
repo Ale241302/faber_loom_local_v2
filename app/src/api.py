@@ -162,7 +162,7 @@ from .routing.auto_dispatcher import (
     NoCapacityError,
     run_auto_chain,
 )
-from .routing.policy import resolve_routing_mode
+from .routing.policy import resolve_effective_routing_constraints, resolve_routing_mode
 from .plans import PlanError, get_plan_surcharge_pct
 from .living_agent.autonomy import (
     degrade_workspace_if_needed,
@@ -2292,7 +2292,7 @@ def api_create_completion(
                 detail="Provider/model overrides are not allowed for @mention",
             )
 
-        router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+        router = _build_router_for_routine(ctx, conn, routine, byo_mode)
         provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
         if router.has_available_provider():
             _validate_completion_choice(
@@ -2866,7 +2866,7 @@ def api_invoke_routine(
         )
 
     byo_mode = _resolve_byo_mode(conn, ctx)
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+    router = _build_router_for_routine(ctx, conn, routine, byo_mode)
     provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(
@@ -3057,6 +3057,30 @@ def _preset_to_provider_model(preset_id: str | None) -> tuple[str | None, str | 
     if not provider or not model:
         return None, None
     return provider, model
+
+
+def _build_router_for_routine(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    routine: dict[str, Any],
+    byo_mode: str | None,
+) -> Any:
+    """Build a router gobernado por el envelope del preset de la routine.
+
+    Sin esto el router queda en allow-all y el envelope --el unico control que
+    dice "compliance"-- no tiene efecto: ante un ProviderError el fallback puede
+    servir desde un proveedor denegado (SPEC_FB_ENVELOPE_ENFORCEMENT_v1).
+    """
+
+    constraints = resolve_effective_routing_constraints(ctx, conn, routine.get("preset_id"))
+    return build_router(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        byo_mode=byo_mode,
+        provider_allowlist=constraints.provider_allowlist,
+        provider_denylist=constraints.provider_denylist,
+        jurisdiction_allowlist=constraints.jurisdiction_allowlist,
+    )
 
 
 def _resolve_provider_model_for_routine(
@@ -5984,7 +6008,7 @@ def api_run_routine(
         )
 
     byo_mode = _resolve_byo_mode(conn, ctx)
-    router = build_router(user_id=ctx.user_id, tenant_id=ctx.tenant_id, byo_mode=byo_mode)
+    router = _build_router_for_routine(ctx, conn, routine, byo_mode)
     provider_slug, model = _resolve_provider_model_for_routine(ctx, conn, routine, None, None, router)
     if router.has_available_provider():
         _validate_completion_choice(

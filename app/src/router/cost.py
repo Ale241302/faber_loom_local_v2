@@ -51,6 +51,18 @@ FALLBACK_PRICING_MODEL = "gpt-4o"
 
 PRICING_VERSION = "cost:sl1a-2026-07-13"
 
+# Jurisdiccion del vendor, no preferencia del tenant: Moonshot esta en China
+# para todos. Un slug ausente de esta tabla se trata como jurisdiccion
+# desconocida y se deniega cuando el tenant declaro `envelope.jurisdictions`,
+# para que un proveedor nuevo no se cuele por olvido.
+PROVIDER_JURISDICTION: dict[str, str] = {
+    "openai": "US",
+    "anthropic": "US",
+    "google": "US",
+    "kimi": "CN",
+    "ollama": "local",
+}
+
 # SL1a model allowlist per provider. Unknown models are rejected at the API layer
 # to avoid surprise costs / DoS through the local Ollama provider.
 MODEL_ALLOWLIST: dict[str, set[str]] = {
