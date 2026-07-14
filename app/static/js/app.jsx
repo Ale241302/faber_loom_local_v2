@@ -464,9 +464,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           </div>
         </section>
         <Accordion items={[
-          // SpaceLoom es la superficie/canvas de chat; el producto es FaberLoom.
-          // El rail usa el nombre del producto para abrir el canvas del workspace activo.
-          { id: "space-acc", title: "FaberLoom", badge: counts.chats, children: <RailItem label="FaberLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
+          // SpaceLoom es la superficie/canvas de chat del workspace activo.
+          { id: "space-acc", title: "SpaceLoom", badge: counts.chats, children: <RailItem label="SpaceLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
         ]} defaultOpen={activeAccordionId === "space-acc" ? ["space-acc"] : []} />
         <Accordion items={[
           { id: "entrada-acc", title: "Entrada", badge: (features?.email_connector_enabled ? counts.mail : 0) + counts.workloom, children: <>
