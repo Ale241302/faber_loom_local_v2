@@ -414,25 +414,44 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
     });
   }, [activeWorkspace, features]);
 
+  const [history, setHistory] = useState([]);
+
+  const loadHistory = useCallback(async () => {
+    if (!activeWorkspace) { setHistory([]); return; }
+    try {
+      const list = await apiGet(`/api/workspaces/${activeWorkspace.id}/chats`);
+      const sorted = (Array.isArray(list) ? list : []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      setHistory(sorted.slice(0, 10));
+    } catch { setHistory([]); }
+  }, [activeWorkspace]);
+
   useEffect(() => {
     loadCounts();
-    const interval = setInterval(loadCounts, 30000);
-    const handler = () => loadCounts();
+    loadHistory();
+    const interval = setInterval(() => { loadCounts(); loadHistory(); }, 30000);
+    const handler = () => { loadCounts(); loadHistory(); };
     window.addEventListener("faberloom-refresh", handler);
     return () => {
       clearInterval(interval);
       window.removeEventListener("faberloom-refresh", handler);
     };
-  }, [loadCounts]);
+  }, [loadCounts, loadHistory]);
 
   const go = (newMode, id) => { setMode(newMode); setNav(id); };
 
+  const openHistoryChat = (chat) => {
+    window.__faberloomActiveChatId = chat.id;
+    window.dispatchEvent(new CustomEvent("faberloom:load-chat", { detail: { chatId: chat.id } }));
+    setNav("space");
+  };
+
   const workspaceItem = (ws, idx) => (
-    <RailItem key={ws.id} label={ws.name} dot={DOTS[idx % DOTS.length]} active={ws.id === activeWorkspaceId} onClick={() => setActiveWorkspaceId(ws.id)} />
+    <RailItem key={ws.id} label={ws.name} dot={DOTS[idx % DOTS.length]} active={ws.id === activeWorkspaceId && nav === "workspace"} onClick={() => { setActiveWorkspaceId(ws.id); setNav("workspace"); }} />
   );
 
   const activeAccordionId = {
     space: "space-acc",
+    workspace: "myws-acc",
     inbox: "entrada-acc", workloom: "entrada-acc",
     stackloom: "cola-acc",
     kb: "kb-acc", "hitl-signals": "kb-acc",
@@ -480,7 +499,12 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "sharedws-acc", title: "Shared Workspaces", children: <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-muted)" }}>Sin workspaces compartidos.</div> }
         ]} defaultOpen={activeAccordionId === "sharedws-acc" ? ["sharedws-acc"] : []} />
         <Accordion items={[
-          { id: "hist-acc", title: "Historial", children: <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-muted)" }}>Historial reciente aparecerá aquí.</div> }
+          { id: "hist-acc", title: "Historial", badge: history.length, children: <div style={{ display: "flex", flexDirection: "column" }}>
+            {history.length === 0 && <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-muted)" }}>Historial reciente aparecerá aquí.</div>}
+            {history.map((chat, idx) => (
+              <RailItem key={chat.id} label={chat.title || "Chat sin título"} dot={DOTS[idx % DOTS.length]} active={false} onClick={() => openHistoryChat(chat)} />
+            ))}
+          </div> }
         ]} defaultOpen={activeAccordionId === "hist-acc" ? ["hist-acc"] : []} />
       </>}
       {mode === "aprender" && <>
@@ -825,11 +849,31 @@ function readStoredMode() {
   }
 }
 
-function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder, activeWorkspace }) {
+function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder, activeWorkspace, variant }) {
+  const isShell = variant === "shell";
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
   const [mode, setModeState] = useState(readStoredMode);
+  const [tier, setTier] = useState("balanced");
+
+  const allModels = useMemo(() => {
+    const list = [];
+    Object.entries(modelAllowlist || {}).forEach(([providerSlug, models]) => {
+      (models || []).forEach((m) => list.push({ provider_slug: providerSlug, model: m }));
+    });
+    return list;
+  }, [modelAllowlist]);
+
+  const tiers = useMemo(() => {
+    if (allModels.length === 0) return [];
+    if (allModels.length === 1) return [{ key: "eco", ...allModels[0] }, { key: "balanced", ...allModels[0] }, { key: "sport", ...allModels[0] }];
+    if (allModels.length === 2) return [{ key: "eco", ...allModels[0] }, { key: "balanced", ...allModels[0] }, { key: "sport", ...allModels[1] }];
+    return [{ key: "eco", ...allModels[0] }, { key: "balanced", ...allModels[Math.floor(allModels.length / 2)] }, { key: "sport", ...allModels[allModels.length - 1] }];
+  }, [allModels]);
+
+  const activeTier = tiers.find((t) => t.key === tier) || tiers[1] || tiers[0] || null;
+  const tierModelLabel = activeTier ? `${activeTier.provider_slug}/${activeTier.model}` : "Auto";
 
   const setMode = (next) => {
     setModeState(next);
@@ -923,8 +967,11 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     if (slashOpen) return;
     const text = draft.trim();
     if ((!text && !attachment) || disabled || uploading) return;
-    const options = { mode };
-    if (mode === "manual" && provider && model) {
+    const options = { mode: isShell ? "manual" : mode };
+    if (isShell && activeTier) {
+      options.provider_slug = activeTier.provider_slug;
+      options.model = activeTier.model;
+    } else if (mode === "manual" && provider && model) {
       options.provider_slug = provider;
       options.model = model;
     }
@@ -1045,6 +1092,55 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     event.preventDefault();
     submit(event);
   };
+
+  if (isShell) {
+    return <form className={cx("composer-shell composer-shell--space", isDragging && "composer-drag-over")} onSubmit={submit} aria-label="Composer de SpaceLoom" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+      {attachmentPreview && <div className="composer-attachment-preview">
+        {attachmentPreview.url
+          ? <img className="composer-attachment-thumb" src={attachmentPreview.url} alt={attachmentPreview.file.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }}/>
+          : <div className="composer-attachment-thumb composer-attachment-doc"><Icon name="file" size={22}/></div>}
+        <div className="composer-attachment-meta">
+          <span className="composer-attachment-name">{attachmentPreview.file.name}</span>
+          <span className="composer-attachment-status">{attachmentPreview.uploading ? "Subiendo…" : "Listo para enviar"}</span>
+        </div>
+        <button type="button" className="composer-tool" onClick={clearAttachment} title="Quitar adjunto" disabled={uploading}><Icon name="x" size={14}/></button>
+      </div>}
+      {selectedSkills.length > 0 && <div className="composer-skill-tags">
+        {selectedSkills.map((skill) => (
+          <span key={skill.skill_id} className="skill-tag">
+            <Icon name="check" size={12}/>{skill.name}
+            <button type="button" className="skill-tag-remove" onClick={() => removeSkill(skill.skill_id)} title="Quitar skill"><Icon name="x" size={10}/></button>
+          </span>
+        ))}
+      </div>}
+      <div className="space-shell-composer" ref={inputWrapRef}>
+        <div className={cx("box", draft.trim() && "focus")}>
+          <textarea value={draft} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={placeholder || "Iterá, investigá, o pedí a un agente…"} rows="1" disabled={disabled || uploading}/>
+          <div className="row">
+            <div className="pedal">
+              {tiers.map((t) => (
+                <button key={t.key} type="button" className={t.key === tier ? "on" : ""} onClick={() => setTier(t.key)} disabled={disabled || uploading} aria-pressed={t.key === tier}>
+                  {t.key === "eco" ? "Eco" : t.key === "balanced" ? "Balanceado" : "Sport+"}
+                </button>
+              ))}
+            </div>
+            <span><b style={{ color: "var(--coral)" }}>@agente activo</b></span>
+            <button type="submit" className={cx("send-btn", (draft.trim() || attachment) && "ready")} disabled={disabled || uploading || (!draft.trim() && !attachment)} aria-label="Enviar mensaje">↑</button>
+          </div>
+        </div>
+        <div className="hintc">Chat universal · cada workspace lo hereda · toolset en el panel derecho</div>
+        {slashOpen && filteredSkills.length > 0 && <div className="composer-skill-popover">
+          <div className="composer-skill-popover-header">Skills disponibles</div>
+          {filteredSkills.map((skill, idx) => (
+            <div key={skill.skill_id} className={cx("composer-skill-option", idx === slashIndex && "active")} onMouseEnter={() => setSlashIndex(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => selectSkill(skill)}>
+              <div className="composer-skill-option-main"><span className="composer-skill-option-kicker">/{skill.skill_id}</span><span className="composer-skill-name">{skill.name}</span></div>
+              <div className="composer-skill-desc">{skill.description}</div>
+            </div>
+          ))}
+        </div>}
+      </div>
+    </form>;
+  }
 
   return <form className={cx("composer-shell", isDragging && "composer-drag-over")} onSubmit={submit} aria-label="Composer de chat" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
     <div className="composer">
@@ -1182,6 +1278,243 @@ function SeamPanel() {
       <div className="seam-card"><strong><Icon name="audit" size={16}/>AuditWriter</strong><p>Hoy JSONL; mañana outbox/tabla sin reescribir la superficie.</p></div>
     </div>
   </aside>;
+}
+
+// Hook compartido para el hilo de chat de SpaceLoom. Reutiliza los mismos endpoints
+// que SpaceView (chats, messages, completions, router) sin introducir contratos nuevos.
+function useChatThread(activeWorkspace) {
+  const [chats, setChats] = useState([]);
+  const [activeChatId, setActiveChatIdLocal] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [routerStatus, setRouterStatus] = useState(null);
+  const [modelAllowlist, setModelAllowlist] = useState({});
+  const abortRef = useRef(new AbortController());
+  const pollingRef = useRef(null);
+
+  const setActiveChatId = useCallback((chatId) => {
+    setActiveChatIdLocal(chatId);
+    window.__faberloomActiveChatId = chatId;
+  }, []);
+
+  const wsId = activeWorkspace && activeWorkspace.id;
+
+  const isCurrent = (id) => activeWorkspace && activeWorkspace.id === id;
+
+  const loadChats = async () => {
+    if (!wsId) return;
+    const captured = wsId;
+    try {
+      const list = await apiGet(`/api/workspaces/${captured}/chats`);
+      if (isCurrent(captured)) setChats(Array.isArray(list) ? list : []);
+    } catch (err) { if (isCurrent(captured)) setError(err.message); }
+  };
+
+  const loadMessages = async (chatId) => {
+    if (!wsId || !chatId) { if (isCurrent(wsId)) setMessages([]); return; }
+    const captured = wsId;
+    try {
+      const list = await apiGet(`/api/workspaces/${captured}/chats/${chatId}/messages`);
+      if (isCurrent(captured)) setMessages(Array.isArray(list) ? list : []);
+    } catch (err) { if (isCurrent(captured)) setError(err.message); }
+  };
+
+  const loadRouter = async () => {
+    if (!wsId) return;
+    const captured = wsId;
+    try {
+      const [status, cfg] = await Promise.all([
+        apiGet(`/api/workspaces/${captured}/router/status`),
+        apiGet(`/api/workspaces/${captured}/providers`),
+      ]);
+      if (isCurrent(captured)) {
+        setRouterStatus(status);
+        setModelAllowlist(cfg.model_allowlist || {});
+      }
+    } catch { if (isCurrent(captured)) { setRouterStatus(null); setModelAllowlist({}); } }
+  };
+
+  useEffect(() => {
+    abortRef.current.abort();
+    abortRef.current = new AbortController();
+    if (pollingRef.current) { clearTimeout(pollingRef.current); pollingRef.current = null; }
+    setActiveChatId(null); setMessages([]); setChats([]); setError(null);
+    loadChats(); loadRouter();
+  }, [wsId]);
+  useEffect(() => { loadMessages(activeChatId); }, [activeChatId]);
+
+  const createChat = async () => {
+    if (!wsId) return null;
+    const captured = wsId;
+    setError(null);
+    try {
+      const chat = await apiPost(`/api/workspaces/${captured}/chats`, { title: "Nueva conversación" });
+      if (!isCurrent(captured)) return null;
+      setChats((prev) => [chat, ...prev]);
+      setActiveChatId(chat.id);
+      window.dispatchEvent(new CustomEvent("faberloom-refresh"));
+      return chat.id;
+    } catch (err) { if (isCurrent(captured)) setError(err.message); return null; }
+  };
+
+  const ensureActiveChat = async () => activeChatId || await createChat();
+
+  const sendMessage = async (text, options = {}) => {
+    if (!wsId) return;
+    const captured = wsId;
+    if (pollingRef.current) { clearTimeout(pollingRef.current); pollingRef.current = null; }
+    setBusy(true); setError(null);
+    try {
+      const chatId = await ensureActiveChat();
+      if (!chatId || !isCurrent(captured)) return;
+      const tempId = `temp_${Date.now()}`;
+      setMessages((prev) => [...prev, { id: tempId, role: "user", content: text, created_at: new Date().toISOString() }]);
+      const body = { message: text, mode: options.mode || "manual" };
+      if (options.provider_slug && options.model) { body.provider_slug = options.provider_slug; body.model = options.model; }
+      if (options.skill_ids && options.skill_ids.length) { body.skill_ids = options.skill_ids; }
+      if (options.attachment_object_id) {
+        body.attachment_object_id = options.attachment_object_id;
+        body.attachment_file_name = options.attachment_file_name;
+        body.attachment_mime_type = options.attachment_mime_type;
+      }
+      const completion = await apiPost(`/api/workspaces/${captured}/chats/${chatId}/completions`, body);
+      if (!isCurrent(captured)) return;
+      if (completion && completion.mode === "processing") {
+        await loadMessages(chatId);
+        const sentAt = (completion.message && completion.message.created_at) || new Date().toISOString();
+        const deadline = Date.now() + 300000;
+        let answered = false;
+        const poll = async () => {
+          if (!isCurrent(captured) || answered || Date.now() >= deadline) {
+            if (!answered && isCurrent(captured)) setError("La ejecución automática sigue en curso; revisa el chat en unos minutos.");
+            return;
+          }
+          pollingRef.current = setTimeout(async () => {
+            const list = await apiGet(`/api/workspaces/${captured}/chats/${chatId}/messages`).catch(() => null);
+            if (isCurrent(captured) && Array.isArray(list)) {
+              setMessages(list);
+              const last = list[list.length - 1];
+              if (last && last.role === "assistant" && last.created_at >= sentAt) {
+                answered = true;
+                pollingRef.current = null;
+              } else {
+                poll();
+              }
+            } else if (!isCurrent(captured)) {
+              pollingRef.current = null;
+            } else {
+              poll();
+            }
+          }, 2500);
+        };
+        poll();
+      } else if (completion && completion.message && !completion.message.content) {
+        setError("El modelo no generó respuesta. Intenta sin skills o con otro modelo.");
+      }
+      await loadMessages(chatId);
+      await loadRouter();
+      await loadChats();
+    } catch (err) { if (isCurrent(captured)) setError(err.message); }
+    if (isCurrent(captured)) setBusy(false);
+  };
+
+  const invokeRoutine = useCallback(async (routineId) => {
+    if (!wsId || !activeChatId) return;
+    const captured = wsId;
+    setBusy(true); setError(null);
+    try {
+      const completion = await apiPost(`/api/workspaces/${captured}/chats/${activeChatId}/invoke`, { routine_id: routineId });
+      if (completion && completion.message && isCurrent(captured)) {
+        await loadMessages(activeChatId);
+        await loadChats();
+      }
+    } catch (err) { if (isCurrent(captured)) setError(err.message); }
+    if (isCurrent(captured)) setBusy(false);
+  }, [wsId, activeChatId]);
+
+  return { chats, activeChatId, setActiveChatId, messages, busy, error, routerStatus, modelAllowlist, sendMessage, createChat, loadChats, invokeRoutine };
+}
+
+// SpaceLoom limpio: diseño del Shell (context strip + thread centrado + composer).
+// Opera sobre el workspace activo; nunca cross-workspace.
+function SpaceShellView({ activeWorkspace, generalWorkspace }) {
+  const { activeChatId, setActiveChatId, messages, busy, error, routerStatus, modelAllowlist, sendMessage, invokeRoutine } = useChatThread(activeWorkspace);
+  const threadRef = useRef(null);
+
+  useEffect(() => {
+    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
+  }, [messages, busy]);
+
+  // Cargar chat seleccionado desde el historial del rail al montar/actualizar.
+  useEffect(() => {
+    const chatId = window.__faberloomActiveChatId;
+    if (chatId && chatId !== activeChatId) setActiveChatId(chatId);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const chatId = e.detail?.chatId || window.__faberloomActiveChatId;
+      if (chatId) setActiveChatId(chatId);
+    };
+    window.addEventListener("faberloom:load-chat", handler);
+    return () => window.removeEventListener("faberloom:load-chat", handler);
+  }, [setActiveChatId]);
+
+  // Toolset / routines también invocan en el shell limpio.
+  useEffect(() => {
+    const handler = async (e) => {
+      const routineId = e.detail?.routine_id;
+      if (routineId && invokeRoutine) await invokeRoutine(routineId);
+    };
+    window.addEventListener("faberloom:invoke-routine", handler);
+    return () => window.removeEventListener("faberloom:invoke-routine", handler);
+  }, [invokeRoutine]);
+
+  if (!activeWorkspace) return <WorkspaceRequired icon="loom" title="SpaceLoom"/>;
+
+  const isGeneral = activeWorkspace.kind === "tenant_general" || (!!generalWorkspace && activeWorkspace.id === generalWorkspace.id);
+  const ctxType = isGeneral ? "Global" : "Tema";
+  const ctxName = activeWorkspace.display_name || activeWorkspace.name || "SpaceLoom";
+  const ctxSub = isGeneral ? "KB tenant · cross-workspace" : "Workspace · KB heredado";
+  const modelLabel = (routerStatus && (routerStatus.default_model || routerStatus.model)) || "Balanceado";
+  const showEmpty = messages.length === 0 && !busy && !error;
+
+  return <div className="space-shell-view">
+    <div className="ctxstrip">
+      <span className="ctxdot" style={{ background: isGeneral ? "var(--text-muted)" : "var(--coral)" }}/>
+      <div>
+        <div className="ctxname">{ctxName}</div>
+        <div className="ctxsub">{ctxSub}</div>
+      </div>
+      <span className={cx("ctxtype", isGeneral && "ctxtype-global")}>{ctxType}</span>
+      <div className="ctxmeta">
+        <span className="agentpill"><Icon name="spark" size={14}/><span>@agente activo</span></span>
+        <span className="modelpill"><Icon name="route" size={14}/>{modelLabel}</span>
+      </div>
+    </div>
+    <div className="spaceClean">
+      <div className="spaceThread" ref={threadRef} aria-label="Hilo de SpaceLoom" aria-live="polite">
+        {error && <div style={S.error}>{error}</div>}
+        {showEmpty && <div className="spaceEmpty">
+          <div className="seMark" aria-hidden="true"><BrandMark/></div>
+          <h3>El telar está listo</h3>
+          <p>Escribí para empezar a tejer. Cada workspace hereda este chat universal y su conocimiento.</p>
+        </div>}
+        {messages.map((msg) => (
+          <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
+            <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"}{msg.created_at ? " · " + new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+            <div className="message-content">{renderMessageContent(msg.content)}</div>
+          </div>
+        ))}
+        {busy && <div className="message message-assistant">
+          <div className="message-meta">FaberLoom</div>
+          <div className="message-content"><ThinkingSteps stepIndex={0}/></div>
+        </div>}
+      </div>
+      <Composer onSend={sendMessage} disabled={busy} routerStatus={routerStatus} modelAllowlist={modelAllowlist} activeWorkspace={activeWorkspace} placeholder="Iterá, investigá, o pedí a un agente… (@agente para invocar)" variant="shell"/>
+    </div>
+  </div>;
 }
 
 function SpaceView({ activeWorkspace }) {
@@ -3862,11 +4195,12 @@ function MailView({ activeWorkspace }) {
   </div>;
 }
 
-function Canvas({ nav, activeWorkspace, status, features, foundationView, user }) {
+function Canvas({ nav, activeWorkspace, generalWorkspace, status, features, foundationView, user }) {
   return <main className="canvas">
-    <ContextStrip activeWorkspace={activeWorkspace}/>
+    {nav !== "space" && <ContextStrip activeWorkspace={activeWorkspace}/>}
     {status === "error" && <div className="workspace-warning"><Icon/>No se pudo cargar /api/workspaces. El shell sigue disponible para revisar la interfaz.</div>}
-    {nav === "space" ? <SpaceView activeWorkspace={activeWorkspace}/>
+    {nav === "space" ? <SpaceShellView activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace}/>
+     : nav === "workspace" ? <SpaceView activeWorkspace={activeWorkspace}/>
      : nav === "kb" ? <KBView activeWorkspace={activeWorkspace}/>
      : nav === "routines" ? <RoutinesView activeWorkspace={activeWorkspace}/>
      : nav === "workloom" ? <WorkloomView activeWorkspace={activeWorkspace}/>
@@ -4120,7 +4454,7 @@ function App({ user, onLogout }) {
     <CommandPalette isOpen={cmdkOpen} onClose={() => setCmdkOpen(false)} onSelect={handleCommand} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} nav={nav}/>
     <div className="frame">
       <Rail mode={mode} setMode={setMode} nav={nav} setNav={setNav} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} setActiveWorkspaceId={setActiveWorkspaceId} status={status} activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace} hidden={!leftRailOpen} user={user} onLogout={onLogout} features={features} foundationView={foundationView} setFoundationView={setFoundationView}/>
-      <Canvas nav={nav} activeWorkspace={activeWorkspace} status={status} features={features} foundationView={foundationView} user={user}/>
+      <Canvas nav={nav} activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace} status={status} features={features} foundationView={foundationView} user={user}/>
       <RightRail open={rightRailOpen} activeWorkspace={activeWorkspace}/>
     </div>
     <ToastContainer toasts={toasts} onDismiss={dismissToast}/>
