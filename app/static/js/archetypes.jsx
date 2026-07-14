@@ -80,6 +80,9 @@ const ARQ_S = {
     fontSize: 11,
     color: "var(--text-muted)",
   },
+  panelBody: {
+    padding: "14px 16px",
+  },
 };
 
 const ARQ_PLACEHOLDERS = {
@@ -312,7 +315,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
         </div>
         {editing && <span style={S.badge}>{editing}</span>}
       </div>
-      <div style={S.panelBody}>
+      <div style={ARQ_S.panelBody}>
         {loading && <div style={S.loading}>Cargando arquetipos…</div>}
         <div style={{ ...S.form, opacity: loading ? 0.6 : 1 }}>
           <label style={S.label}>
@@ -427,7 +430,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
           <div className="panel-title">Arquetipos ({archetypes.length})</div>
         </div>
       </div>
-      <div style={S.panelBody}>
+      <div style={ARQ_S.panelBody}>
         {archetypes.length === 0 && !loading && (
           <div style={ARQ_S.empty}>
             Todavía no hay arquetipos.<br/>
