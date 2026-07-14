@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 48
+SCHEMA_VERSION = 49
 CURRENT_SCHEMA_VERSION = SCHEMA_VERSION
 
 
@@ -1798,6 +1798,50 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_workspace_kind_tenant
         ON workspace(tenant_id, kind);
     """,
+    49: """
+    -- E5-1 — Arquetipos: la plantilla reutilizable de "como se hace un tipo de
+    -- trabajo", tenant-scoped y poblada por el usuario (pueden ser N).
+    -- Distinto del enum cerrado de architectural_archetype en skills.py.
+    -- El FK compuesto hace inexpresable referenciar un preset de otro tenant.
+    CREATE TABLE IF NOT EXISTS archetype (
+        tenant_id TEXT NOT NULL,
+        archetype_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        description TEXT,
+        category TEXT NOT NULL DEFAULT 'custom'
+            CHECK (category IN ('skill', 'agent', 'template', 'reference', 'custom')),
+        routing_preset_id TEXT,
+        persona_md TEXT NOT NULL DEFAULT '',
+        skill_md TEXT NOT NULL DEFAULT '',
+        tools_allowlist TEXT NOT NULL DEFAULT '[]',
+        schema_output_json TEXT NOT NULL DEFAULT '{}',
+        trigger_json TEXT NOT NULL DEFAULT '{}',
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        is_template INTEGER NOT NULL DEFAULT 0 CHECK (is_template IN (0, 1)),
+        created_by TEXT,
+        actor_id TEXT,
+        actor_role_at_decision TEXT,
+        routine_version TEXT,
+        skill_version TEXT,
+        schema_version INTEGER NOT NULL DEFAULT 49,
+        source_version TEXT NOT NULL DEFAULT 'v1',
+        approved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, archetype_id),
+        FOREIGN KEY (tenant_id, routing_preset_id)
+            REFERENCES routing_preset(tenant_id, preset_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_archetype_tenant_active
+        ON archetype(tenant_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_archetype_preset
+        ON archetype(tenant_id, routing_preset_id);
+    -- Procedencia, no link vivo: de que arquetipo se copio la routine al
+    -- crearse. Sin FK porque routine.tenant_id es nullable y routine es
+    -- workspace-scoped mientras archetype es tenant-scoped.
+    ALTER TABLE routine ADD COLUMN archetype_id TEXT;
+    """,
 }
 
 
@@ -2110,6 +2154,7 @@ class RoutineRead(BaseModel):
     persona_md: str
     is_active: int
     category: str
+    archetype_id: str | None = None
     routine_version: str | None = None
     skill_version: str | None = None
     schema_version: int
@@ -3250,6 +3295,133 @@ class RoutingPresetResolveRead(BaseModel):
     model: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     reason: str = "fallback"
+
+
+# -----------------------------------------------------------------------------
+# E5-1: arquetipos (la unidad de trabajo reutilizable, SPEC_FB_ARCHETYPE_FACTORY_v1)
+# -----------------------------------------------------------------------------
+
+
+class ArchetypeCreate(BaseModel):
+    """Alta de arquetipo.
+
+    Los campos de faceta espejan RoutineCreate a proposito: el copy-on-create es
+    una transferencia campo a campo, sin transformacion.
+    """
+
+    archetype_id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    category: str = Field(default="custom", max_length=20)
+    routing_preset_id: str | None = Field(default=None, max_length=120)
+    persona_md: str = Field(default="", max_length=20000)
+    skill_md: str = Field(default="", max_length=50000)
+    tools_allowlist: str = Field(default="[]", max_length=2000)
+    schema_output_json: str = Field(default="{}", max_length=10000)
+    trigger_json: str = Field(default="{}", max_length=10000)
+    is_active: bool = True
+    is_template: bool = False
+
+    @field_validator("archetype_id")
+    @classmethod
+    def archetype_id_must_be_slug(cls, value: str) -> str:
+        value = value.strip()
+        if ":" in value or "/" in value or " " in value:
+            raise ValueError("archetype_id must be a slug without ':', '/' or spaces")
+        return value
+
+    @field_validator("routing_preset_id")
+    @classmethod
+    def routing_preset_id_must_be_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        # routing_preset.preset_id guarda el slug pelado; el prefijo @preset/ es
+        # cosa de routine.preset_id, no de la referencia del arquetipo.
+        if ":" in value or "/" in value or " " in value:
+            raise ValueError("routing_preset_id must be a bare slug (no '@preset/' prefix)")
+        return value
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_valid(cls, value: str) -> str:
+        if value not in _ROUTINE_CATEGORIES:
+            raise ValueError(f"Invalid archetype category '{value}'")
+        return value
+
+    @field_validator("tools_allowlist")
+    @classmethod
+    def tools_allowlist_must_be_valid(cls, value: str) -> str:
+        return _must_be_json_array_of_strings(value, "tools_allowlist")
+
+
+class ArchetypeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    category: str | None = Field(default=None, max_length=20)
+    routing_preset_id: str | None = Field(default=None, max_length=120)
+    persona_md: str | None = Field(default=None, max_length=20000)
+    skill_md: str | None = Field(default=None, max_length=50000)
+    tools_allowlist: str | None = Field(default=None, max_length=2000)
+    schema_output_json: str | None = Field(default=None, max_length=10000)
+    trigger_json: str | None = Field(default=None, max_length=10000)
+    is_active: bool | None = None
+    is_template: bool | None = None
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_valid(cls, value: str | None) -> str | None:
+        if value is not None and value not in _ROUTINE_CATEGORIES:
+            raise ValueError(f"Invalid archetype category '{value}'")
+        return value
+
+    @field_validator("tools_allowlist")
+    @classmethod
+    def tools_allowlist_must_be_valid(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _must_be_json_array_of_strings(value, "tools_allowlist")
+
+
+class ArchetypeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: str
+    archetype_id: str
+    name: str
+    version: int
+    description: str | None = None
+    category: str
+    routing_preset_id: str | None = None
+    persona_md: str
+    skill_md: str
+    tools_allowlist: str
+    schema_output_json: str
+    trigger_json: str
+    is_active: bool
+    is_template: bool
+    created_by: str | None = None
+    actor_id: str | None = None
+    actor_role_at_decision: str | None = None
+    routine_version: str | None = None
+    skill_version: str | None = None
+    schema_version: int
+    source_version: str | None = None
+    approved_by: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ArchetypeListRead(BaseModel):
+    archetypes: list[ArchetypeRead]
+
+
+class RoutineFromArchetypeCreate(BaseModel):
+    """Materializar una routine desde un arquetipo (copia plana)."""
+
+    name: str = Field(min_length=1, max_length=120)
 
 
 class InvoiceLineItem(BaseModel):

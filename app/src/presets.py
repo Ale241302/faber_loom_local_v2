@@ -203,21 +203,33 @@ def delete_preset(
     conn: Any = Depends(get_db),
     user: dict[str, Any] = Depends(get_current_user),
 ) -> None:
-    """Delete a routing preset."""
+    """Delete a routing preset.
+
+    Falla con 409 si algun arquetipo lo referencia, nombrando cuales, en vez de
+    huerfanizarlos en silencio (SPEC_FB_ARCHETYPE_FACTORY_v1).
+    """
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
-        if not delete_routing_preset(ctx, conn, preset_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found")
-        audit_writer.write(
-            ctx,
-            conn,
-            action="routing_preset.deleted",
-            payload={"preset_id": preset_id},
-            system_event=True,
-        )
+    try:
+        with transaction(conn, ctx=ctx):
+            _ensure_system_workspace(conn)
+            if not delete_routing_preset(ctx, conn, preset_id):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found"
+                )
+            audit_writer.write(
+                ctx,
+                conn,
+                action="routing_preset.deleted",
+                payload={"preset_id": preset_id},
+                system_event=True,
+            )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @presets_router.get("/{tenant_id}/usage/summary")

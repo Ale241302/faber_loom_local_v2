@@ -506,6 +506,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           { id: "tenant-acc", title: "Tenant", children: <>
             <RailItem label="Router / Proveedores" icon="route" active={nav === "settings" || nav === "routing"} onClick={() => setNav("settings")} />
             <RailItem label="Routing en sombra" icon="activity" active={nav === "routing-shadow"} onClick={() => setNav("routing-shadow")} />
+            <RailItem label="Arquetipos" icon="spark" active={nav === "archetypes"} onClick={() => setNav("archetypes")} />
             <RailItem label="Agent Tasks" icon="layers" active={nav === "agent-tasks"} onClick={() => setNav("agent-tasks")} />
             <RailItem label="Facturación" icon="credit-card" active={nav === "billing"} onClick={() => setNav("billing")} />
             <RailItem label="Salud" icon="activity" active={nav === "health"} onClick={() => setNav("health")} />
@@ -3859,6 +3860,7 @@ function Canvas({ nav, activeWorkspace, status, features, foundationView, user }
      : nav === "tenant-admin" && window.TenantAdminPanel ? <window.TenantAdminPanel user={user}/>
      : nav === "promotion" && window.PromotionReadinessPanel ? <window.PromotionReadinessPanel activeWorkspace={activeWorkspace} user={user}/>
      : nav === "routing-shadow" && window.ShadowReportPanel ? <window.ShadowReportPanel tenantId={user?.tenant_id || "default"} />
+     : nav === "archetypes" && window.ArchetypesPanel ? <window.ArchetypesPanel user={user} activeWorkspace={activeWorkspace} />
      : nav === "agent-tasks" && window.AgentTasksPanel ? <window.AgentTasksPanel workspaceId={activeWorkspace?.id} />
      : nav === "workspaces-admin" ? <WorkspacesAdminView/>
      : nav === "tenant-settings" && window.TenantSettings ? <window.TenantSettings activeWorkspace={activeWorkspace} user={user}/>

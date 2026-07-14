@@ -2354,6 +2354,7 @@ ROUTINE_COLUMNS = """
     persona_md,
     is_active,
     category,
+    archetype_id,
     routine_version,
     skill_version,
     schema_version,
@@ -2409,8 +2410,13 @@ def create_routine(
     source_version: str = "v1",
     skill_version: str | None = None,
     category: str = "custom",
+    archetype_id: str | None = None,
 ) -> dict[str, Any]:
-    """Insert a routine scoped to the current workspace."""
+    """Insert a routine scoped to the current workspace.
+
+    ``archetype_id`` es procedencia, no link vivo: registra de que arquetipo se
+    copio esta routine al crearse (SPEC_FB_ARCHETYPE_FACTORY_v1).
+    """
 
     with transaction(conn, ctx=ctx):
         enforce_tenant_scoped(ctx)
@@ -2425,10 +2431,10 @@ def create_routine(
                 id, workspace_id, tenant_id, user_id, actor_id,
                 actor_role_at_decision, name, skill_md, tools_allowlist,
                 schema_output_json, preset_id, trigger_json, persona_md,
-                is_active, category, routine_version, skill_version, schema_version,
-                source_version, approved_by, created_at, updated_at
+                is_active, category, archetype_id, routine_version, skill_version,
+                schema_version, source_version, approved_by, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 routine_id,
@@ -2446,6 +2452,7 @@ def create_routine(
                 persona_md,
                 is_active,
                 category,
+                archetype_id,
                 routine_version,
                 skill_version,
                 SCHEMA_VERSION,
@@ -4195,13 +4202,265 @@ def delete_routing_preset(
     conn: sqlite3.Connection,
     preset_id: str,
 ) -> bool:
-    """Delete a routing preset. Returns True if it existed and was deleted."""
+    """Delete a routing preset. Returns True if it existed and was deleted.
+
+    Falla si algun arquetipo lo referencia: el FK compuesto de `archetype` lo
+    impediria igual, pero con un error crudo de integridad. Chequear antes deja
+    decir *quien* lo referencia (SPEC_FB_ARCHETYPE_FACTORY_v1).
+    """
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        referencing = [
+            row["archetype_id"]
+            for row in conn.execute(
+                "SELECT archetype_id FROM archetype WHERE tenant_id = ? AND routing_preset_id = ? ORDER BY archetype_id",
+                (ctx.require_tenant(), preset_id),
+            ).fetchall()
+        ]
+        if referencing:
+            raise ValueError(
+                f"Preset '{preset_id}' esta referenciado por "
+                f"{len(referencing)} arquetipo(s): {', '.join(referencing)}"
+            )
+        cursor = conn.execute(
+            "DELETE FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            (ctx.require_tenant(), preset_id),
+        )
+        return cursor.rowcount > 0
+
+
+# -----------------------------------------------------------------------------
+# E5-1: arquetipos (SPEC_FB_ARCHETYPE_FACTORY_v1)
+# -----------------------------------------------------------------------------
+
+ARCHETYPE_COLUMNS = """
+    tenant_id, archetype_id, name, version, description, category,
+    routing_preset_id, persona_md, skill_md, tools_allowlist,
+    schema_output_json, trigger_json, is_active, is_template,
+    created_by, actor_id, actor_role_at_decision, routine_version,
+    skill_version, schema_version, source_version, approved_by,
+    created_at, updated_at
+"""
+
+
+def _archetype_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = row_to_dict(row)
+    data["is_active"] = bool(data.get("is_active", 1))
+    data["is_template"] = bool(data.get("is_template", 0))
+    return data
+
+
+def list_archetypes(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
+    """List the tenant's archetypes."""
+
+    ctx.require_tenant()
+    query = f"SELECT {ARCHETYPE_COLUMNS} FROM archetype WHERE tenant_id = ?"
+    params: list[Any] = [ctx.require_tenant()]
+    if active_only:
+        query += " AND is_active = 1"
+    query += " ORDER BY name ASC"
+    rows = conn.execute(query, tuple(params)).fetchall()
+    return [_archetype_row_to_dict(row) for row in rows]
+
+
+def get_archetype(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    archetype_id: str,
+) -> dict[str, Any] | None:
+    """Fetch one archetype scoped to the tenant."""
+
+    ctx.require_tenant()
+    row = conn.execute(
+        f"SELECT {ARCHETYPE_COLUMNS} FROM archetype WHERE tenant_id = ? AND archetype_id = ?",
+        (ctx.require_tenant(), archetype_id),
+    ).fetchone()
+    return _archetype_row_to_dict(row) if row is not None else None
+
+
+def _require_preset_in_tenant(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    routing_preset_id: str | None,
+) -> None:
+    """Fallar si el preset no existe en este tenant.
+
+    El FK compuesto ya lo garantiza a nivel schema; esto lo convierte en un 409
+    con mensaje en vez de un IntegrityError crudo.
+    """
+
+    if routing_preset_id is None:
+        return
+    row = conn.execute(
+        "SELECT preset_id FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+        (ctx.require_tenant(), routing_preset_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError(
+            f"Routing preset '{routing_preset_id}' no existe en este tenant"
+        )
+
+
+def create_archetype(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    archetype_id: str,
+    name: str,
+    description: str | None = None,
+    category: str = "custom",
+    routing_preset_id: str | None = None,
+    persona_md: str = "",
+    skill_md: str = "",
+    tools_allowlist: str = "[]",
+    schema_output_json: str = "{}",
+    trigger_json: str = "{}",
+    is_active: bool = True,
+    is_template: bool = False,
+) -> dict[str, Any]:
+    """Create a tenant-scoped archetype."""
+
+    ctx.require_tenant()
+    now = utc_now()
+    with transaction(conn, ctx=ctx):
+        existing = conn.execute(
+            "SELECT archetype_id FROM archetype WHERE tenant_id = ? AND archetype_id = ?",
+            (ctx.require_tenant(), archetype_id),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError(f"Archetype '{archetype_id}' already exists in this tenant")
+        _require_preset_in_tenant(ctx, conn, routing_preset_id)
+        conn.execute(
+            f"""
+            INSERT INTO archetype (
+                tenant_id, archetype_id, name, version, description, category,
+                routing_preset_id, persona_md, skill_md, tools_allowlist,
+                schema_output_json, trigger_json, is_active, is_template,
+                created_by, actor_id, actor_role_at_decision, routine_version,
+                skill_version, schema_version, source_version, approved_by,
+                created_at, updated_at
+            )
+            VALUES ({','.join('?' for _ in range(24))})
+            """,
+            (
+                ctx.require_tenant(),
+                archetype_id,
+                name.strip(),
+                1,
+                description,
+                category,
+                routing_preset_id,
+                persona_md,
+                skill_md,
+                tools_allowlist,
+                schema_output_json,
+                trigger_json,
+                1 if is_active else 0,
+                1 if is_template else 0,
+                ctx.resolved_actor_id(),
+                ctx.resolved_actor_id(),
+                ctx.actor_role_at_decision,
+                None,
+                None,
+                SCHEMA_VERSION,
+                "v1",
+                None,
+                now,
+                now,
+            ),
+        )
+        row = conn.execute(
+            f"SELECT {ARCHETYPE_COLUMNS} FROM archetype WHERE tenant_id = ? AND archetype_id = ?",
+            (ctx.require_tenant(), archetype_id),
+        ).fetchone()
+        assert row is not None
+        return _archetype_row_to_dict(row)
+
+
+def update_archetype(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    archetype_id: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    routing_preset_id: str | None = None,
+    persona_md: str | None = None,
+    skill_md: str | None = None,
+    tools_allowlist: str | None = None,
+    schema_output_json: str | None = None,
+    trigger_json: str | None = None,
+    is_active: bool | None = None,
+    is_template: bool | None = None,
+) -> dict[str, Any] | None:
+    """Update an archetype, bumping version on content changes.
+
+    Editar un arquetipo NO toca las routines ya creadas: la herencia es plana
+    (copy-on-create). La cascada esta DIFERIDA por SPEC_FB_ARCHETYPE_v1.
+    """
+
+    ctx.require_tenant()
+    with transaction(conn, ctx=ctx):
+        existing = get_archetype(ctx, conn, archetype_id)
+        if existing is None:
+            return None
+        updates: dict[str, Any] = {"updated_at": utc_now()}
+        if name is not None:
+            updates["name"] = name.strip()
+        if description is not None:
+            updates["description"] = description
+        if category is not None:
+            updates["category"] = category
+        if routing_preset_id is not None:
+            _require_preset_in_tenant(ctx, conn, routing_preset_id)
+            updates["routing_preset_id"] = routing_preset_id
+        if persona_md is not None:
+            updates["persona_md"] = persona_md
+        if skill_md is not None:
+            updates["skill_md"] = skill_md
+        if tools_allowlist is not None:
+            updates["tools_allowlist"] = tools_allowlist
+        if schema_output_json is not None:
+            updates["schema_output_json"] = schema_output_json
+        if trigger_json is not None:
+            updates["trigger_json"] = trigger_json
+        if is_active is not None:
+            updates["is_active"] = 1 if is_active else 0
+        if is_template is not None:
+            updates["is_template"] = 1 if is_template else 0
+        if len(updates) > 1:
+            updates["version"] = existing["version"] + 1
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE archetype SET {cols} WHERE tenant_id = ? AND archetype_id = ?",
+            (*updates.values(), ctx.require_tenant(), archetype_id),
+        )
+        return get_archetype(ctx, conn, archetype_id)
+
+
+def delete_archetype(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    archetype_id: str,
+) -> bool:
+    """Delete an archetype. Returns True if it existed and was deleted.
+
+    No chequea routines: la procedencia (routine.archetype_id) es una foto
+    historica, no un link vivo, asi que borrar el arquetipo no la invalida.
+    """
 
     ctx.require_tenant()
     with transaction(conn, ctx=ctx):
         cursor = conn.execute(
-            "DELETE FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
-            (ctx.require_tenant(), preset_id),
+            "DELETE FROM archetype WHERE tenant_id = ? AND archetype_id = ?",
+            (ctx.require_tenant(), archetype_id),
         )
         return cursor.rowcount > 0
 

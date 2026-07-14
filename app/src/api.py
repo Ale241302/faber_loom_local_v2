@@ -44,6 +44,7 @@ from .db import (
     create_or_get_mail_outbox,
     create_model_catalog_entry,
     create_routine,
+    get_archetype,
     create_routine_run,
     create_workspace,
     delete_chat,
@@ -237,6 +238,7 @@ from .models import (
     ProviderTestRequest,
     ProviderTestResult,
     RoutineCreate,
+    RoutineFromArchetypeCreate,
     RoutineRead,
     RoutineRunApproveRequest,
     RoutineRunRead,
@@ -5782,6 +5784,125 @@ def api_create_routine(
                 "name": created["name"],
                 "category": created["category"],
                 "preset_id": created.get("preset_id"),
+            },
+            correlation_id=created["id"],
+            mirror_jsonl=False,
+        )
+
+    if event is not None:
+        _mirror_audit(event)
+    return RoutineRead(**created)
+
+
+def _rename_skill_md(skill_md: str, new_name: str) -> str:
+    """Reescribir el `name:` del frontmatter de un SKILL.md.
+
+    El arquetipo es la plantilla y la routine es la instancia: materializar
+    implica nombrarla. Sin esto, el invariante routine.name == frontmatter.name
+    (api_create_routine) limitaria a una sola routine por arquetipo por
+    workspace, y un arquetipo instanciable una sola vez no es una plantilla.
+    """
+
+    if not skill_md.startswith("---"):
+        return skill_md
+    end = skill_md.find("\n---", 3)
+    if end == -1:
+        return skill_md
+    head, tail = skill_md[:end], skill_md[end:]
+    renamed, count = re.subn(r"(?m)^name:.*$", f"name: {new_name}", head, count=1)
+    return renamed + tail if count else skill_md
+
+
+@router.post(
+    "/workspaces/{workspace_id}/routines/from-archetype/{archetype_id}",
+    response_model=RoutineRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def api_create_routine_from_archetype(
+    workspace_id: str,
+    archetype_id: str,
+    payload: RoutineFromArchetypeCreate,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_workspace_db),
+) -> RoutineRead:
+    """Materializar una routine desde un arquetipo (copia plana).
+
+    La copia va del grano tenant (arquetipo) al grano workspace (routine), que es
+    lo que resuelve el mismatch: un arquetipo se comparte entre workspaces, sus
+    instancias no. Editar el arquetipo despues NO toca esta routine: la herencia
+    es plana y la cascada esta DIFERIDA (SPEC_FB_ARCHETYPE_v1).
+    """
+
+    ctx = context_from_request(request, workspace_id=workspace_id)
+    if get_workspace(ctx, conn) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    archetype = get_archetype(ctx, conn, archetype_id)
+    if archetype is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Archetype '{archetype_id}' not found",
+        )
+
+    if is_routine_name_taken(ctx, conn, payload.name):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A routine named '{payload.name}' already exists in this workspace",
+        )
+
+    skill_md = _rename_skill_md(archetype["skill_md"], payload.name)
+    skill_version: str | None = None
+    if skill_md.strip():
+        try:
+            compiled = compile_skill_md(skill_md)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"El SKILL.md del arquetipo '{archetype_id}' no compila: {exc}",
+            ) from exc
+        if compiled.get("version"):
+            skill_version = compiled["version"]
+
+    persona_md = archetype["persona_md"]
+    if not persona_md and skill_md:
+        persona_md = _extract_runtime(skill_md).get("persona", "")
+
+    # routine.preset_id espera el prefijo @preset/; routing_preset.preset_id
+    # guarda el slug pelado. La asimetria es preexistente (app.jsx:4059).
+    preset_id = (
+        f"@preset/{archetype['routing_preset_id']}"
+        if archetype.get("routing_preset_id")
+        else None
+    )
+
+    event: AuditEvent | None = None
+    with transaction(conn, ctx=ctx):
+        created = create_routine(
+            ctx,
+            conn,
+            name=payload.name,
+            skill_md=skill_md,
+            tools_allowlist=archetype["tools_allowlist"],
+            schema_output_json=archetype["schema_output_json"],
+            preset_id=preset_id,
+            trigger_json=archetype["trigger_json"],
+            persona_md=persona_md,
+            is_active=1,
+            source_version="v1",
+            skill_version=skill_version,
+            category=archetype["category"],
+            archetype_id=archetype_id,
+        )
+        event = audit_writer.write(
+            ctx,
+            conn,
+            action="routine.created_from_archetype",
+            payload={
+                "routine_id": created["id"],
+                "name": created["name"],
+                "archetype_id": archetype_id,
+                "archetype_version": archetype["version"],
+                "preset_id": preset_id,
             },
             correlation_id=created["id"],
             mirror_jsonl=False,

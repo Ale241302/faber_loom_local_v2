@@ -96,6 +96,8 @@ ALTER TABLE workspace_model_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_model_catalog FORCE ROW LEVEL SECURITY;
 ALTER TABLE routing_preset ENABLE ROW LEVEL SECURITY;
 ALTER TABLE routing_preset FORCE ROW LEVEL SECURITY;
+ALTER TABLE archetype ENABLE ROW LEVEL SECURITY;
+ALTER TABLE archetype FORCE ROW LEVEL SECURITY;
 ALTER TABLE manual_invoice ENABLE ROW LEVEL SECURITY;
 ALTER TABLE manual_invoice FORCE ROW LEVEL SECURITY;
 ALTER TABLE payment_reconciliation ENABLE ROW LEVEL SECURITY;
@@ -146,7 +148,7 @@ BEGIN
               'draft', 'routine', 'routine_run', 'gold_candidate', 'usage_record',
               'mail_message', 'mail_outbox', 'email_account', 'audit_log',
               'editorial_history', 'correction_log', 'workspace_smtp_config', 'workspace_routing_policy',
-              'workspace_model_catalog', 'routing_preset', 'manual_invoice', 'payment_reconciliation',
+              'workspace_model_catalog', 'routing_preset', 'archetype', 'manual_invoice', 'payment_reconciliation',
               'tenant_invoice_sequence',
               'ambient_config', 'ambient_workspace_config',
               'ambient_detector', 'ambient_cycle', 'ambient_detector_run',
@@ -259,6 +261,13 @@ CREATE POLICY tenant_workspace_policy ON ambient_detector_run
 -- 8. Tenant-scoped tables (no workspace_id)
 -- ---------------------------------------------------------------------------
 CREATE POLICY tenant_policy ON routing_preset
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
+
+-- E5-1: arquetipos. Tenant-scoped, NO workspace-scoped: un arquetipo se
+-- comparte entre los workspaces del tenant; sus instancias (routines) no.
+CREATE POLICY tenant_policy ON archetype
     FOR ALL
     USING (tenant_id = current_setting('app.current_tenant', true))
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true));
