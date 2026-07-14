@@ -5834,49 +5834,50 @@ def api_create_routine_from_archetype(
     """
 
     ctx = context_from_request(request, workspace_id=workspace_id)
-    if get_workspace(ctx, conn) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    archetype = get_archetype(ctx, conn, archetype_id)
-    if archetype is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Archetype '{archetype_id}' not found",
-        )
+    with transaction(conn, ctx=ctx):
+        if get_workspace(ctx, conn) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    if is_routine_name_taken(ctx, conn, payload.name):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"A routine named '{payload.name}' already exists in this workspace",
-        )
+        archetype = get_archetype(ctx, conn, archetype_id)
+        if archetype is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Archetype '{archetype_id}' not found",
+            )
 
-    skill_md = _rename_skill_md(archetype["skill_md"], payload.name)
-    skill_version: str | None = None
-    if skill_md.strip():
-        try:
-            compiled = compile_skill_md(skill_md)
-        except ValueError as exc:
+        if is_routine_name_taken(ctx, conn, payload.name):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"El SKILL.md del arquetipo '{archetype_id}' no compila: {exc}",
-            ) from exc
-        if compiled.get("version"):
-            skill_version = compiled["version"]
+                detail=f"A routine named '{payload.name}' already exists in this workspace",
+            )
 
-    persona_md = archetype["persona_md"]
-    if not persona_md and skill_md:
-        persona_md = _extract_runtime(skill_md).get("persona", "")
+        skill_md = _rename_skill_md(archetype["skill_md"], payload.name)
+        skill_version: str | None = None
+        if skill_md.strip():
+            try:
+                compiled = compile_skill_md(skill_md)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"El SKILL.md del arquetipo '{archetype_id}' no compila: {exc}",
+                ) from exc
+            if compiled.get("version"):
+                skill_version = compiled["version"]
 
-    # routine.preset_id espera el prefijo @preset/; routing_preset.preset_id
-    # guarda el slug pelado. La asimetria es preexistente (app.jsx:4059).
-    preset_id = (
-        f"@preset/{archetype['routing_preset_id']}"
-        if archetype.get("routing_preset_id")
-        else None
-    )
+        persona_md = archetype["persona_md"]
+        if not persona_md and skill_md:
+            persona_md = _extract_runtime(skill_md).get("persona", "")
 
-    event: AuditEvent | None = None
-    with transaction(conn, ctx=ctx):
+        # routine.preset_id espera el prefijo @preset/; routing_preset.preset_id
+        # guarda el slug pelado. La asimetria es preexistente (app.jsx:4059).
+        preset_id = (
+            f"@preset/{archetype['routing_preset_id']}"
+            if archetype.get("routing_preset_id")
+            else None
+        )
+
+        event: AuditEvent | None = None
         created = create_routine(
             ctx,
             conn,

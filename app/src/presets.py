@@ -74,7 +74,8 @@ def list_presets(
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    rows = list_routing_presets(ctx, conn)
+    with transaction(conn, ctx=ctx):
+        rows = list_routing_presets(ctx, conn)
     return {"presets": [RoutingPresetRead(**row) for row in rows]}
 
 
@@ -134,7 +135,8 @@ def get_preset(
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    row = get_routing_preset(ctx, conn, preset_id)
+    with transaction(conn, ctx=ctx):
+        row = get_routing_preset(ctx, conn, preset_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found")
     return RoutingPresetRead(**row)
@@ -273,7 +275,8 @@ def resolve_preset(
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    resolved = resolve_routing_preset(ctx, conn, preset_id, task_class=task_class, complexity=complexity)
+    with transaction(conn, ctx=ctx):
+        resolved = resolve_routing_preset(ctx, conn, preset_id, task_class=task_class, complexity=complexity)
     if resolved is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found")
     return RoutingPresetResolveRead(**resolved)

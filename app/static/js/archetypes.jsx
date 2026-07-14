@@ -5,8 +5,7 @@
 // enum cerrado de architectural_archetype, que nombra otra cosa.
 //
 // Estilos: usa el objeto global S de app.jsx. El objeto local se llama ARQ_S y
-// NO S: app.jsx carga después y pisaría un `var S` local (es el bug que hoy deja
-// a routing_shadow.jsx renderizando con style={undefined}).
+// NO S: app.jsx carga después y pisaría un `var S` local.
 
 var { useState, useEffect } = React;
 
@@ -19,7 +18,7 @@ const ARQ_EMPTY_FORM = {
   category: "skill",
   routing_preset_id: "",
   persona_md: "",
-  skill_md: "---\nname: mi-arquetipo\npersona: Sos un asistente.\ntools: []\n---\nQué hace este tipo de trabajo.",
+  skill_md: "",
   tools_allowlist: "[]",
   schema_output_json: "{}",
   trigger_json: "{}",
@@ -51,12 +50,94 @@ const ARQ_S = {
     fontSize: 12.5,
     lineHeight: 1.6,
   },
+  skillBox: {
+    maxHeight: 180,
+    overflowY: "auto",
+    border: "1px solid var(--border)",
+    borderRadius: 8,
+    padding: "8px 10px",
+    background: "var(--input-bg)",
+  },
+  skillRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: "5px 0",
+    cursor: "pointer",
+  },
+  skillCheck: {
+    marginTop: 2,
+    accentColor: "var(--accent)",
+  },
+  skillLabel: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 1.4,
+  },
+  skillDesc: {
+    fontSize: 11,
+    color: "var(--text-muted)",
+  },
 };
+
+const ARQ_PLACEHOLDERS = {
+  tools_allowlist: '["web_search", "send_email", "create_object"]',
+  schema_output_json: '{"type":"object","properties":{"quote_id":{"type":"string"},"items":{"type":"array"}},"required":["quote_id"]}',
+  trigger_json: '{"intent_hints":["cotizar","presupuesto"],"keywords":["precio","costo"]}',
+};
+
+function buildSkillMd(selectedIds, skills) {
+  const selected = skills.filter((s) => selectedIds.includes(s.skill_id));
+  if (!selected.length) return "";
+  return selected
+    .map((s) => `<!-- skill: ${s.skill_id} -->\n${s.skill_md || ""}`.trim())
+    .join("\n\n---\n\n");
+}
+
+function detectSelectedSkills(skillMd, skills) {
+  if (!skillMd) return [];
+  return skills
+    .filter((s) => skillMd.includes(`<!-- skill: ${s.skill_id} -->`) || skillMd.includes(s.skill_id))
+    .map((s) => s.skill_id);
+}
+
+function SkillMultiSelect({ skills, selectedIds, onChange }) {
+  const toggle = (skillId) => {
+    if (selectedIds.includes(skillId)) {
+      onChange(selectedIds.filter((id) => id !== skillId));
+    } else {
+      onChange([...selectedIds, skillId]);
+    }
+  };
+  return (
+    <div style={ARQ_S.skillBox}>
+      {skills.length === 0 && (
+        <div style={{ ...ARQ_S.hint, padding: "6px 0" }}>No hay skills disponibles en el catálogo global.</div>
+      )}
+      {skills.map((s) => (
+        <label key={s.skill_id} style={ARQ_S.skillRow}>
+          <input
+            type="checkbox"
+            style={ARQ_S.skillCheck}
+            checked={selectedIds.includes(s.skill_id)}
+            onChange={() => toggle(s.skill_id)}
+          />
+          <div style={ARQ_S.skillLabel}>
+            <div>{s.name || s.skill_id}</div>
+            {s.description && <div style={ARQ_S.skillDesc}>{s.description}</div>}
+          </div>
+        </label>
+      ))}
+    </div>
+  );
+}
 
 function ArchetypesPanel({ user, activeWorkspace }) {
   const [archetypes, setArchetypes] = useState([]);
   const [presets, setPresets] = useState([]);
+  const [skills, setSkills] = useState([]);
   const [form, setForm] = useState(ARQ_EMPTY_FORM);
+  const [selectedSkillIds, setSelectedSkillIds] = useState([]);
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,6 +158,12 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       } catch (_) {
         setPresets([]);
       }
+      try {
+        const s = await apiGet(`/api/skills`);
+        setSkills(s.skills || []);
+      } catch (_) {
+        setSkills([]);
+      }
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -93,6 +180,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
 
   const reset = () => {
     setForm(ARQ_EMPTY_FORM);
+    setSelectedSkillIds([]);
     setEditing(null);
   };
 
@@ -111,6 +199,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       trigger_json: a.trigger_json || "{}",
       is_active: !!a.is_active,
     });
+    setSelectedSkillIds(detectSelectedSkills(a.skill_md || "", skills));
     setSuccess(null);
     setError(null);
   };
@@ -183,6 +272,14 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       );
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const onSkillSelectionChange = (ids) => {
+    setSelectedSkillIds(ids);
+    const built = buildSkillMd(ids, skills);
+    if (built) {
+      update("skill_md", built);
     }
   };
 
@@ -264,8 +361,20 @@ function ArchetypesPanel({ user, activeWorkspace }) {
           </label>
 
           <label style={S.label}>
-            SKILL.md
-            <textarea style={{ ...S.monoTextarea, minHeight: 150 }} value={form.skill_md}
+            Skills del catálogo
+            <SkillMultiSelect
+              skills={skills}
+              selectedIds={selectedSkillIds}
+              onChange={onSkillSelectionChange}
+            />
+          </label>
+          <div style={ARQ_S.hint}>
+            Seleccioná una o más skills. Se concatenan en el SKILL.md resultante.
+          </div>
+
+          <label style={S.label}>
+            SKILL.md resultante
+            <textarea style={{ ...S.monoTextarea, minHeight: 120 }} value={form.skill_md}
               onChange={(e) => update("skill_md", e.target.value)}/>
           </label>
           <div style={ARQ_S.hint}>
@@ -275,18 +384,21 @@ function ArchetypesPanel({ user, activeWorkspace }) {
           <label style={S.label}>
             Tools allowlist (JSON)
             <textarea style={{ ...S.monoTextarea, minHeight: 56 }} rows={2} value={form.tools_allowlist}
+              placeholder={ARQ_PLACEHOLDERS.tools_allowlist}
               onChange={(e) => update("tools_allowlist", e.target.value)}/>
           </label>
 
           <label style={S.label}>
             Schema de salida (JSON)
             <textarea style={{ ...S.monoTextarea, minHeight: 90 }} value={form.schema_output_json}
+              placeholder={ARQ_PLACEHOLDERS.schema_output_json}
               onChange={(e) => update("schema_output_json", e.target.value)}/>
           </label>
 
           <label style={S.label}>
             Trigger (JSON)
             <textarea style={{ ...S.monoTextarea, minHeight: 56 }} rows={2} value={form.trigger_json}
+              placeholder={ARQ_PLACEHOLDERS.trigger_json}
               onChange={(e) => update("trigger_json", e.target.value)}/>
           </label>
 

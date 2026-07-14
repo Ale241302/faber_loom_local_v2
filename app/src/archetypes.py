@@ -77,7 +77,8 @@ def list_tenant_archetypes(
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    rows = list_archetypes(ctx, conn, active_only=active_only)
+    with transaction(conn, ctx=ctx):
+        rows = list_archetypes(ctx, conn, active_only=active_only)
     return {"archetypes": [ArchetypeRead(**row) for row in rows]}
 
 
@@ -143,7 +144,8 @@ def get_tenant_archetype(
 
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
-    row = get_archetype(ctx, conn, archetype_id)
+    with transaction(conn, ctx=ctx):
+        row = get_archetype(ctx, conn, archetype_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
