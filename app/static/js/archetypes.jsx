@@ -293,12 +293,12 @@ function ArchetypesPanel({ user, activeWorkspace }) {
   };
 
   if (!tenantId) {
-    return <div className="classic" style={S.view}>
+    return <div className="classic" style={{ ...S.view, height: "100%", overflowY: "auto" }}>
       <div style={S.error}>Sin tenant activo.</div>
     </div>;
   }
 
-  return <div className="classic" style={S.view}>
+  return <div className="classic" style={{ ...S.view, height: "100%", overflowY: "auto" }}>
     <div className="vhead">
       <div>
         <div className="vtitle">Arquetipos</div>
