@@ -10,7 +10,6 @@ Todas las mutaciones se auditan.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -22,6 +21,7 @@ from .context import SYSTEM_WORKSPACE_ID, Context
 from .db import (
     create_archetype,
     delete_archetype,
+    ensure_system_workspace,
     get_archetype,
     get_db,
     list_archetypes,
@@ -35,20 +35,6 @@ from .models import (
 )
 
 archetypes_router = APIRouter(prefix="/tenants", tags=["archetypes"])
-
-
-def _ensure_system_workspace(conn: Any) -> None:
-    """Guarantee the synthetic system workspace row exists for system-scoped audit."""
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """
-        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
-        VALUES (?, 'System', ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING
-        """,
-        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
-    )
 
 
 def _require_tenant_admin(tenant_id: str, user: dict[str, Any]) -> None:
@@ -109,7 +95,7 @@ def create_tenant_archetype(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             created = create_archetype(
                 ctx,
                 conn,
@@ -181,7 +167,7 @@ def patch_tenant_archetype(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             updated = update_archetype(
                 ctx,
                 conn,
@@ -240,7 +226,7 @@ def delete_tenant_archetype(
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         deleted = delete_archetype(ctx, conn, archetype_id)
         if not deleted:
             raise HTTPException(

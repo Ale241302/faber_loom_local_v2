@@ -1,4 +1,10 @@
-"""E3-4: legacy docs/SKILL_*.md migration to manifest v2."""
+"""E3-4: legacy SKILL_*.md migration to manifest v2.
+
+Verifica el lado v2 de la migracion: que cada id legacy tenga su
+faberloom/SKILL_*.md compilable, sin auto-apply y con aprobacion para salidas
+externas. El inventario de los originales v1 vive en mwt-knowledge-hub junto al
+resto del conocimiento, asi que no se chequea desde aca.
+"""
 
 from __future__ import annotations
 
@@ -30,10 +36,6 @@ DEPRECATED_LEGACY_IDS: set[str] = {
     "SKILL_FRONTEND_PRINCIPLES_MWT",
     "SKILL_RUNTIME",
 }
-
-
-def _legacy_files(project_root: Path) -> list[Path]:
-    return sorted((project_root / "docs").glob("SKILL_*.md"))
 
 
 def _faberloom_v2_files(project_root: Path) -> dict[str, Path]:
@@ -98,13 +100,6 @@ def _demo_workspace_id(client: TestClient) -> str:
     workspaces = response.json()["workspaces"]
     assert workspaces
     return workspaces[0]["id"]
-
-
-def test_legacy_inventory_counts(project_root: Path) -> None:
-    legacy = _legacy_files(project_root)
-    ids = {p.stem for p in legacy}
-    assert ids == MIGRABLE_LEGACY_IDS | DEPRECATED_LEGACY_IDS
-    assert len(ids) == 13
 
 
 def test_migrable_v2_files_exist(project_root: Path) -> None:

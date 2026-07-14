@@ -175,6 +175,20 @@ def test_create_and_list_archetype(client: TestClient) -> None:
     assert resp.status_code == 200, resp.text
     assert [a["archetype_id"] for a in resp.json()["archetypes"]] == ["cotizacion-b2b"]
 
+    # El system workspace se crea con el tenant real, no con el sentinel
+    # SYSTEM_WORKSPACE_ID. En Postgres con RLS, usar el sentinel como tenant_id
+    # viola la politica de workspace y produce HTTP 500.
+    app_conn = sqlite3.connect(os.environ["FABERLOOM_DB_PATH"])
+    app_conn.row_factory = sqlite3.Row
+    row = app_conn.execute(
+        "SELECT tenant_id FROM workspace WHERE id = ?", ("__system__",)
+    ).fetchone()
+    app_conn.close()
+    assert row is not None, "system workspace no fue creado"
+    assert row["tenant_id"] == tenant_id, (
+        f"system workspace pertenece a {row['tenant_id']!r}, no al tenant activo {tenant_id!r}"
+    )
+
 
 def test_archetype_without_preset_is_legal(client: TestClient) -> None:
     """routing_preset_id NULL no rompe el FK compuesto."""

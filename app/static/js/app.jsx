@@ -464,7 +464,9 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           </div>
         </section>
         <Accordion items={[
-          { id: "space-acc", title: "FaberLoom", badge: counts.chats, children: <RailItem label="FaberLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
+          // SpaceLoom es una superficie, no el producto: el nombre FaberLoom no
+          // va acá (SPEC_SPACELOOM_ETAPA1_v1:56).
+          { id: "space-acc", title: "SpaceLoom", badge: counts.chats, children: <RailItem label="SpaceLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
         ]} defaultOpen={activeAccordionId === "space-acc" ? ["space-acc"] : []} />
         <Accordion items={[
           { id: "entrada-acc", title: "Entrada", badge: (features?.email_connector_enabled ? counts.mail : 0) + counts.workloom, children: <>
@@ -810,11 +812,34 @@ function ThinkingSteps({ stepIndex }) {
   </span>;
 }
 
+// El modo elige el motor del chat general (manual => presencia; auto => router
+// con planner), así que tiene que sobrevivir al desmontaje del Composer al
+// navegar entre secciones.
+const MODE_STORAGE_KEY = "faberloom.composer.mode";
+
+function readStoredMode() {
+  try {
+    const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
+    return stored === "auto" || stored === "manual" ? stored : "manual";
+  } catch (_) {
+    return "manual";
+  }
+}
+
 function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder, activeWorkspace }) {
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
-  const [mode, setMode] = useState("manual");
+  const [mode, setModeState] = useState(readStoredMode);
+
+  const setMode = (next) => {
+    setModeState(next);
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch (_) {
+      // Sin localStorage el modo simplemente no persiste; no rompe el composer.
+    }
+  };
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
@@ -1054,7 +1079,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
               <Icon name="paperclip" size={16}/>
             </button>
             <button type="button" className="composer-tool" disabled={disabled || uploading} onClick={() => setShowModelPicker((v) => !v)} title="Modelo / proveedor / modo">
-              <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? (PROVIDER_LABELS[provider] || provider) : "Auto (router)")}
+              <Icon name="route" size={16}/>{mode === "auto" ? "Auto" : (provider ? `Manual · ${PROVIDER_LABELS[provider] || provider}` : "Manual")}
             </button>
             <button type="submit" className="send-button" disabled={disabled || uploading || (!draft.trim() && !attachment)}><Icon name="send" size={16}/>Enviar</button>
           </div>

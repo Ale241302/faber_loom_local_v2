@@ -6,7 +6,6 @@ may create, update or delete presets. All mutations are audited.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,6 +17,7 @@ from .context import SYSTEM_WORKSPACE_ID, Context
 from .db import (
     create_routing_preset,
     delete_routing_preset,
+    ensure_system_workspace,
     get_db,
     get_routing_preset,
     list_routing_presets,
@@ -35,20 +35,6 @@ from .models import (
 )
 
 presets_router = APIRouter(prefix="/tenants", tags=["routing-presets"])
-
-
-def _ensure_system_workspace(conn: Any) -> None:
-    """Guarantee the synthetic system workspace row exists for system-scoped audit."""
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """
-        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
-        VALUES (?, 'System', ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING
-        """,
-        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
-    )
 
 
 def _require_tenant_admin(tenant_id: str, user: dict[str, Any]) -> None:
@@ -106,7 +92,7 @@ def create_preset(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             created = create_routing_preset(
                 ctx,
                 conn,
@@ -168,7 +154,7 @@ def patch_preset(
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         updated = update_routing_preset(
             ctx,
             conn,
@@ -213,7 +199,7 @@ def delete_preset(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             if not delete_routing_preset(ctx, conn, preset_id):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Preset not found"

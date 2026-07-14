@@ -69,7 +69,13 @@ _WS_REFERENCE_RE = re.compile(
 
 
 def classify_intent(query: str) -> PresenceIntent:
-    """Clasifica la intención del mensaje sin llamar a un modelo."""
+    """Clasifica la intención del mensaje sin llamar a un modelo.
+
+    El fallback es "chat". "general" responde desde el índice sin llamar al
+    modelo y sin mirar el historial, así que solo puede dispararse con evidencia
+    explícita de que se pide un panorama: como fallback se tragaría cualquier
+    seguimiento conversacional y le borraría el contexto.
+    """
 
     lowered = query.lower().strip()
     if not lowered:
@@ -88,12 +94,9 @@ def classify_intent(query: str) -> PresenceIntent:
         if hint in lowered:
             return "deepdive"
 
-    # Saludos / conversación simple.
-    first = lowered.split()[0]
-    if first in {"hola", "hi", "hello", "buenas"}:
-        return "chat"
-
-    return "general"
+    # Sin evidencia de panorama/tarea/profundizacion, es conversacion. Los
+    # saludos ("hola", "buenas") caen aca por el mismo camino.
+    return "chat"
 
 
 def _user_roles(ctx: Context) -> set[str]:

@@ -19,7 +19,7 @@ from .audit import audit_writer
 from .auth import get_current_user
 from .config_cascade import ConfigCascadeError, resolve
 from .context import SYSTEM_WORKSPACE_ID, Context
-from .db import get_db, transaction
+from .db import ensure_system_workspace, get_db, transaction
 from .entity_identity import IdentityError, create_identity, get_identity, update_identity
 from .foundation.core import connect as connect_foundation
 from .key_broker import KeyBrokerError, KeyLevel, get_policy, request_access, set_policy
@@ -39,26 +39,6 @@ def _require_confirmation(resource_id: str, confirmation_token: str | None) -> N
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Action requires explicit confirmation; provide confirmation_token={expected}",
         )
-
-
-def _ensure_system_workspace(conn: Any) -> None:
-    """Guarantee the synthetic system workspace row exists.
-
-    Tenant-level lifecycle events (identity mutations, key-access grants) are
-    audited at system scope. The ``audit_log.workspace_id`` foreign key requires
-    a matching ``workspace`` row, so we seed one idempotently before the first
-    system-scoped audit write. Works on both SQLite and Postgres.
-    """
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """
-        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
-        VALUES (?, 'System', ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING
-        """,
-        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
-    )
 
 
 def _emit_system_audit(
@@ -86,7 +66,7 @@ def _emit_system_audit(
         actor_role_at_decision=role,
     )
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         event = audit_writer.write(
             ctx,
             conn,

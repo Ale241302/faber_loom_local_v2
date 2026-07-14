@@ -7,7 +7,6 @@ mutations are audited.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -22,6 +21,7 @@ from .db import (
     create_manual_invoice,
     create_reconciliation,
     delete_manual_invoice,
+    ensure_system_workspace,
     get_db,
     get_manual_invoice,
     get_reconciliation,
@@ -44,20 +44,6 @@ from .models import (
 )
 
 billing_router = APIRouter(prefix="/tenants", tags=["billing"])
-
-
-def _ensure_system_workspace(conn: Any) -> None:
-    """Guarantee the synthetic system workspace row exists for system-scoped audit."""
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """
-        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
-        VALUES (?, 'System', ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING
-        """,
-        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
-    )
 
 
 def _require_tenant_admin(tenant_id: str, user: dict[str, Any]) -> None:
@@ -115,7 +101,7 @@ def create_invoice(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             created = create_manual_invoice(
                 ctx,
                 conn,
@@ -177,7 +163,7 @@ def patch_invoice(
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         updated = update_manual_invoice(
             ctx,
             conn,
@@ -213,7 +199,7 @@ def delete_invoice(
     _require_tenant_admin(tenant_id, user)
     ctx = _tenant_context(request, tenant_id)
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         if not delete_manual_invoice(ctx, conn, invoice_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
         audit_writer.write(
@@ -254,7 +240,7 @@ def create_reconciliation_item(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             created = create_reconciliation(
                 ctx,
                 conn,
@@ -297,7 +283,7 @@ def patch_reconciliation_match(
     ctx = _tenant_context(request, tenant_id)
     try:
         with transaction(conn, ctx=ctx):
-            _ensure_system_workspace(conn)
+            ensure_system_workspace(conn, ctx.tenant_id)
             updated = match_reconciliation(
                 ctx,
                 conn,
@@ -488,7 +474,7 @@ def download_invoice_pdf(
     pdf_bytes = _render_invoice_pdf(invoice, has_tax_certificate=_tenant_has_tax_certificate(ctx))
 
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         if invoice.get("pdf_generated_at") is None:
             mark_invoice_pdf_generated(ctx, conn, invoice_id)
         audit_writer.write(

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from .api import context_from_request
 from .auth import get_current_user
 from .context import SYSTEM_WORKSPACE_ID, Context
-from .db import get_db, transaction
+from .db import ensure_system_workspace, get_db, transaction
 
 
 def _raise_golden_error(exc: ValueError) -> None:
@@ -77,20 +77,6 @@ def _tenant_context(request: Request, tenant_id: str) -> Context:
     )
 
 
-def _ensure_system_workspace(conn: Any) -> None:
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """
-        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
-        VALUES (?, 'System', ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING
-        """,
-        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, now, now),
-    )
-
-
 class ProposeGoldenCaseRequest(BaseModel):
     run_id: str = Field(..., min_length=1)
 
@@ -114,7 +100,7 @@ def propose_golden_case_endpoint(
     ctx = _tenant_context(request, tenant_id)
 
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         case = propose_golden_case_from_run(
             ctx,
             conn,
@@ -140,7 +126,7 @@ def list_golden_cases_endpoint(
     ctx = _tenant_context(request, tenant_id)
 
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         cases = list_golden_cases(
             ctx,
             conn,
@@ -167,7 +153,7 @@ def approve_golden_case_endpoint(
 
     user_id = user.get("user_id") or user.get("sub") or "local"
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         try:
             case = approve_golden_case(ctx, conn, case_id=case_id, approved_by=user_id)
         except ValueError as exc:
@@ -191,7 +177,7 @@ def verify_golden_case_endpoint(
 
     user_id = user.get("user_id") or user.get("sub") or "local"
     with transaction(conn, ctx=ctx):
-        _ensure_system_workspace(conn)
+        ensure_system_workspace(conn, ctx.tenant_id)
         try:
             case = verify_golden_case(ctx, conn, case_id=case_id, verified_by=user_id)
         except ValueError as exc:

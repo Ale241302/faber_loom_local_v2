@@ -242,6 +242,27 @@ def transaction(conn: Any, ctx: Context | None = None) -> Iterator[None]:
         yield
 
 
+def ensure_system_workspace(conn: Any, tenant_id: str) -> None:
+    """Guarantee the synthetic system workspace row exists.
+
+    ``audit_log.workspace_id`` has a foreign key to ``workspace(id)``, so
+    system-scoped audit writes need a matching row. The row is scoped to the
+    caller's tenant: Postgres RLS policies on ``workspace`` compare
+    ``tenant_id`` against ``app.current_tenant``, and that variable is already
+    set to the active tenant by ``transaction(conn, ctx=...)``.
+    """
+
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO workspace (id, name, slug, tenant_id, created_at, updated_at)
+        VALUES (?, 'System', ?, ?, ?, ?)
+        ON CONFLICT (id) DO NOTHING
+        """,
+        (SYSTEM_WORKSPACE_ID, SYSTEM_WORKSPACE_ID, tenant_id, now, now),
+    )
+
+
 def recompute_all_workspace_hmacs(conn: sqlite3.Connection) -> None:
     """Recompute content-aware workspace HMACs for every sealed row.
 
