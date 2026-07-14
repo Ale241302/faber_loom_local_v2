@@ -298,7 +298,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
     </div>;
   }
 
-  return <div className="classic" style={{ ...S.view, height: "100%", overflowY: "auto" }}>
+  return <div className="classic" style={S.view}>
     <div className="vhead">
       <div>
         <div className="vtitle">Arquetipos</div>
@@ -311,6 +311,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
     {error && <div style={S.error}>{error}</div>}
     {success && <div style={S.success}>{success}</div>}
 
+    <div style={S.grid2}>
     <section className="panel" aria-label="Editor de arquetipo">
       <div className="panel-header">
         <div>
@@ -427,7 +428,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       </div>
     </section>
 
-    <section className="panel" aria-label="Catálogo de arquetipos" style={ARQ_S.catalogPanel}>
+    <section className="panel" aria-label="Catálogo de arquetipos">
       <div className="panel-header">
         <div>
           <div className="panel-kicker">Catálogo</div>
@@ -459,6 +460,7 @@ function ArchetypesPanel({ user, activeWorkspace }) {
         </div>)}
       </div>
     </section>
+    </div>
   </div>;
 }
 
