@@ -19,9 +19,9 @@ const ARQ_EMPTY_FORM = {
   routing_preset_id: "",
   persona_md: "",
   skill_md: "",
-  tools_allowlist: "[]",
-  schema_output_json: "{}",
-  trigger_json: "{}",
+  tools_allowlist: "",
+  schema_output_json: "",
+  trigger_json: "",
   is_active: true,
 };
 
@@ -57,6 +57,8 @@ const ARQ_S = {
     borderRadius: 8,
     padding: "8px 10px",
     background: "var(--input-bg)",
+    scrollbarWidth: "thin",
+    scrollbarColor: "var(--text-muted) var(--bg-sunken)",
   },
   skillRow: {
     display: "flex",
@@ -194,9 +196,9 @@ function ArchetypesPanel({ user, activeWorkspace }) {
       routing_preset_id: a.routing_preset_id || "",
       persona_md: a.persona_md || "",
       skill_md: a.skill_md || "",
-      tools_allowlist: a.tools_allowlist || "[]",
-      schema_output_json: a.schema_output_json || "{}",
-      trigger_json: a.trigger_json || "{}",
+      tools_allowlist: a.tools_allowlist || "",
+      schema_output_json: a.schema_output_json || "",
+      trigger_json: a.trigger_json || "",
       is_active: !!a.is_active,
     });
     setSelectedSkillIds(detectSelectedSkills(a.skill_md || "", skills));
@@ -216,9 +218,9 @@ function ArchetypesPanel({ user, activeWorkspace }) {
         routing_preset_id: form.routing_preset_id || null,
         persona_md: form.persona_md,
         skill_md: form.skill_md,
-        tools_allowlist: form.tools_allowlist,
-        schema_output_json: form.schema_output_json,
-        trigger_json: form.trigger_json,
+        tools_allowlist: (form.tools_allowlist || "[]").trim() || "[]",
+        schema_output_json: (form.schema_output_json || "{}").trim() || "{}",
+        trigger_json: (form.trigger_json || "{}").trim() || "{}",
         is_active: form.is_active,
       };
       if (editing) {

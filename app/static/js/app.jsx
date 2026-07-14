@@ -28,7 +28,7 @@ var NAV = {
 };
 
 var S = {
-  view: { minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "auto" },
+  view: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "auto" },
   grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, alignItems: "start" },
   grid3: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, alignItems: "start" },
   panelBody: { padding: "14px 16px", overflow: "auto" },
