@@ -2021,7 +2021,8 @@ def _handle_presence_completion(
     # selection is the exception: it only changes the agent's persona.
     archetype_context: str | None = None
     if payload.archetype_id:
-        _, archetype_context = _build_archetype_context(ctx, conn, payload.archetype_id)
+        with transaction(conn, ctx=ctx):
+            _, archetype_context = _build_archetype_context(ctx, conn, payload.archetype_id)
     if _AT_MENTION_RE.match(payload.message.strip()) and not payload.archetype_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -2442,7 +2443,8 @@ def api_create_completion(
     skill_badges: list[dict[str, Any]] = []
     skill_context = ""
     if payload.archetype_id:
-        archetype_badge, archetype_block = _build_archetype_context(ctx, conn, payload.archetype_id)
+        with transaction(conn, ctx=ctx):
+            archetype_badge, archetype_block = _build_archetype_context(ctx, conn, payload.archetype_id)
         skill_badges.append(archetype_badge)
         skill_context = archetype_block
     elif payload.skill_ids:
