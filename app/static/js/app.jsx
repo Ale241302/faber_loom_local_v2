@@ -900,6 +900,10 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashItems, setSlashItems] = useState([]);
+  const [atOpen, setAtOpen] = useState(false);
+  const [atQuery, setAtQuery] = useState("");
+  const [atIndex, setAtIndex] = useState(0);
+  const [atItems, setAtItems] = useState([]);
   const [selectedSkills, setSelectedSkills] = useState([]);
   const fileInputRef = useRef(null);
   const inputWrapRef = useRef(null);
@@ -972,7 +976,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
 
   const submit = (event) => {
     event.preventDefault();
-    if (slashOpen) return;
+    if (slashOpen || atOpen) return;
     const text = draft.trim();
     if ((!text && !attachment) || disabled || uploading) return;
     const options = { mode: isShell ? "manual" : mode };
@@ -1026,12 +1030,28 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     );
   }, [slashItems, slashQuery]);
 
+  const filteredArchetypes = useMemo(() => {
+    const q = atQuery.toLowerCase();
+    return atItems.filter((a) =>
+      (a.name || "").toLowerCase().includes(q) ||
+      (a.archetype_id || "").toLowerCase().includes(q) ||
+      (a.description || "").toLowerCase().includes(q)
+    );
+  }, [atItems, atQuery]);
+
   useEffect(() => {
     if (!slashOpen) return;
     apiGet("/api/skills")
       .then((data) => setSlashItems(Array.isArray(data.skills) ? data.skills : []))
       .catch(() => setSlashItems([]));
   }, [slashOpen]);
+
+  useEffect(() => {
+    if (!atOpen || !activeWorkspace?.tenant_id) return;
+    apiGet(`/api/tenants/${activeWorkspace.tenant_id}/archetypes?active_only=true`)
+      .then((data) => setAtItems(Array.isArray(data.archetypes) ? data.archetypes : []))
+      .catch(() => setAtItems([]));
+  }, [atOpen, activeWorkspace?.tenant_id]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -1056,6 +1076,17 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [slashOpen]);
 
+  useEffect(() => {
+    if (!atOpen) return;
+    const onDocClick = (e) => {
+      if (inputWrapRef.current && !inputWrapRef.current.contains(e.target)) {
+        setAtOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [atOpen]);
+
   const handleInputChange = (event) => {
     const value = event.target.value;
     setDraft(value);
@@ -1065,9 +1096,26 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
       setSlashOpen(true);
       setSlashQuery(last.slice(1));
       setSlashIndex(0);
+      setAtOpen(false);
+    } else if (last.startsWith("@")) {
+      setAtOpen(true);
+      setAtQuery(last.slice(1));
+      setAtIndex(0);
+      setSlashOpen(false);
     } else {
       setSlashOpen(false);
+      setAtOpen(false);
     }
+  };
+
+  const selectArchetype = (a) => {
+    const words = draft.split(/\s+/);
+    const last = words[words.length - 1] || "";
+    const before = draft.slice(0, draft.length - last.length);
+    setDraft((before + `@${a.archetype_id} `).trimStart());
+    setAtOpen(false);
+    setAtQuery("");
+    setAtIndex(0);
   };
 
   const handleKeyDown = (event) => {
@@ -1089,6 +1137,27 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
       }
       if (event.key === "Escape") {
         setSlashOpen(false);
+        return;
+      }
+    }
+    if (atOpen && filteredArchetypes.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setAtIndex((i) => (i + 1) % filteredArchetypes.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setAtIndex((i) => (i - 1 + filteredArchetypes.length) % filteredArchetypes.length);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        selectArchetype(filteredArchetypes[atIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        setAtOpen(false);
         return;
       }
     }
@@ -1143,6 +1212,15 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
             <div key={skill.skill_id} className={cx("composer-skill-option", idx === slashIndex && "active")} onMouseEnter={() => setSlashIndex(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => selectSkill(skill)}>
               <div className="composer-skill-option-main"><span className="composer-skill-option-kicker">/{skill.skill_id}</span><span className="composer-skill-name">{skill.name}</span></div>
               <div className="composer-skill-desc">{skill.description}</div>
+            </div>
+          ))}
+        </div>}
+        {atOpen && filteredArchetypes.length > 0 && <div className="composer-skill-popover">
+          <div className="composer-skill-popover-header">Arquetipos</div>
+          {filteredArchetypes.map((a, idx) => (
+            <div key={a.archetype_id} className={cx("composer-skill-option", idx === atIndex && "active")} onMouseEnter={() => setAtIndex(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => selectArchetype(a)}>
+              <div className="composer-skill-option-main"><span className="composer-skill-option-kicker">@{a.archetype_id}</span><span className="composer-skill-name">{a.name}</span></div>
+              <div className="composer-skill-desc">{a.description || "Arquetipo"}</div>
             </div>
           ))}
         </div>}
@@ -1202,6 +1280,24 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
                 <span className="composer-skill-name">{skill.name}</span>
               </div>
               <div className="composer-skill-desc">{skill.description}</div>
+            </div>
+          ))}
+        </div>}
+        {atOpen && filteredArchetypes.length > 0 && <div className="composer-skill-popover">
+          <div className="composer-skill-popover-header">Arquetipos</div>
+          {filteredArchetypes.map((a, idx) => (
+            <div
+              key={a.archetype_id}
+              className={cx("composer-skill-option", idx === atIndex && "active")}
+              onMouseEnter={() => setAtIndex(idx)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => selectArchetype(a)}
+            >
+              <div className="composer-skill-option-main">
+                <span className="composer-skill-option-kicker">@{a.archetype_id}</span>
+                <span className="composer-skill-name">{a.name}</span>
+              </div>
+              <div className="composer-skill-desc">{a.description || "Arquetipo"}</div>
             </div>
           ))}
         </div>}
