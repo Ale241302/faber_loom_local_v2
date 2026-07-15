@@ -441,8 +441,16 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
 
   const openHistoryChat = (chat) => {
     window.__faberloomActiveChatId = chat.id;
-    window.dispatchEvent(new CustomEvent("faberloom:load-chat", { detail: { chatId: chat.id } }));
-    setNav("space");
+    const isGeneralChat = !chat.workspace_id || (generalWorkspace && chat.workspace_id === generalWorkspace.id);
+    if (isGeneralChat) {
+      if (generalWorkspace) setActiveWorkspaceId(generalWorkspace.id);
+      window.dispatchEvent(new CustomEvent("faberloom:load-chat", { detail: { chatId: chat.id, workspaceId: chat.workspace_id } }));
+      setNav("space");
+    } else {
+      setActiveWorkspaceId(chat.workspace_id);
+      window.dispatchEvent(new CustomEvent("faberloom:load-chat", { detail: { chatId: chat.id, workspaceId: chat.workspace_id } }));
+      setNav("workspace");
+    }
   };
 
   const workspaceItem = (ws, idx) => (
@@ -474,7 +482,7 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
         <section className="rail-section">
           <div className="rail-label"><span>Workspace</span><span>{status}</span></div>
           <div className="workspace-card">
-            <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => setActiveWorkspaceId(event.target.value || null)} disabled={!workspaces.length && !generalWorkspace} aria-label="Workspace activo">
+            <select className="workspace-select" value={activeWorkspaceId || ""} onChange={(event) => { const wsId = event.target.value || null; setActiveWorkspaceId(wsId); if (generalWorkspace && wsId === generalWorkspace.id) setNav("space"); else setNav("workspace"); }} disabled={!workspaces.length && !generalWorkspace} aria-label="Workspace activo">
               {generalWorkspace && <option value={generalWorkspace.id}>{"— " + (generalWorkspace.display_name || generalWorkspace.name || "Chat general")}</option>}
               {!workspaces.length && <option value="">Sin workspace</option>}
               {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
@@ -483,8 +491,8 @@ function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setAc
           </div>
         </section>
         <Accordion items={[
-          // SpaceLoom es la superficie/canvas de chat del workspace activo.
-          { id: "space-acc", title: "SpaceLoom", badge: counts.chats, children: <RailItem label="SpaceLoom" icon="loom" active={nav === "space"} onClick={() => setNav("space")} /> }
+          // SpaceLoom es el canvas universal del tenant; siempre opera sobre el workspace general.
+          { id: "space-acc", title: "SpaceLoom", badge: counts.chats, children: <RailItem label="SpaceLoom" icon="loom" active={nav === "space"} onClick={() => { if (generalWorkspace) setActiveWorkspaceId(generalWorkspace.id); setNav("space"); }} /> }
         ]} defaultOpen={activeAccordionId === "space-acc" ? ["space-acc"] : []} />
         <Accordion items={[
           { id: "entrada-acc", title: "Entrada", badge: (features?.email_connector_enabled ? counts.mail : 0) + counts.workloom, children: <>
@@ -1437,7 +1445,7 @@ function useChatThread(activeWorkspace) {
 }
 
 // SpaceLoom limpio: diseño del Shell (context strip + thread centrado + composer).
-// Opera sobre el workspace activo; nunca cross-workspace.
+// Opera sobre el workspace general del tenant (contexto universal); nunca cross-workspace.
 function SpaceShellView({ activeWorkspace, generalWorkspace }) {
   const { activeChatId, setActiveChatId, messages, busy, error, routerStatus, modelAllowlist, sendMessage, invokeRoutine } = useChatThread(activeWorkspace);
   const threadRef = useRef(null);
@@ -1455,11 +1463,14 @@ function SpaceShellView({ activeWorkspace, generalWorkspace }) {
   useEffect(() => {
     const handler = (e) => {
       const chatId = e.detail?.chatId || window.__faberloomActiveChatId;
-      if (chatId) setActiveChatId(chatId);
+      const eventWorkspaceId = e.detail?.workspaceId;
+      if (!chatId) return;
+      if (eventWorkspaceId && activeWorkspace && eventWorkspaceId !== activeWorkspace.id) return;
+      setActiveChatId(chatId);
     };
     window.addEventListener("faberloom:load-chat", handler);
     return () => window.removeEventListener("faberloom:load-chat", handler);
-  }, [setActiveChatId]);
+  }, [setActiveChatId, activeWorkspace]);
 
   // Toolset / routines también invocan en el shell limpio.
   useEffect(() => {
@@ -4199,7 +4210,7 @@ function Canvas({ nav, activeWorkspace, generalWorkspace, status, features, foun
   return <main className="canvas">
     {nav !== "space" && <ContextStrip activeWorkspace={activeWorkspace}/>}
     {status === "error" && <div className="workspace-warning"><Icon/>No se pudo cargar /api/workspaces. El shell sigue disponible para revisar la interfaz.</div>}
-    {nav === "space" ? <SpaceShellView activeWorkspace={activeWorkspace} generalWorkspace={generalWorkspace}/>
+    {nav === "space" ? <SpaceShellView activeWorkspace={generalWorkspace || activeWorkspace} generalWorkspace={generalWorkspace}/>
      : nav === "workspace" ? <SpaceView activeWorkspace={activeWorkspace}/>
      : nav === "kb" ? <KBView activeWorkspace={activeWorkspace}/>
      : nav === "routines" ? <RoutinesView activeWorkspace={activeWorkspace}/>
