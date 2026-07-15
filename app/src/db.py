@@ -4528,12 +4528,12 @@ def seed_default_archetypes(
     """
 
     ctx.require_tenant()
-    _require_preset_in_tenant(ctx, conn, preset_id)
 
     now = utc_now()
     affected: list[dict[str, Any]] = []
-    skills = get_global_skills(conn, tenant_id="global", active_only=True)
     with transaction(conn, ctx=ctx):
+        _require_preset_in_tenant(ctx, conn, preset_id)
+        skills = get_global_skills(conn, tenant_id="global", active_only=True)
         for skill in skills:
             archetype_id = skill["skill_id"]
             name = skill["name"]
