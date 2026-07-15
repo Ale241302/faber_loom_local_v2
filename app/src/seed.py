@@ -11,7 +11,7 @@ from typing import Any
 
 from .ambient import seed_ambient_config
 from .audit import audit_writer
-from .context import Context, system_context
+from .context import Context, SYSTEM_WORKSPACE_ID, system_context
 from .db import create_workspace, get_workspace_by_kind, get_workspace_by_slug, transaction
 from .kb import ingest_kb_source
 from .models import AuditEvent, WorkspaceCreate
@@ -173,6 +173,61 @@ def seed_ambient_for_all_tenants(conn: sqlite3.Connection) -> None:
         }
     for tenant_id in tenant_ids:
         seed_ambient_config(conn, tenant_id)
+
+
+def _tenant_ids_from_workspaces(conn: sqlite3.Connection) -> set[str]:
+    """Return distinct tenant_ids that own at least one workspace."""
+
+    from .db_adapter import transaction
+
+    with transaction(conn, ctx=system_context()):
+        return {row[0] for row in conn.execute("SELECT DISTINCT tenant_id FROM workspace")}
+
+
+def seed_default_presets_for_all_tenants(conn: sqlite3.Connection) -> dict[str, int]:
+    """Ensure every tenant with a workspace has the default routing presets.
+
+    Idempotent: upserts the default preset templates (including ``mi-preset``)
+    for each tenant, updating existing rows to the latest definition.
+    """
+
+    from .db import seed_routing_presets
+
+    tenant_ids = _tenant_ids_from_workspaces(conn)
+    total = 0
+    for tenant_id in tenant_ids:
+        ctx = Context(
+            workspace_id=SYSTEM_WORKSPACE_ID,
+            tenant_id=tenant_id,
+            user_id="system",
+            actor_id="system",
+            actor_role_at_decision="platform_admin",
+        )
+        total += len(seed_routing_presets(ctx, conn, created_by="system"))
+    return {"tenants": len(tenant_ids), "presets": total}
+
+
+def seed_default_archetypes_for_all_tenants(conn: sqlite3.Connection) -> dict[str, int]:
+    """Ensure every tenant with a workspace has archetypes for all global skills.
+
+    Idempotent: upserts one archetype per active global skill under each tenant,
+    bound to the ``mi-preset`` routing preset.
+    """
+
+    from .db import seed_default_archetypes
+
+    tenant_ids = _tenant_ids_from_workspaces(conn)
+    total = 0
+    for tenant_id in tenant_ids:
+        ctx = Context(
+            workspace_id=SYSTEM_WORKSPACE_ID,
+            tenant_id=tenant_id,
+            user_id="system",
+            actor_id="system",
+            actor_role_at_decision="platform_admin",
+        )
+        total += len(seed_default_archetypes(ctx, conn, preset_id="mi-preset", created_by="system"))
+    return {"tenants": len(tenant_ids), "archetypes": total}
 
 
 def seed_canary_workspace(conn: sqlite3.Connection) -> dict[str, Any] | None:

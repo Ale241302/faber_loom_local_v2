@@ -195,3 +195,102 @@ def test_v12_migration_maps_unknown_source_version_to_custom(client, tmp_path):
         rows = {row["id"]: row["category"] for row in conn.execute("SELECT id, category FROM routine").fetchall()}
     assert rows["r1"] == "custom"
     assert rows["r2"] == "agent"
+
+
+def test_default_routing_preset_mi_preset_is_seeded(client):
+    """The default tenant must receive the mi-preset routing preset on startup."""
+
+    _, db_path, _ = client
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            ("default", "mi-preset"),
+        ).fetchone()
+
+    assert row is not None
+    assert row["name"] == "Mi preset"
+    assert row["description"] == "Para qué sirve"
+    envelope = json.loads(row["envelope_json"])
+    assert envelope["jurisdictions"] == ["US", "EU"]
+    assert envelope["providers_allow"] == ["anthropic", "openai"]
+    assert envelope["data_collection"] == "deny"
+    curve = json.loads(row["curve_json"])
+    assert curve["mode"] == "balanceado"
+    assert curve["borderline_policy"] == "premium"
+    caps = json.loads(row["caps_json"])
+    assert caps["monthly_budget_usd"] == 50
+    escalation = json.loads(row["escalation_json"])
+    assert escalation["user_boost_button"] is True
+
+
+def test_default_archetypes_are_seeded_from_global_skills(client):
+    """Each active global skill should have a matching archetype in the default tenant."""
+
+    _, db_path, _ = client
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        skills = conn.execute(
+            "SELECT skill_id, name FROM global_skill_catalog WHERE tenant_id = ? AND is_active = 1",
+            ("global",),
+        ).fetchall()
+        archetypes = conn.execute(
+            "SELECT archetype_id, routing_preset_id FROM archetype WHERE tenant_id = ?",
+            ("default",),
+        ).fetchall()
+
+    skill_ids = {row["skill_id"] for row in skills}
+    archetype_map = {row["archetype_id"]: row["routing_preset_id"] for row in archetypes}
+
+    assert skill_ids
+    assert archetype_map
+    for skill_id in skill_ids:
+        assert skill_id in archetype_map, f"missing archetype for skill {skill_id}"
+        assert archetype_map[skill_id] == "mi-preset"
+
+
+def test_default_preset_and_archetype_seed_is_idempotent(client):
+    """Re-running default seeds must not duplicate presets or archetypes."""
+
+    _, db_path, _ = client
+    from app.src.context import Context, SYSTEM_WORKSPACE_ID
+    from app.src.db import connect, seed_default_archetypes, seed_routing_presets
+
+    conn = connect()
+    try:
+        ctx = Context(
+            workspace_id=SYSTEM_WORKSPACE_ID,
+            tenant_id="default",
+            user_id="system",
+            actor_id="system",
+            actor_role_at_decision="platform_admin",
+        )
+        seed_routing_presets(ctx, conn)
+        seed_default_archetypes(ctx, conn, preset_id="mi-preset")
+
+        preset_count = conn.execute(
+            "SELECT COUNT(*) FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            ("default", "mi-preset"),
+        ).fetchone()[0]
+        archetype_count = conn.execute(
+            "SELECT COUNT(*) FROM archetype WHERE tenant_id = ? AND routing_preset_id = ?",
+            ("default", "mi-preset"),
+        ).fetchone()[0]
+
+        seed_routing_presets(ctx, conn)
+        seed_default_archetypes(ctx, conn, preset_id="mi-preset")
+
+        preset_count_after = conn.execute(
+            "SELECT COUNT(*) FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
+            ("default", "mi-preset"),
+        ).fetchone()[0]
+        archetype_count_after = conn.execute(
+            "SELECT COUNT(*) FROM archetype WHERE tenant_id = ? AND routing_preset_id = ?",
+            ("default", "mi-preset"),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert preset_count == preset_count_after == 1
+    assert archetype_count == archetype_count_after
+    assert archetype_count > 0

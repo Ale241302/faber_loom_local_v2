@@ -12,7 +12,7 @@ from typing import Any
 
 from .ambient import seed_ambient_config
 from .context import SYSTEM_WORKSPACE_ID, Context
-from .db import create_workspace, db_session, seed_routing_presets
+from .db import create_workspace, db_session, seed_default_archetypes, seed_routing_presets
 from .db_adapter import transaction
 from .entity_identity import create_identity
 from .models import WorkspaceCreate
@@ -146,6 +146,7 @@ def bootstrap_approved_tenant(
                 actor_role_at_decision="platform_admin",
             )
             seed_routing_presets(seed_ctx, app_conn, created_by="system")
+            seed_default_archetypes(seed_ctx, app_conn, preset_id="mi-preset", created_by="system")
 
             # E4-7: create a default entity identity for the tenant.
             if owner_id is not None:

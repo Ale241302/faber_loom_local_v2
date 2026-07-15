@@ -3996,6 +3996,22 @@ DEFAULT_PRESET_TEMPLATES: list[dict[str, Any]] = [
         "caps": {**_default_preset_caps(), "monthly_budget_usd": 200.0},
         "escalation": _default_preset_escalation(),
     },
+    {
+        "preset_id": "mi-preset",
+        "name": "Mi preset",
+        "description": "Para qué sirve",
+        "envelope": {
+            "jurisdictions": ["US", "EU"],
+            "providers_allow": ["anthropic", "openai"],
+            "providers_deny": [],
+            "data_collection": "deny",
+            "byo_keys": False,
+        },
+        "curve": {"mode": "balanceado", "borderline_policy": "premium"},
+        "task_overrides": {},
+        "caps": {"monthly_budget_usd": 50, "max_cost_per_task_usd": 0.5, "max_latency_s": 12},
+        "escalation": {"user_boost_button": True, "boost_cap_per_day": 10},
+    },
 ]
 
 
@@ -4004,25 +4020,19 @@ def seed_routing_presets(
     conn: sqlite3.Connection,
     created_by: str = "system",
 ) -> list[dict[str, Any]]:
-    """Seed the four default FaberLoom preset templates for a tenant.
+    """Seed the default FaberLoom preset templates for a tenant.
 
-    Idempotent: skips existing (tenant_id, preset_id) pairs and bumps version
-    only when the template content changed.
+    Idempotent: inserts missing presets and updates existing ones to match the
+    current template definitions, bumping version on any change.
     """
 
     ctx.require_tenant()
     now = utc_now()
-    created: list[dict[str, Any]] = []
+    affected: list[dict[str, Any]] = []
     with transaction(conn, ctx=ctx):
         for template in DEFAULT_PRESET_TEMPLATES:
-            existing = conn.execute(
-                "SELECT preset_id FROM routing_preset WHERE tenant_id = ? AND preset_id = ?",
-                (ctx.require_tenant(), template["preset_id"]),
-            ).fetchone()
-            if existing is not None:
-                continue
             conn.execute(
-                f"""
+                """
                 INSERT INTO routing_preset (
                     tenant_id, preset_id, name, version, description,
                     envelope_json, curve_json, task_overrides_json, caps_json, escalation_json,
@@ -4030,7 +4040,24 @@ def seed_routing_presets(
                     routine_version, skill_version, schema_version, source_version,
                     approved_by, created_at, updated_at
                 )
-                VALUES ({','.join('?' for _ in range(22))})
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, preset_id) DO UPDATE SET
+                    name = excluded.name,
+                    version = routing_preset.version + 1,
+                    description = excluded.description,
+                    envelope_json = excluded.envelope_json,
+                    curve_json = excluded.curve_json,
+                    task_overrides_json = excluded.task_overrides_json,
+                    caps_json = excluded.caps_json,
+                    escalation_json = excluded.escalation_json,
+                    is_active = excluded.is_active,
+                    is_template = excluded.is_template,
+                    created_by = excluded.created_by,
+                    actor_id = excluded.actor_id,
+                    actor_role_at_decision = excluded.actor_role_at_decision,
+                    schema_version = excluded.schema_version,
+                    source_version = excluded.source_version,
+                    updated_at = excluded.updated_at
                 """,
                 (
                     ctx.require_tenant(),
@@ -4057,8 +4084,8 @@ def seed_routing_presets(
                     now,
                 ),
             )
-            created.append(template)
-    return created
+            affected.append(template)
+    return affected
 
 
 def list_routing_presets(
@@ -4484,6 +4511,93 @@ def delete_archetype(
             (ctx.require_tenant(), archetype_id),
         )
         return cursor.rowcount > 0
+
+
+def seed_default_archetypes(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    *,
+    preset_id: str = "mi-preset",
+    created_by: str = "system",
+) -> list[dict[str, Any]]:
+    """Create or update one archetype per global skill for the tenant.
+
+    Each archetype uses the tenant's default routing preset (``mi-preset``) and
+    the skill's markdown manifest. Idempotent by (tenant_id, archetype_id) where
+    the archetype_id equals the global skill_id.
+    """
+
+    ctx.require_tenant()
+    _require_preset_in_tenant(ctx, conn, preset_id)
+
+    now = utc_now()
+    affected: list[dict[str, Any]] = []
+    skills = get_global_skills(conn, tenant_id="global", active_only=True)
+    with transaction(conn, ctx=ctx):
+        for skill in skills:
+            archetype_id = skill["skill_id"]
+            name = skill["name"]
+            description = skill.get("description") or ""
+            skill_md = skill.get("skill_md") or ""
+            conn.execute(
+                """
+                INSERT INTO archetype (
+                    tenant_id, archetype_id, name, version, description, category,
+                    routing_preset_id, persona_md, skill_md, tools_allowlist,
+                    schema_output_json, trigger_json, is_active, is_template,
+                    created_by, actor_id, actor_role_at_decision, routine_version,
+                    skill_version, schema_version, source_version, approved_by,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, archetype_id) DO UPDATE SET
+                    name = excluded.name,
+                    version = archetype.version + 1,
+                    description = excluded.description,
+                    category = excluded.category,
+                    routing_preset_id = excluded.routing_preset_id,
+                    skill_md = excluded.skill_md,
+                    tools_allowlist = excluded.tools_allowlist,
+                    schema_output_json = excluded.schema_output_json,
+                    trigger_json = excluded.trigger_json,
+                    is_active = excluded.is_active,
+                    is_template = excluded.is_template,
+                    created_by = excluded.created_by,
+                    actor_id = excluded.actor_id,
+                    actor_role_at_decision = excluded.actor_role_at_decision,
+                    schema_version = excluded.schema_version,
+                    source_version = excluded.source_version,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    ctx.require_tenant(),
+                    archetype_id,
+                    name,
+                    1,
+                    description,
+                    "skill",
+                    preset_id,
+                    "",
+                    skill_md,
+                    "[]",
+                    "{}",
+                    "{}",
+                    1,
+                    0,
+                    created_by,
+                    ctx.resolved_actor_id(),
+                    ctx.actor_role_at_decision,
+                    None,
+                    None,
+                    SCHEMA_VERSION,
+                    "v1",
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            affected.append({"archetype_id": archetype_id, "name": name})
+    return affected
 
 
 def _provider_for_model(providers_allow: list[str], model: str) -> str | None:

@@ -37,6 +37,8 @@ from .router.config_store import load_env_file
 from .seed import (
     seed_ambient_for_all_tenants,
     seed_canary_workspace,
+    seed_default_archetypes_for_all_tenants,
+    seed_default_presets_for_all_tenants,
     seed_demo_workspace,
 )
 from .skill_catalog import seed_global_skill_catalog
@@ -76,6 +78,8 @@ async def lifespan(app: FastAPI):
         seed_demo_workspace(conn)
         seed_canary_workspace(conn)
         seed_ambient_for_all_tenants(conn)
+        seed_default_presets_for_all_tenants(conn)
+        seed_default_archetypes_for_all_tenants(conn)
     load_trusted_update_keys()
     try:
         get_object_store().ensure_buckets()
