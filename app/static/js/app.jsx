@@ -4056,7 +4056,7 @@ function PresetsPanel({ user }) {
           <div style={S.inlineGroup}>
             <button style={S.button} onClick={() => edit(p)}>Editar</button>
             <button style={S.button} onClick={() => useInRoutine(p.preset_id)}>Usar en routine</button>
-            {!p.is_template && <button style={S.buttonDanger} onClick={() => remove(p.preset_id)}>Eliminar</button>}
+            <button style={S.buttonDanger} onClick={() => remove(p.preset_id)}>Eliminar</button>
           </div>
         </div>)}
       </div>
