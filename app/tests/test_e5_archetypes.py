@@ -431,3 +431,240 @@ def test_update_archetype_bumps_version(client: TestClient) -> None:
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["version"] == 2
+
+
+# ---------------------------------------------------------------------------
+# @mention de arquetipos en chat
+# ---------------------------------------------------------------------------
+
+import json
+
+
+def _capturing_provider(slug: str, model: str) -> tuple[dict[str, Any], Any]:
+    from app.src.router.models import CompletionRequest, CompletionResult, ProviderConfig
+    from app.src.router.providers import Provider
+
+    captured: dict[str, Any] = {}
+
+    class CapturingProvider(Provider):
+        requires_api_key = False
+
+        def __init__(self) -> None:
+            super().__init__(
+                ProviderConfig(
+                    provider_slug=slug,
+                    api_key=None,
+                    model_default=model,
+                    priority=1,
+                    is_enabled=True,
+                )
+            )
+
+        def complete(self, request: CompletionRequest) -> CompletionResult:
+            captured["messages"] = list(request.messages)
+            return CompletionResult(
+                content="CAPTURED",
+                model=request.model or model,
+                provider_slug=slug,
+                input_tokens=10,
+                output_tokens=5,
+                cost_usd=0.0001,
+                duration_ms=5,
+            )
+
+    return captured, CapturingProvider
+
+
+def _patch_workspace_router(monkeypatch: pytest.MonkeyPatch, slug: str = "fake") -> dict[str, Any]:
+    from app.src.router import cost as cost_module
+    from app.src.router.engine import Router
+    import app.src.api as api_module
+
+    captured, ProviderCls = _capturing_provider(slug, f"{slug}-model")
+    cost_module.MODEL_ALLOWLIST[slug] = {f"{slug}-model"}
+    monkeypatch.setattr(
+        api_module, "build_router", lambda *a, **kw: Router(providers=[ProviderCls()])
+    )
+    return captured
+
+
+def _patch_presence_router(monkeypatch: pytest.MonkeyPatch, slug: str = "ollama") -> dict[str, Any]:
+    from app.src.router.engine import Router
+    import app.src.router.registry as registry_module
+
+    captured, ProviderCls = _capturing_provider(slug, f"{slug}-model")
+    monkeypatch.setattr(
+        registry_module, "build_router", lambda *a, **kw: Router(providers=[ProviderCls()])
+    )
+    return captured
+
+
+def test_workspace_chat_with_archetype_adopts_persona(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seleccionar un arquetipo en un workspace normal inyecta persona_md + skill_md."""
+    tenant_id = _setup_owner(client)
+    _create_preset(client, tenant_id, "balanceado")
+    client.post(
+        f"/api/tenants/{tenant_id}/archetypes",
+        json=_archetype_body(routing_preset_id="balanceado"),
+    )
+
+    workspace_id = _workspace_id(client)
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats", json={"title": "Archetype mention"}
+    ).json()
+
+    captured = _patch_workspace_router(monkeypatch, "fake")
+    resp = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "hola", "mode": "manual", "archetype_id": "cotizacion-b2b"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert "messages" in captured, "el modelo nunca fue llamado"
+    system = captured["messages"][0]["content"]
+    assert "cotizacion-b2b" in system
+    assert "Sos un cotizador formal" in system
+    assert "Responde con precio y plazo" in system
+
+
+def _general_workspace(client: TestClient, tenant_id: str) -> dict[str, Any]:
+    resp = client.get("/api/workspaces")
+    assert resp.status_code == 200, resp.text
+    for ws in resp.json()["workspaces"]:
+        if ws.get("kind") == "tenant_general":
+            return ws
+    # Con Foundation auth el seed no crea automáticamente el ws-general para
+    # tenants distintos de DEFAULT_TENANT_ID; lo creamos bajo demanda.
+    resp = client.post(
+        "/api/workspaces",
+        json={"name": "Chat general", "slug": f"general-{tenant_id}", "kind": "tenant_general"},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def test_general_chat_with_archetype_adopts_persona(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seleccionar un arquetipo en SpaceLoom/general chat no devuelve 409 y adopta persona."""
+    tenant_id = _setup_owner(client)
+    _create_preset(client, tenant_id, "balanceado")
+    client.post(
+        f"/api/tenants/{tenant_id}/archetypes",
+        json=_archetype_body(routing_preset_id="balanceado"),
+    )
+
+    general = _general_workspace(client, tenant_id)
+    chat = client.post(
+        f"/api/workspaces/{general['id']}/chats", json={"title": "General archetype"}
+    ).json()
+
+    # Seedea el catálogo con el router real (ollama local está siempre disponible).
+    client.post(
+        f"/api/workspaces/{general['id']}/chats/{chat['id']}/completions",
+        json={"message": "hola", "mode": "manual"},
+    )
+
+    captured = _patch_presence_router(monkeypatch, "ollama")
+    resp = client.post(
+        f"/api/workspaces/{general['id']}/chats/{chat['id']}/completions",
+        json={"message": "hola", "mode": "manual", "archetype_id": "cotizacion-b2b"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert "messages" in captured, "el modelo nunca fue llamado"
+    system = captured["messages"][0]["content"]
+    assert "cotizacion-b2b" in system
+    assert "Sos un cotizador formal" in system
+
+
+def test_general_chat_at_routine_still_rejected(client: TestClient) -> None:
+    """Las @routine mentions sin arquetipo siguen rechazadas en el chat general."""
+    tenant_id = _setup_owner(client)
+    general = _general_workspace(client, tenant_id)
+    chat = client.post(
+        f"/api/workspaces/{general['id']}/chats", json={"title": "Reject mention"}
+    ).json()
+
+    resp = client.post(
+        f"/api/workspaces/{general['id']}/chats/{chat['id']}/completions",
+        json={"message": "@cotizador hola", "mode": "manual"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert "@routine mentions are not supported in the general chat" in resp.json()["detail"]
+
+
+def test_workspace_chat_unknown_archetype_returns_404(client: TestClient) -> None:
+    _setup_owner(client)
+    workspace_id = _workspace_id(client)
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats", json={"title": "Invalid archetype"}
+    ).json()
+
+    resp = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "hola", "mode": "manual", "archetype_id": "no-existe"},
+    )
+    assert resp.status_code == 404, resp.text
+    assert "no-existe" in resp.json()["detail"]
+
+
+def test_general_chat_unknown_archetype_returns_404(client: TestClient) -> None:
+    tenant_id = _setup_owner(client)
+    general = _general_workspace(client, tenant_id)
+    chat = client.post(
+        f"/api/workspaces/{general['id']}/chats", json={"title": "Invalid archetype"}
+    ).json()
+
+    resp = client.post(
+        f"/api/workspaces/{general['id']}/chats/{chat['id']}/completions",
+        json={"message": "hola", "mode": "manual", "archetype_id": "no-existe"},
+    )
+    assert resp.status_code == 404, resp.text
+    assert "no-existe" in resp.json()["detail"]
+
+
+def test_at_routine_mention_still_works(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Las @routine mentions existentes en workspace siguen funcionando (backwards compat)."""
+    from app.src.skills import compile_skill_md, _extract_runtime
+
+    tenant_id = _setup_owner(client)
+    workspace_id = _workspace_id(client)
+
+    skill_md = """---
+name: cotizador
+persona: Eres un asistente de cotizaciones.
+tools: ["calculator"]
+schema_output: {"type": "object", "properties": {"precio": {"type": "number"}}, "required": ["precio"]}
+triggers: ["@cotizador"]
+---
+Genera una cotización en JSON con el precio.
+"""
+    compiled = compile_skill_md(skill_md)
+    runtime = _extract_runtime(skill_md)
+    payload = {
+        "name": compiled["name"],
+        "skill_md": skill_md,
+        "persona_md": runtime.get("persona", ""),
+        "tools_allowlist": json.dumps(runtime.get("tools", [])),
+        "schema_output_json": json.dumps(runtime.get("schema_output", {})),
+        "trigger_json": json.dumps(runtime.get("triggers", [])),
+        "is_active": 1,
+        "source_version": "v1",
+    }
+    routine = client.post(f"/api/workspaces/{workspace_id}/routines", json=payload).json()
+    client.post(f"/api/workspaces/{workspace_id}/routines/{routine['id']}/approve")
+
+    _patch_workspace_router(monkeypatch, "fake")
+    chat = client.post(
+        f"/api/workspaces/{workspace_id}/chats", json={"title": "Mention"}
+    ).json()
+    resp = client.post(
+        f"/api/workspaces/{workspace_id}/chats/{chat['id']}/completions",
+        json={"message": "@cotizador cuánto sale Oxford"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["message"]["role"] == "assistant"

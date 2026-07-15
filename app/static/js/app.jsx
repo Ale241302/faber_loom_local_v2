@@ -905,6 +905,7 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   const [atIndex, setAtIndex] = useState(0);
   const [atItems, setAtItems] = useState([]);
   const [selectedSkills, setSelectedSkills] = useState([]);
+  const [selectedArchetype, setSelectedArchetype] = useState(null);
   const fileInputRef = useRef(null);
   const inputWrapRef = useRef(null);
 
@@ -995,9 +996,13 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
     if (selectedSkills.length) {
       options.skill_ids = selectedSkills.map((s) => s.skill_id);
     }
+    if (selectedArchetype) {
+      options.archetype_id = selectedArchetype.archetype_id;
+    }
     onSend(text || "Analiza el archivo adjunto.", options);
     setDraft("");
     setSelectedSkills([]);
+    setSelectedArchetype(null);
     clearAttachment();
   };
 
@@ -1019,6 +1024,10 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
 
   const removeSkill = (skillId) => {
     setSelectedSkills((prev) => prev.filter((s) => s.skill_id !== skillId));
+  };
+
+  const removeArchetype = () => {
+    setSelectedArchetype(null);
   };
 
   const filteredSkills = useMemo(() => {
@@ -1109,10 +1118,11 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
   };
 
   const selectArchetype = (a) => {
+    setSelectedArchetype(a);
     const words = draft.split(/\s+/);
     const last = words[words.length - 1] || "";
     const before = draft.slice(0, draft.length - last.length);
-    setDraft((before + `@${a.archetype_id} `).trimStart());
+    setDraft(before.trim());
     setAtOpen(false);
     setAtQuery("");
     setAtIndex(0);
@@ -1190,6 +1200,12 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
           </span>
         ))}
       </div>}
+      {selectedArchetype && <div className="composer-skill-tags">
+        <span className="skill-tag archetype-tag">
+          <Icon name="user" size={12}/>@{selectedArchetype.archetype_id} · {selectedArchetype.name}
+          <button type="button" className="skill-tag-remove" onClick={removeArchetype} title="Quitar arquetipo"><Icon name="x" size={10}/></button>
+        </span>
+      </div>}
       <div className="space-shell-composer" ref={inputWrapRef}>
         <div className={cx("box", draft.trim() && "focus")}>
           <textarea value={draft} onChange={handleInputChange} onKeyDown={handleKeyDown} placeholder={placeholder || "Iterá, investigá, o pedí a un agente…"} rows="1" disabled={disabled || uploading}/>
@@ -1250,6 +1266,15 @@ function Composer({ onSend, disabled, routerStatus, modelAllowlist, placeholder,
             </button>
           </span>
         ))}
+      </div>}
+      {selectedArchetype && <div className="composer-skill-tags">
+        <span className="skill-tag archetype-tag">
+          <Icon name="user" size={12}/>
+          @{selectedArchetype.archetype_id} · {selectedArchetype.name}
+          <button type="button" className="skill-tag-remove" onClick={removeArchetype} title="Quitar arquetipo">
+            <Icon name="x" size={10}/>
+          </button>
+        </span>
       </div>}
       <div className="composer-input-wrap" ref={inputWrapRef}>
         <div className="composer-input-row">
@@ -1477,6 +1502,7 @@ function useChatThread(activeWorkspace) {
       const body = { message: text, mode: options.mode || "manual" };
       if (options.provider_slug && options.model) { body.provider_slug = options.provider_slug; body.model = options.model; }
       if (options.skill_ids && options.skill_ids.length) { body.skill_ids = options.skill_ids; }
+      if (options.archetype_id) { body.archetype_id = options.archetype_id; }
       if (options.attachment_object_id) {
         body.attachment_object_id = options.attachment_object_id;
         body.attachment_file_name = options.attachment_file_name;
@@ -1851,6 +1877,9 @@ function SpaceView({ activeWorkspace }) {
       }
       if (options.skill_ids && options.skill_ids.length) {
         body.skill_ids = options.skill_ids;
+      }
+      if (options.archetype_id) {
+        body.archetype_id = options.archetype_id;
       }
       const completion = await apiPost(`/api/workspaces/${activeWorkspace.id}/chats/${chatId}/completions`, body);
       if (completion && completion.mode === "processing") {

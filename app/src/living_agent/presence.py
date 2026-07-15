@@ -383,6 +383,7 @@ def _chat_with_model(
     requested_provider: str | None = None,
     requested_model: str | None = None,
     history: list[dict[str, str]] | None = None,
+    persona_md: str | None = None,
 ) -> dict[str, Any] | None:
     """E5-fix4: responde conversación con un modelo REAL (cheap-first).
 
@@ -449,12 +450,19 @@ def _chat_with_model(
             ws_lines.append(
                 f"- {ws.get('name')}: {sum(counts.values())} fuente(s), nivel {ws.get('level')}"
             )
+        if persona_md:
+            identity_block = persona_md.strip()
+        else:
+            identity_block = (
+                f"Eres {display_name}, el agente vivo de este tenant en FaberLoom. "
+                "Responde en el idioma del usuario, breve, cálido y útil. Regla dura: "
+                "no inventes datos de negocio; si preguntan por contenido concreto, "
+                "ofrece mirar el workspace correspondiente."
+            )
         system_prompt = (
-            f"Eres {display_name}, el agente vivo de este tenant en FaberLoom. "
-            "Responde en el idioma del usuario, breve, cálido y útil. Regla dura: "
-            "no inventes datos de negocio; si preguntan por contenido concreto, "
-            "ofrece mirar el workspace correspondiente. Workspaces visibles "
-            "(solo índice):\n" + ("\n".join(ws_lines) if ws_lines else "(ninguno)")
+            identity_block
+            + "\n\nWorkspaces visibles (solo índice):\n"
+            + ("\n".join(ws_lines) if ws_lines else "(ninguno)")
         )
 
         started = _time.time()
@@ -525,6 +533,7 @@ def handle_presence_message(
     requested_provider: str | None = None,
     requested_model: str | None = None,
     chat_id: str | None = None,
+    persona_md: str | None = None,
 ) -> dict[str, Any]:
     """Punto de entrada de la presencia para una consulta en ws-general.
 
@@ -590,6 +599,7 @@ def handle_presence_message(
             requested_provider=requested_provider,
             requested_model=requested_model,
             history=_history,
+            persona_md=persona_md,
         )
         if llm is not None:
             content = llm["content"]

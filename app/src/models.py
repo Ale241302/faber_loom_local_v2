@@ -2573,6 +2573,7 @@ class ChatCompletionRequest(BaseModel):
     mode: Literal["manual", "auto"] = "manual"
     attachment_object_id: str | None = Field(default=None, max_length=120)
     skill_ids: list[str] = Field(default_factory=list, max_length=5)
+    archetype_id: str | None = Field(default=None, max_length=120)
 
 
 class ChatCompletionResponse(BaseModel):

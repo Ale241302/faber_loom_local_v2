@@ -1921,6 +1921,37 @@ def _build_skill_context(
     return badges, block
 
 
+def _build_archetype_context(
+    ctx: Context,
+    conn: sqlite3.Connection,
+    archetype_id: str,
+) -> tuple[dict[str, Any], str]:
+    """Return (archetype badge, context block) for a selected archetype.
+
+    The context block includes the archetype's persona_md and skill_md so the
+    model adopts its personality and framework.
+    """
+
+    archetype = get_archetype(ctx, conn, archetype_id)
+    if archetype is None or not archetype.get("is_active"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Archetype '{archetype_id}' not found",
+        )
+
+    badge = {"archetype_id": archetype["archetype_id"], "name": archetype["name"]}
+    parts: list[str] = [f"# {archetype['name']} (@{archetype['archetype_id']})"]
+    if archetype.get("persona_md"):
+        parts.append(f"## Persona\n{archetype['persona_md'].strip()}")
+    if archetype.get("skill_md"):
+        parts.append(f"## Skill\n{archetype['skill_md'].strip()}")
+    block = (
+        "\n\n".join(parts)
+        + "\n\nAdoptá la personalidad y el marco de trabajo anteriores para esta consulta. No inventes datos; toda afirmación factual requiere lookup con evidencia citada."
+    )
+    return badge, block
+
+
 def _build_user_message_with_attachment(
     ctx: Context,
     conn: sqlite3.Connection,
@@ -1986,8 +2017,12 @@ def _handle_presence_completion(
     """
 
     # Reject @mentions / skill_ids / auto mode in the general chat for now;
-    # they should target a concrete workspace or use the task flow.
-    if _AT_MENTION_RE.match(payload.message.strip()):
+    # they should target a concrete workspace or use the task flow. Archetype
+    # selection is the exception: it only changes the agent's persona.
+    archetype_context: str | None = None
+    if payload.archetype_id:
+        _, archetype_context = _build_archetype_context(ctx, conn, payload.archetype_id)
+    if _AT_MENTION_RE.match(payload.message.strip()) and not payload.archetype_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="@routine mentions are not supported in the general chat",
@@ -2011,6 +2046,7 @@ def _handle_presence_completion(
         requested_provider=payload.provider_slug,
         requested_model=payload.model,
         chat_id=chat_id,
+        persona_md=archetype_context,
     )
     llm_info = presence_result.get("llm") or {}
 
@@ -2265,12 +2301,12 @@ def api_create_completion(
             }
 
     mention_match = _AT_MENTION_RE.match(payload.message.strip())
-    if mention_match and payload.attachment_object_id:
+    if mention_match and payload.attachment_object_id and not payload.archetype_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Attachments are not supported with @routine mentions",
         )
-    if mention_match:
+    if mention_match and not payload.archetype_id:
         routine_name = mention_match.group(1)
         user_request = (mention_match.group(2) or "").strip()
         routines = get_routine_by_name(ctx, conn, routine_name)
@@ -2405,7 +2441,11 @@ def api_create_completion(
     # with @routine invocation.
     skill_badges: list[dict[str, Any]] = []
     skill_context = ""
-    if payload.skill_ids:
+    if payload.archetype_id:
+        archetype_badge, archetype_block = _build_archetype_context(ctx, conn, payload.archetype_id)
+        skill_badges.append(archetype_badge)
+        skill_context = archetype_block
+    elif payload.skill_ids:
         if mention_match:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
