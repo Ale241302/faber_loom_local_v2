@@ -381,6 +381,34 @@ function renderMessageContent(raw) {
   return parts;
 }
 
+function MessageRouteFooter({ route }) {
+  if (!route) return null;
+  const r = route;
+  const requested = r.requested_provider_slug || r.requested_model
+    ? `${r.requested_provider_slug || "auto"}${r.requested_model ? "/" + r.requested_model : ""}`
+    : null;
+  const modelLabel = (r.provider_slug && r.model)
+    ? `${r.provider_slug}/${r.model}`
+    : (r.presence ? "faberloom/agente-vivo" : "modelo no registrado");
+  const actual = r.mode === "auto" && r.chain_id
+    ? `auto · ${modelLabel} · ${(r.steps || []).length} pasos`
+    : modelLabel;
+  const routeLabel = requested && requested !== actual && r.mode !== "auto"
+    ? `${requested} → ${actual}`
+    : actual;
+  const budgetUsd = typeof r.budget_usd === "number" ? r.budget_usd : (r.cost_usd || 0);
+  const budgetCap = typeof r.budget_cap_usd === "number" ? r.budget_cap_usd : null;
+  return (
+    <div className="message-route">
+      <span><Icon name="route" size={12}/> {routeLabel}</span>
+      <span>Tokens: {r.input_tokens || 0} in · {r.output_tokens || 0} out</span>
+      <span>Costo: ${Number(r.cost_usd || 0).toFixed(5)} · {r.duration_ms || 0} ms</span>
+      {budgetCap !== null && <span>Budget: ${budgetUsd.toFixed(5)} / ${Number(budgetCap).toFixed(2)}</span>}
+      {r.fallback && <span className="route-fallback">fallback</span>}
+    </div>
+  );
+}
+
 function Rail({ mode, setMode, nav, setNav, workspaces, activeWorkspaceId, setActiveWorkspaceId, status, activeWorkspace, generalWorkspace, hidden, user, onLogout, features, foundationView, setFoundationView }) {
   const [counts, setCounts] = useState({});
 
@@ -1638,6 +1666,7 @@ function SpaceShellView({ activeWorkspace, generalWorkspace }) {
           <div key={msg.id} className={cx("message", msg.role === "user" ? "message-user" : "message-assistant")}>
             <div className="message-meta">{msg.role === "user" ? "Tú" : "FaberLoom"}{msg.created_at ? " · " + new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
             <div className="message-content">{renderMessageContent(msg.content)}</div>
+            {msg.role === "assistant" && <MessageRouteFooter route={msg.route}/>}
           </div>
         ))}
         {busy && <div className="message message-assistant">
@@ -1951,30 +1980,7 @@ function SpaceView({ activeWorkspace }) {
               const raw = msg.role === "assistant" && typingTarget && typingTarget.id === msg.id ? typedContent : msg.content;
               return renderMessageContent(msg.route && msg.route.attachment ? stripAttachmentMarkers(raw) : raw);
             })()}</div>
-            {msg.role === "assistant" && msg.route && (() => {
-              const r = msg.route;
-              const requested = r.requested_provider_slug || r.requested_model
-                ? `${r.requested_provider_slug || "auto"}${r.requested_model ? "/" + r.requested_model : ""}`
-                : null;
-              const modelLabel = (r.provider_slug && r.model)
-                ? `${r.provider_slug}/${r.model}`
-                : (r.presence ? "faberloom/agente-vivo" : "modelo no registrado");
-              const actual = r.mode === "auto" && r.chain_id
-                ? `auto · ${modelLabel} · ${(r.steps || []).length} pasos`
-                : modelLabel;
-              const routeLabel = requested && requested !== actual && r.mode !== "auto"
-                ? `${requested} → ${actual}`
-                : actual;
-              const budgetUsd = typeof r.budget_usd === "number" ? r.budget_usd : (r.cost_usd || 0);
-              const budgetCap = typeof r.budget_cap_usd === "number" ? r.budget_cap_usd : null;
-              return <div className="message-route">
-                <span><Icon name="route" size={12}/> {routeLabel}</span>
-                <span>Tokens: {r.input_tokens || 0} in · {r.output_tokens || 0} out</span>
-                <span>Costo: ${Number(r.cost_usd || 0).toFixed(5)} · {r.duration_ms || 0} ms</span>
-                {budgetCap !== null && <span>Budget: ${budgetUsd.toFixed(5)} / ${Number(budgetCap).toFixed(2)}</span>}
-                {r.fallback && <span className="route-fallback">fallback</span>}
-              </div>;
-            })()}
+            {msg.role === "assistant" && <MessageRouteFooter route={msg.route}/>}
             {msg.role === "assistant" && activeWorkspace && activeChat && (
               <MessageFeedback
                 workspaceId={activeWorkspace.id}
