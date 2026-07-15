@@ -986,7 +986,7 @@ button { background: none; border: none; cursor: pointer; }
 
 /* SpaceLoom shell composer (pedales + input centrado) */
 .composer-shell--space { flex-shrink: 0; }
-.space-shell-composer { padding: 14px 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.space-shell-composer { padding: 14px 0 16px; display: flex; flex-direction: column; gap: 8px; position: relative; }
 .space-shell-composer .box { background: linear-gradient(var(--elev-top), transparent), var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-lg); padding: 14px 16px; transition: border-color .2s, box-shadow .2s; }
 .space-shell-composer .box.focus { border-color: var(--coral-deep); box-shadow: 0 0 0 3px var(--coral-soft); }
 .space-shell-composer .box textarea { width: 100%; background: none; border: none; color: var(--text-primary); font: 14px/1.5 inherit; outline: none; resize: none; min-height: 24px; max-height: 140px; }
